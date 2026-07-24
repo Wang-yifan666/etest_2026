@@ -1,0 +1,20 @@
+[logger]
+
+# 日志保存目录。程序会自动创建目录
+directory = "data/log"
+
+# 是否保存到文件
+file = true
+
+# 是否同步输出到终端
+terminal = true
+
+# 最低日志等级：DEBUG / INFO / WARN / ERROR
+min_level = "DEBUG"
+
+# 每写一条就刷新
+flush_each_write = true
+
+# 日志节流：相同 source+message 的日志在 N 毫秒内只输出一次
+# 设为 0 禁用节流。
+throttle_interval_ms = 500

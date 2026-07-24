@@ -1,26 +1,83 @@
 #include "vision/vision.hpp"
 
+#include "core/logger.hpp"
+
 #include <algorithm>
+#include <cmath>
+#include <exception>
+#include <fstream>
+#include <string>
+#include <utility>
 #include <vector>
+
+#include <opencv2/imgproc.hpp>
 
 namespace etest::vision
 {
 
+	VisionProcessor::VisionProcessor(VisionConfig config):
+	config_(std::move(config))
+	{
+	}
+
 	VisionResult VisionProcessor::process(const cv::Mat& frame,
-	                                      VisionMode mode)
+	                                      VisionMode mode) noexcept
 	{
 		if(frame.empty())
 		{
+			if(!empty_frame_reported_)
+			{
+				ETEST_LOG_ERROR("VISION", "received an empty frame");
+
+				empty_frame_reported_ = true;
+			}
+
 			return {};
 		}
 
-		switch(mode)
+		if(empty_frame_reported_)
 		{
-		case VisionMode::ColorTarget:
-			return detectColorTarget(frame);
+			ETEST_LOG_INFO("VISION", "valid frame input recovered");
 
-		case VisionMode::Preview:
-		default:
+			empty_frame_reported_ = false;
+		}
+
+		try
+		{
+			switch(mode)
+			{
+			case VisionMode::ColorTarget:
+				return detectColorTarget(frame);
+
+			case VisionMode::Preview:
+			case VisionMode::Line:
+			case VisionMode::Circle:
+			case VisionMode::Tag:
+			case VisionMode::NeuralNetwork:
+			default:
+				return {};
+			}
+		}
+		catch(const cv::Exception& error)
+		{
+			ETEST_LOG_ERROR("VISION",
+			                std::string("OpenCV processing exception: ")
+			                    + error.what());
+
+			return {};
+		}
+		catch(const std::exception& error)
+		{
+			ETEST_LOG_ERROR(
+			    "VISION",
+			    std::string("processing exception: ") + error.what());
+
+			return {};
+		}
+		catch(...)
+		{
+			ETEST_LOG_ERROR("VISION", "unknown processing exception");
+
 			return {};
 		}
 	}
@@ -33,22 +90,28 @@ namespace etest::vision
 		cv::Mat hsv;
 		cv::cvtColor(frame, hsv, cv::COLOR_BGR2HSV);
 
-		// 红色 HSV 跨越 0°
 		cv::Mat mask1;
 		cv::Mat mask2;
 		cv::Mat mask;
 
-		cv::inRange(hsv, cv::Scalar(0, 100, 80),
-		            cv::Scalar(10, 255, 255), mask1);
+		cv::inRange(
+		    hsv,
+		    cv::Scalar(config_.red_h1_min, config_.saturation_min,
+		               config_.value_min),
+		    cv::Scalar(config_.red_h1_max, 255, 255), mask1);
 
-		cv::inRange(hsv, cv::Scalar(170, 100, 80),
-		            cv::Scalar(180, 255, 255), mask2);
+		cv::inRange(
+		    hsv,
+		    cv::Scalar(config_.red_h2_min, config_.saturation_min,
+		               config_.value_min),
+		    cv::Scalar(config_.red_h2_max, 255, 255), mask2);
 
 		mask = mask1 | mask2;
 
-		// 基础形态学处理
 		const cv::Mat kernel = cv::getStructuringElement(
-		    cv::MORPH_ELLIPSE, cv::Size(5, 5));
+		    cv::MORPH_ELLIPSE,
+		    cv::Size(config_.morphology_kernel,
+		             config_.morphology_kernel));
 
 		cv::morphologyEx(mask, mask, cv::MORPH_OPEN, kernel);
 
@@ -64,24 +127,25 @@ namespace etest::vision
 			return result;
 		}
 
-		auto largest_it = std::max_element(
+		const auto largest = std::max_element(
 		    contours.begin(), contours.end(),
-		    [](const auto& a, const auto& b) {
-			    return cv::contourArea(a) < cv::contourArea(b);
+		    [](const auto& left, const auto& right) {
+			    return cv::contourArea(left) < cv::contourArea(right);
 		    });
 
-		const double area = cv::contourArea(*largest_it);
+		const double area = cv::contourArea(*largest);
 
-		// 过滤小噪声
-		if(area < 300.0)
+		if(area < config_.min_area)
 		{
 			return result;
 		}
 
-		const cv::Moments moments = cv::moments(*largest_it);
+		const cv::Moments moments = cv::moments(*largest);
 
 		if(moments.m00 == 0.0)
 		{
+			ETEST_LOG_WARN("VISION", "largest contour has zero moment");
+
 			return result;
 		}
 
@@ -93,41 +157,350 @@ namespace etest::vision
 
 		result.area = static_cast<float>(area);
 
-		const cv::RotatedRect rect = cv::minAreaRect(*largest_it);
+		const cv::RotatedRect rectangle = cv::minAreaRect(*largest);
 
-		result.angle_deg = rect.angle;
+		result.angle_deg = rectangle.angle;
 
 		return result;
 	}
 
-	void VisionProcessor::drawDebugInfo(cv::Mat& frame,
-	                                    const VisionResult& result)
+	void VisionProcessor::drawDebugInfo(
+	    cv::Mat& frame, const VisionResult& result) noexcept
 	{
-		// 画图像中心
-		const cv::Point image_center(frame.cols / 2, frame.rows / 2);
-
-		cv::drawMarker(frame, image_center, cv::Scalar(255, 0, 0),
-		               cv::MARKER_CROSS, 20, 2);
-
-		if(!result.valid)
+		try
 		{
-			cv::putText(frame, "Target: LOST", cv::Point(20, 30),
+			if(frame.empty())
+			{
+				ETEST_LOG_WARN("VISION",
+				               "drawDebugInfo received an empty frame");
+
+				return;
+			}
+
+			const cv::Point image_center(frame.cols / 2,
+			                             frame.rows / 2);
+
+			cv::drawMarker(frame, image_center, cv::Scalar(255, 0, 0),
+			               cv::MARKER_CROSS, 20, 2);
+
+			if(!result.valid)
+			{
+				cv::putText(frame, "Target: LOST", cv::Point(20, 30),
+				            cv::FONT_HERSHEY_SIMPLEX, 0.7,
+				            cv::Scalar(0, 0, 255), 2);
+
+				return;
+			}
+
+			const cv::Point target(static_cast<int>(result.x),
+			                       static_cast<int>(result.y));
+
+			cv::circle(frame, target, 8, cv::Scalar(0, 255, 0), 2);
+
+			cv::line(frame, image_center, target, cv::Scalar(0, 255, 0),
+			         2);
+
+			cv::putText(frame, "Target: FOUND", cv::Point(20, 30),
 			            cv::FONT_HERSHEY_SIMPLEX, 0.7,
-			            cv::Scalar(0, 0, 255), 2);
-
-			return;
+			            cv::Scalar(0, 255, 0), 2);
 		}
+		catch(const cv::Exception& error)
+		{
+			ETEST_LOG_ERROR(
+			    "VISION",
+			    std::string("draw exception: ") + error.what());
+		}
+		catch(...)
+		{
+			ETEST_LOG_ERROR("VISION", "unknown draw exception");
+		}
+	}
 
-		const cv::Point target(static_cast<int>(result.x),
-		                       static_cast<int>(result.y));
+	bool VisionProcessor::loadNnModel(
+	    const std::string& onnx_path,
+	    const std::string& class_names_path,
+	    double confidence_threshold,
+	    double nms_threshold) noexcept
+	{
+		try
+		{
+			nn_net_ = cv::dnn::readNetFromONNX(onnx_path);
 
-		cv::circle(frame, target, 8, cv::Scalar(0, 255, 0), 2);
+			if(nn_net_.empty())
+			{
+				ETEST_LOG_ERROR("VISION_NN",
+				                "failed to load ONNX model: " + onnx_path);
 
-		cv::line(frame, image_center, target, cv::Scalar(0, 255, 0), 2);
+				nn_loaded_ = false;
+				return false;
+			}
 
-		cv::putText(frame, "Target: FOUND", cv::Point(20, 30),
-		            cv::FONT_HERSHEY_SIMPLEX, 0.7,
-		            cv::Scalar(0, 255, 0), 2);
+			nn_confidence_threshold_ = confidence_threshold;
+			nn_nms_threshold_ = nms_threshold;
+
+			// 加载类别名文件（可选）
+			nn_class_names_.clear();
+
+			if(!class_names_path.empty())
+			{
+				std::ifstream class_file(class_names_path);
+
+				if(class_file.is_open())
+				{
+					std::string name;
+
+					while(std::getline(class_file, name))
+					{
+						if(!name.empty())
+						{
+							nn_class_names_.push_back(name);
+						}
+					}
+
+					ETEST_LOG_INFO("VISION_NN",
+					               "loaded " + std::to_string(
+					                   nn_class_names_.size()) +
+					                   " class names from " +
+					                   class_names_path);
+				}
+				else
+				{
+					ETEST_LOG_WARN(
+					    "VISION_NN",
+					    "class names file not found: " +
+					        class_names_path +
+					        "; detection boxes will show class ids");
+				}
+			}
+
+			// 获取输出层名称
+			nn_output_names_ = nn_net_.getUnconnectedOutLayersNames();
+
+			ETEST_LOG_INFO("VISION_NN",
+			               "ONNX model loaded successfully: " +
+			                   onnx_path +
+			                   ", outputs=" +
+			                   std::to_string(nn_output_names_.size()));
+
+			nn_loaded_ = true;
+			return true;
+		}
+		catch(const cv::Exception& error)
+		{
+			ETEST_LOG_ERROR("VISION_NN",
+			                std::string("failed to load ONNX model: ") +
+			                    error.what());
+
+			nn_loaded_ = false;
+			return false;
+		}
+		catch(const std::exception& error)
+		{
+			ETEST_LOG_ERROR("VISION_NN",
+			                std::string("failed to load ONNX model: ") +
+			                    error.what());
+
+			nn_loaded_ = false;
+			return false;
+		}
+		catch(...)
+		{
+			ETEST_LOG_ERROR("VISION_NN",
+			                "unknown exception while loading ONNX model");
+
+			nn_loaded_ = false;
+			return false;
+		}
+	}
+
+	cv::Mat VisionProcessor::detectNn(const cv::Mat& frame) noexcept
+	{
+		try
+		{
+			if(!nn_loaded_ || frame.empty())
+			{
+				return frame.clone();
+			}
+
+			// YOLOv5 输入尺寸。
+			constexpr int input_width = 640;
+			constexpr int input_height = 640;
+
+			// 构建 blob。
+			cv::Mat blob = cv::dnn::blobFromImage(
+			    frame, 1.0 / 255.0,
+			    cv::Size(input_width, input_height),
+			    cv::Scalar(), true, false);
+
+			nn_net_.setInput(blob);
+
+			std::vector<cv::Mat> outputs;
+			nn_net_.forward(outputs, nn_output_names_);
+
+			// YOLOv5 输出形状：[1, num_detections, 85]
+			// 85 = cx, cy, w, h, obj_conf, class_0, ..., class_79
+			const float frame_width =
+			    static_cast<float>(frame.cols);
+
+			const float frame_height =
+			    static_cast<float>(frame.rows);
+
+			const float x_scale = frame_width / input_width;
+			const float y_scale = frame_height / input_height;
+
+			std::vector<cv::Rect> boxes;
+			std::vector<float> confidences;
+			std::vector<int> class_ids;
+
+			for(const auto& output : outputs)
+			{
+				const auto* data =
+				    reinterpret_cast<const float*>(output.data);
+
+				const int rows = output.size[1]; // num_detections
+				const int cols = output.size[2]; // 85
+
+				for(int r = 0; r < rows; ++r)
+				{
+					const float* row_data = data + r * cols;
+
+					const float obj_conf = row_data[4];
+
+					if(obj_conf < nn_confidence_threshold_)
+					{
+						continue;
+					}
+
+					// 找最大类别置信度。
+					float max_class_conf = 0.0F;
+					int best_class_id = 0;
+
+					for(int c = 0; c < 80; ++c)
+					{
+						const float class_conf = row_data[5 + c];
+
+						if(class_conf > max_class_conf)
+						{
+							max_class_conf = class_conf;
+							best_class_id = c;
+						}
+					}
+
+					const float final_conf = obj_conf * max_class_conf;
+
+					if(final_conf < nn_confidence_threshold_)
+					{
+						continue;
+					}
+
+					// 解析坐标（YOLOv5: cx, cy, w, h，归一化到 [0,1]）。
+					const float cx = row_data[0];
+					const float cy = row_data[1];
+					const float w = row_data[2];
+					const float h = row_data[3];
+
+					const int x = static_cast<int>(
+					    (cx - 0.5F * w) * x_scale);
+
+					const int y = static_cast<int>(
+					    (cy - 0.5F * h) * y_scale);
+
+					const int width = static_cast<int>(w * x_scale);
+					const int height = static_cast<int>(h * y_scale);
+
+					boxes.emplace_back(x, y, width, height);
+					confidences.push_back(final_conf);
+					class_ids.push_back(best_class_id);
+				}
+			}
+
+			// NMS
+			std::vector<int> nms_indices;
+			cv::dnn::NMSBoxes(boxes, confidences,
+			                  nn_confidence_threshold_,
+			                  nn_nms_threshold_, nms_indices);
+
+			// 绘制结果。
+			cv::Mat result = frame.clone();
+
+			for(int idx : nms_indices)
+			{
+				const cv::Rect& box = boxes[idx];
+				const int class_id = class_ids[idx];
+				const float conf = confidences[idx];
+
+				// 随机颜色。
+				const cv::Scalar color(
+				    (class_id * 37 + 80) % 255,
+				    (class_id * 73 + 160) % 255,
+				    (class_id * 113 + 40) % 255);
+
+				cv::rectangle(result, box, color, 2);
+
+				std::string label;
+
+				if(class_id >= 0 &&
+				   static_cast<std::size_t>(class_id) <
+				       nn_class_names_.size())
+				{
+					label = nn_class_names_[class_id];
+				}
+				else
+				{
+					label = "class_" + std::to_string(class_id);
+				}
+
+				label +=
+				    " " +
+				    std::to_string(static_cast<int>(conf * 100)) + "%";
+
+				int baseline = 0;
+				const cv::Size text_size = cv::getTextSize(
+				    label, cv::FONT_HERSHEY_SIMPLEX, 0.5, 2, &baseline);
+
+				cv::rectangle(
+				    result,
+				    cv::Point(box.x,
+				              box.y - text_size.height - 5),
+				    cv::Point(box.x + text_size.width, box.y),
+				    color, cv::FILLED);
+
+				cv::putText(result, label,
+				            cv::Point(box.x, box.y - 5),
+				            cv::FONT_HERSHEY_SIMPLEX, 0.5,
+				            cv::Scalar(255, 255, 255), 2);
+			}
+
+			return result;
+		}
+		catch(const cv::Exception& error)
+		{
+			ETEST_LOG_ERROR("VISION_NN",
+			                std::string("detectNn exception: ") +
+			                    error.what());
+
+			return frame.clone();
+		}
+		catch(const std::exception& error)
+		{
+			ETEST_LOG_ERROR("VISION_NN",
+			                std::string("detectNn exception: ") +
+			                    error.what());
+
+			return frame.clone();
+		}
+		catch(...)
+		{
+			ETEST_LOG_ERROR("VISION_NN",
+			                "unknown detectNn exception");
+
+			return frame.clone();
+		}
+	}
+
+	bool VisionProcessor::isNnLoaded() const noexcept
+	{
+		return nn_loaded_;
 	}
 
 } // namespace etest::vision

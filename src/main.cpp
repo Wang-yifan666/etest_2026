@@ -1,89 +1,250 @@
+#include "core/config.hpp"
 #include "core/context.hpp"
+#include "core/logger.hpp"
 
+#include "state/end.hpp"
 #include "state/error.hpp"
 #include "state/search.hpp"
 #include "state/start.hpp"
-#include "state/end.hpp"
 
-#include <iostream>
+#include <exception>
+#include <string>
 
-int main()
+namespace
 {
-	// ==============================
-	// 创建配置
-	// ==============================
 
-	etest::vision::CameraConfig camera_config;
-
-	camera_config.source = "0";
-	camera_config.width = 640;
-	camera_config.height = 480;
-	camera_config.fps = 60;
-
-	// ==============================
-	// 创建所有核心对象
-	// ==============================
-
-	etest::vision::Camera camera(camera_config);
-
-	etest::vision::VisionProcessor vision;
-
-	etest::Uart uart;
-
-	// ==============================
-	// 创建唯一的 Context
-	// ==============================
-
-	etest::AppContext ctx{camera, vision, uart, cv::Mat{}, {}, true};
-
-	// ==============================
-	// 初始化
-	// ==============================
-
-	if(!ctx.camera.open())
+	const char* logLevelName(etest::LogLevel level) noexcept
 	{
-		std::cerr << "[Main] Camera open failed\n";
+		switch(level)
+		{
+		case etest::LogLevel::DEBUG:
+			return "DEBUG";
 
-		return 1;
+		case etest::LogLevel::INFO:
+			return "INFO";
+
+		case etest::LogLevel::WARN:
+			return "WARN";
+
+		case etest::LogLevel::ERROR:
+			return "ERROR";
+
+		case etest::LogLevel::FATAL:
+			return "FATAL";
+		}
+
+		return "UNKNOWN";
 	}
 
-	// ==============================
-	// 状态机 — 从 START 开始
-	// ==============================
-
-	etest::State current_state = etest::State::START;
-
-	while(ctx.running)
+	void logConfigMessages(const etest::ConfigLoadResult& result)
 	{
-		switch(current_state)
+		for(const auto& message: result.messages)
 		{
-		case etest::State::START:
-
-			current_state = etest::state::runStart(ctx);
-
-			break;
-
-		case etest::State::SEARCH:
-
-			current_state = etest::state::runSearch(ctx);
-
-			break;
-
-		case etest::State::ERROR:
-
-			current_state = etest::state::runError(ctx);
-
-			break;
-
-		case etest::State::END:
-
-			etest::state::runEnd(ctx);
-
-			break;
+			if(message.level == etest::ConfigMessageLevel::ERROR)
+			{
+				ETEST_LOG_ERROR(message.source, message.description);
+			}
+			else
+			{
+				ETEST_LOG_WARN(message.source, message.description);
+			}
 		}
 	}
 
-	ctx.camera.release();
+	void logEffectiveConfig(const etest::AppConfig& config,
+	                        const std::string& config_path,
+	                        bool file_loaded)
+	{
+		ETEST_LOG_INFO(
+		    "CONFIG",
+		    file_loaded ? "loaded file: " + config_path
+		                : "using defaults because file was not loaded: "
+		            + config_path);
 
-	return 0;
+		ETEST_LOG_INFO("CONFIG",
+		               "logger.directory=" + config.logger.directory
+		                   + ", logger.file="
+		                   + (config.logger.file ? "true" : "false")
+		                   + ", logger.terminal="
+		                   + (config.logger.terminal ? "true" : "false")
+		                   + ", logger.min_level="
+		                   + logLevelName(config.logger.min_level));
+
+		ETEST_LOG_INFO(
+		    "CONFIG",
+		    "camera.source=" + config.camera.source + ", camera.width="
+		        + std::to_string(config.camera.width)
+		        + ", camera.height="
+		        + std::to_string(config.camera.height)
+		        + ", camera.fps=" + std::to_string(config.camera.fps));
+
+		ETEST_LOG_INFO(
+		    "CONFIG",
+		    "vision.min_area=" + std::to_string(config.vision.min_area)
+		        + ", vision.morphology_kernel="
+		        + std::to_string(config.vision.morphology_kernel));
+
+		ETEST_LOG_INFO("CONFIG",
+		               "uart.device=" + config.uart.device
+		                   + ", uart.baudrate="
+		                   + std::to_string(config.uart.baudrate)
+		                   + ", uart.timeout_ms="
+		                   + std::to_string(config.uart.timeout_ms));
+
+		ETEST_LOG_INFO("CONFIG",
+		               "search.show_preview=" +
+		                   std::string(config.search.show_preview
+		                                  ? "true"
+		                                  : "false") +
+		                   ", search.enable_nn=" +
+		                   std::string(config.search.enable_nn
+		                                  ? "true"
+		                                  : "false") +
+		                   ", search.model_path=" +
+		                   config.search.model_path +
+		                   ", search.nn_confidence_threshold=" +
+		                   std::to_string(
+		                       config.search.nn_confidence_threshold));
+
+		ETEST_LOG_INFO("CONFIG",
+		               "logger.throttle_interval_ms=" +
+		                   std::to_string(
+		                       config.logger.throttle_interval_ms));
+	}
+
+} // namespace
+
+int main(int argc, char* argv[])
+{
+	const std::string config_path =
+	    argc > 1 ? argv[1] : "config/main.toml";
+
+	/*
+     * 配置模块不依赖 Logger。
+     * 读取过程中产生的错误暂存在 ConfigLoadResult 中。
+     */
+	const etest::ConfigLoadResult config_result =
+	    etest::ConfigLoader::loadMultiple({"config/main.toml",
+	                                       "config/logger.toml",
+	                                       "config/camera.toml",
+	                                       "config/search.toml"});
+
+	auto& logger = etest::Logger::instance();
+
+	logger.init(config_result.config.logger);
+
+	logConfigMessages(config_result);
+
+	logEffectiveConfig(config_result.config, config_path,
+	                   config_result.file_loaded);
+
+	ETEST_LOG_INFO("MAIN", "program started");
+
+	int exit_code = 0;
+
+	try
+	{
+		etest::vision::Camera camera(config_result.config.camera);
+
+		etest::vision::VisionProcessor vision(
+		    config_result.config.vision);
+
+		etest::Uart uart(config_result.config.uart);
+
+		etest::AppContext ctx{camera,    vision, uart,
+		                      cv::Mat{}, {},     true};
+
+		etest::State current_state = etest::State::START;
+
+		if(!ctx.camera.open())
+		{
+			ETEST_LOG_ERROR("MAIN",
+			                "camera initialization failed; "
+			                "switching to ERROR state");
+
+			current_state = etest::State::ERROR;
+		}
+
+		while(ctx.running)
+		{
+			try
+			{
+				switch(current_state)
+				{
+				case etest::State::START:
+					current_state = etest::state::runStart(ctx);
+					break;
+
+				case etest::State::SEARCH:
+					current_state = etest::state::runSearch(
+					    ctx, config_result.config.search);
+					break;
+
+				case etest::State::ERROR:
+					current_state = etest::state::runError(ctx);
+					break;
+
+				case etest::State::END:
+					current_state = etest::state::runEnd(ctx);
+					break;
+
+				default:
+					ETEST_LOG_ERROR("MAIN",
+					                "unknown state; "
+					                "switching to ERROR state");
+
+					current_state = etest::State::ERROR;
+					break;
+				}
+			}
+			catch(const cv::Exception& error)
+			{
+				ETEST_LOG_ERROR(
+				    "MAIN_LOOP",
+				    std::string("OpenCV exception: ") + error.what());
+
+				current_state = etest::State::ERROR;
+			}
+			catch(const std::exception& error)
+			{
+				ETEST_LOG_ERROR(
+				    "MAIN_LOOP",
+				    std::string("std::exception: ") + error.what());
+
+				current_state = etest::State::ERROR;
+			}
+			catch(...)
+			{
+				ETEST_LOG_ERROR("MAIN_LOOP", "unknown exception");
+
+				current_state = etest::State::ERROR;
+			}
+		}
+
+		ctx.camera.release();
+		ctx.uart.close();
+	}
+	catch(const std::exception& error)
+	{
+		ETEST_LOG_FATAL("MAIN",
+		                std::string("fatal initialization exception: ")
+		                    + error.what());
+
+		exit_code = 1;
+	}
+	catch(...)
+	{
+		ETEST_LOG_FATAL("MAIN",
+		                "unknown fatal initialization exception");
+
+		exit_code = 1;
+	}
+
+	ETEST_LOG_INFO("MAIN",
+	               exit_code == 0 ? "program exited normally"
+	                              : "program exited with error");
+
+	logger.shutdown();
+
+	return exit_code;
 }

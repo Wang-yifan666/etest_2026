@@ -1,0 +1,8 @@
+[camera]
+
+# 使用稳定的 by-id 路径，优先于 /dev/video0
+source = "/dev/v4l/by-id/usb-lihappe8_Corp._USB_2.0_Camera-video-index0"
+
+width = 640
+height = 480
+fps = 60

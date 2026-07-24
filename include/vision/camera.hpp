@@ -1,37 +1,28 @@
 #pragma once
 
-#include <opencv2/opencv.hpp>
-#include <string>
+#include "core/config.hpp"
+
+#include <opencv2/core.hpp>
+#include <opencv2/videoio.hpp>
 
 namespace etest::vision
 {
-
-	struct CameraConfig
-	{
-		// "0" 表示摄像头 0
-		// 也可以传入视频文件路径
-		std::string source = "0";
-
-		int width = 640;
-		int height = 480;
-		int fps = 60;
-	};
-
 	class Camera
 	{
 	public:
 		explicit Camera(CameraConfig config);
 
-		bool open();
-		bool read(cv::Mat& frame);
-
-		bool isOpened() const;
-
-		void release();
+		bool open() noexcept;
+		bool read(cv::Mat& frame) noexcept;
+		bool isOpened() const noexcept;
+		void release() noexcept;
 
 	private:
 		CameraConfig config_;
 		cv::VideoCapture cap_;
+		bool read_error_reported_ = false;
+		int consecutive_failures_ = 0;
+		static constexpr int kMaxConsecutiveFailures = 20;
 	};
 
 } // namespace etest::vision

@@ -1,5 +1,2 @@
-#!/usr/bin/env bash
-cmake -S . -B build \
-    -DCMAKE_BUILD_TYPE=Release
-
+cmake -S . -B build
 cmake --build build -j$(nproc)

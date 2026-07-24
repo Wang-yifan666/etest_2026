@@ -1,7 +1,9 @@
 #include "uart/uart.hpp"
 
 #include <cstring>
-#include <iostream>
+#include <string>
+
+#include "core/logger.hpp"
 
 #include <fcntl.h>
 #include <termios.h>
@@ -12,13 +14,19 @@ namespace etest
 
 	Uart::Uart(UartConfig config): config_(std::move(config)) {}
 
-	bool Uart::open()
+	Uart::~Uart()
+	{
+		close();
+	}
+
+	bool Uart::open() noexcept
 	{
 		fd_ = ::open(config_.device.c_str(), O_RDWR | O_NOCTTY | O_NDELAY);
 
 		if(fd_ == -1)
 		{
-			std::cerr << "[Uart] Failed to open " << config_.device << '\n';
+			ETEST_LOG_ERROR("UART",
+			                "Failed to open " + config_.device);
 
 			return false;
 		}
@@ -28,7 +36,7 @@ namespace etest
 
 		if(tcgetattr(fd_, &tty) != 0)
 		{
-			std::cerr << "[Uart] tcgetattr failed\n";
+			ETEST_LOG_ERROR("UART", "tcgetattr failed");
 
 			::close(fd_);
 
@@ -59,7 +67,7 @@ namespace etest
 
 		if(tcsetattr(fd_, TCSANOW, &tty) != 0)
 		{
-			std::cerr << "[Uart] tcsetattr failed\n";
+			ETEST_LOG_ERROR("UART", "tcsetattr failed");
 
 			::close(fd_);
 
@@ -68,13 +76,14 @@ namespace etest
 			return false;
 		}
 
-		std::cout << "[Uart] Opened " << config_.device << " @ "
-		          << config_.baudrate << " baud\n";
+		ETEST_LOG_INFO("UART",
+		               "Opened " + config_.device + " @ "
+		                   + std::to_string(config_.baudrate) + " baud");
 
 		return true;
 	}
 
-	void Uart::close()
+	void Uart::close() noexcept
 	{
 		if(fd_ != -1)
 		{
@@ -84,7 +93,7 @@ namespace etest
 		}
 	}
 
-	bool Uart::send(const std::vector<std::uint8_t>& data)
+	bool Uart::send(const std::vector<std::uint8_t>& data) noexcept
 	{
 		if(fd_ == -1)
 		{
@@ -97,14 +106,14 @@ namespace etest
 		return static_cast<size_t>(written) == data.size();
 	}
 
-	bool Uart::send(const std::string& text)
+	bool Uart::send(const std::string& text) noexcept
 	{
 		const std::vector<std::uint8_t> data(text.begin(), text.end());
 
 		return send(data);
 	}
 
-	std::vector<std::uint8_t> Uart::receive(size_t max_len)
+	std::vector<std::uint8_t> Uart::receive(std::size_t max_len) noexcept
 	{
 		if(fd_ == -1)
 		{
@@ -127,7 +136,7 @@ namespace etest
 		return buf;
 	}
 
-	bool Uart::isOpen() const
+	bool Uart::isOpen() const noexcept
 	{
 		return fd_ != -1;
 	}

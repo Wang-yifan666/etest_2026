@@ -1,17 +1,22 @@
 #include "state/start.hpp"
 
-#include <iostream>
+#include "core/logger.hpp"
 
 namespace etest::state
 {
 
 	State runStart([[maybe_unused]] AppContext& ctx)
 	{
-		std::cout << "[START] System initializing ...\n";
+		ETEST_LOG_INFO("STATE_START", "system initialization started");
 
-		// TODO: 硬件自检、初始化校准等
+		// TODO:
+		// 1. 串口自检；
+		// 2. 摄像头参数确认；
+		// 3. 控制板握手；
+		// 4. 必要的初始标定。
 
-		std::cout << "[START] System ready, entering SEARCH state\n";
+		ETEST_LOG_INFO("STATE_START",
+		               "system ready; entering SEARCH state");
 
 		return State::SEARCH;
 	}

@@ -1,13 +1,13 @@
 #include "state/end.hpp"
 
-#include <iostream>
+#include "core/logger.hpp"
 
 namespace etest::state
 {
 
 	State runEnd(AppContext& ctx)
 	{
-		std::cout << "[END] Mission complete, shutting down ...\n";
+		ETEST_LOG_INFO("END", "Mission complete, shutting down ...");
 
 		ctx.running = false;
 
