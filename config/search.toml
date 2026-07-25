@@ -4,7 +4,7 @@
 show_preview = true
 
 # 是否启用神经网络检测。关闭后仅显示原始画面
-enable_nn = false
+enable_nn = true
 
 # ONNX 模型路径
 model_path = "model/yolov5s.onnx"

@@ -91,25 +91,23 @@ namespace
 		                   + ", uart.timeout_ms="
 		                   + std::to_string(config.uart.timeout_ms));
 
-		ETEST_LOG_INFO("CONFIG",
-		               "search.show_preview=" +
-		                   std::string(config.search.show_preview
-		                                  ? "true"
-		                                  : "false") +
-		                   ", search.enable_nn=" +
-		                   std::string(config.search.enable_nn
-		                                  ? "true"
-		                                  : "false") +
-		                   ", search.model_path=" +
-		                   config.search.model_path +
-		                   ", search.nn_confidence_threshold=" +
-		                   std::to_string(
-		                       config.search.nn_confidence_threshold));
+		ETEST_LOG_INFO(
+		    "CONFIG",
+		    "search.show_preview="
+		        + std::string(config.search.show_preview ? "true"
+		                                                 : "false")
+		        + ", search.enable_nn="
+		        + std::string(config.search.enable_nn ? "true"
+		                                              : "false")
+		        + ", search.model_path=" + config.search.model_path
+		        + ", search.nn_confidence_threshold="
+		        + std::to_string(
+		            config.search.nn_confidence_threshold));
 
-		ETEST_LOG_INFO("CONFIG",
-		               "logger.throttle_interval_ms=" +
-		                   std::to_string(
-		                       config.logger.throttle_interval_ms));
+		ETEST_LOG_INFO(
+		    "CONFIG",
+		    "logger.throttle_interval_ms="
+		        + std::to_string(config.logger.throttle_interval_ms));
 	}
 
 } // namespace
@@ -124,10 +122,9 @@ int main(int argc, char* argv[])
      * 读取过程中产生的错误暂存在 ConfigLoadResult 中。
      */
 	const etest::ConfigLoadResult config_result =
-	    etest::ConfigLoader::loadMultiple({"config/main.toml",
-	                                       "config/logger.toml",
-	                                       "config/camera.toml",
-	                                       "config/search.toml"});
+	    etest::ConfigLoader::loadMultiple(
+	        {"config/main.toml", "config/logger.toml",
+	         "config/camera.toml", "config/search.toml"});
 
 	auto& logger = etest::Logger::instance();
 

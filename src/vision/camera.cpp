@@ -86,6 +86,21 @@ namespace etest::vision
 
 			if(numeric_source || device_path)
 			{
+				if(config_.fourcc.size() == 4)
+				{
+					if(!cap_.set(
+					       cv::CAP_PROP_FOURCC,
+					       cv::VideoWriter::fourcc(
+					           config_.fourcc[0], config_.fourcc[1],
+					           config_.fourcc[2], config_.fourcc[3])))
+					{
+						ETEST_LOG_WARN("CAMERA",
+						               "driver rejected requested "
+						               "FOURCC "
+						                   + config_.fourcc);
+					}
+				}
+
 				if(!cap_.set(cv::CAP_PROP_FRAME_WIDTH, config_.width))
 				{
 					ETEST_LOG_WARN("CAMERA",
@@ -183,9 +198,10 @@ namespace etest::vision
 
 				if(consecutive_failures_ >= kMaxConsecutiveFailures)
 				{
-					ETEST_LOG_WARN("CAMERA",
-					               "too many consecutive read failures; "
-					               "reopening camera");
+					ETEST_LOG_WARN(
+					    "CAMERA",
+					    "too many consecutive read failures; "
+					    "reopening camera");
 
 					cap_.release();
 

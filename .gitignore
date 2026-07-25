@@ -71,3 +71,5 @@ Testing/
 # self
 .cline/
 /model
+docs/error.md
+docs/images

@@ -44,7 +44,8 @@ namespace etest
 			std::string source = "0";
 			int width = 640;
 			int height = 480;
-			int fps = 60;
+			int fps = 30;
+			std::string fourcc = "MJPG";
 		};
 
 		struct VisionConfig
@@ -100,15 +101,15 @@ namespace etest
 		bool file_loaded = false;
 	};
 
-class ConfigLoader final
-{
-public:
-    static ConfigLoadResult load(const std::string& path) noexcept;
+	class ConfigLoader final
+	{
+	public:
+		static ConfigLoadResult load(const std::string& path) noexcept;
 
-    static ConfigLoadResult loadMultiple(
-        const std::vector<std::string>& paths) noexcept;
+		static ConfigLoadResult loadMultiple(
+		    const std::vector<std::string>& paths) noexcept;
 
-    ConfigLoader() = delete;
-};
+		ConfigLoader() = delete;
+	};
 
 } // namespace etest

@@ -219,8 +219,7 @@ namespace etest::vision
 	bool VisionProcessor::loadNnModel(
 	    const std::string& onnx_path,
 	    const std::string& class_names_path,
-	    double confidence_threshold,
-	    double nms_threshold) noexcept
+	    double confidence_threshold, double nms_threshold) noexcept
 	{
 		try
 		{
@@ -228,8 +227,9 @@ namespace etest::vision
 
 			if(nn_net_.empty())
 			{
-				ETEST_LOG_ERROR("VISION_NN",
-				                "failed to load ONNX model: " + onnx_path);
+				ETEST_LOG_ERROR(
+				    "VISION_NN",
+				    "failed to load ONNX model: " + onnx_path);
 
 				nn_loaded_ = false;
 				return false;
@@ -257,30 +257,30 @@ namespace etest::vision
 						}
 					}
 
-					ETEST_LOG_INFO("VISION_NN",
-					               "loaded " + std::to_string(
-					                   nn_class_names_.size()) +
-					                   " class names from " +
-					                   class_names_path);
+					ETEST_LOG_INFO(
+					    "VISION_NN",
+					    "loaded "
+					        + std::to_string(nn_class_names_.size())
+					        + " class names from " + class_names_path);
 				}
 				else
 				{
 					ETEST_LOG_WARN(
 					    "VISION_NN",
-					    "class names file not found: " +
-					        class_names_path +
-					        "; detection boxes will show class ids");
+					    "class names file not found: "
+					        + class_names_path
+					        + "; detection boxes will show class ids");
 				}
 			}
 
 			// 获取输出层名称
 			nn_output_names_ = nn_net_.getUnconnectedOutLayersNames();
 
-			ETEST_LOG_INFO("VISION_NN",
-			               "ONNX model loaded successfully: " +
-			                   onnx_path +
-			                   ", outputs=" +
-			                   std::to_string(nn_output_names_.size()));
+			ETEST_LOG_INFO(
+			    "VISION_NN",
+			    "ONNX model loaded successfully: " + onnx_path
+			        + ", outputs="
+			        + std::to_string(nn_output_names_.size()));
 
 			nn_loaded_ = true;
 			return true;
@@ -288,8 +288,8 @@ namespace etest::vision
 		catch(const cv::Exception& error)
 		{
 			ETEST_LOG_ERROR("VISION_NN",
-			                std::string("failed to load ONNX model: ") +
-			                    error.what());
+			                std::string("failed to load ONNX model: ")
+			                    + error.what());
 
 			nn_loaded_ = false;
 			return false;
@@ -297,16 +297,17 @@ namespace etest::vision
 		catch(const std::exception& error)
 		{
 			ETEST_LOG_ERROR("VISION_NN",
-			                std::string("failed to load ONNX model: ") +
-			                    error.what());
+			                std::string("failed to load ONNX model: ")
+			                    + error.what());
 
 			nn_loaded_ = false;
 			return false;
 		}
 		catch(...)
 		{
-			ETEST_LOG_ERROR("VISION_NN",
-			                "unknown exception while loading ONNX model");
+			ETEST_LOG_ERROR(
+			    "VISION_NN",
+			    "unknown exception while loading ONNX model");
 
 			nn_loaded_ = false;
 			return false;
@@ -328,8 +329,7 @@ namespace etest::vision
 
 			// 构建 blob。
 			cv::Mat blob = cv::dnn::blobFromImage(
-			    frame, 1.0 / 255.0,
-			    cv::Size(input_width, input_height),
+			    frame, 1.0 / 255.0, cv::Size(input_width, input_height),
 			    cv::Scalar(), true, false);
 
 			nn_net_.setInput(blob);
@@ -339,11 +339,9 @@ namespace etest::vision
 
 			// YOLOv5 输出形状：[1, num_detections, 85]
 			// 85 = cx, cy, w, h, obj_conf, class_0, ..., class_79
-			const float frame_width =
-			    static_cast<float>(frame.cols);
+			const float frame_width = static_cast<float>(frame.cols);
 
-			const float frame_height =
-			    static_cast<float>(frame.rows);
+			const float frame_height = static_cast<float>(frame.rows);
 
 			const float x_scale = frame_width / input_width;
 			const float y_scale = frame_height / input_height;
@@ -352,7 +350,7 @@ namespace etest::vision
 			std::vector<float> confidences;
 			std::vector<int> class_ids;
 
-			for(const auto& output : outputs)
+			for(const auto& output: outputs)
 			{
 				const auto* data =
 				    reinterpret_cast<const float*>(output.data);
@@ -399,11 +397,11 @@ namespace etest::vision
 					const float w = row_data[2];
 					const float h = row_data[3];
 
-					const int x = static_cast<int>(
-					    (cx - 0.5F * w) * x_scale);
+					const int x =
+					    static_cast<int>((cx - 0.5F * w) * x_scale);
 
-					const int y = static_cast<int>(
-					    (cy - 0.5F * h) * y_scale);
+					const int y =
+					    static_cast<int>((cy - 0.5F * h) * y_scale);
 
 					const int width = static_cast<int>(w * x_scale);
 					const int height = static_cast<int>(h * y_scale);
@@ -423,25 +421,24 @@ namespace etest::vision
 			// 绘制结果。
 			cv::Mat result = frame.clone();
 
-			for(int idx : nms_indices)
+			for(int idx: nms_indices)
 			{
 				const cv::Rect& box = boxes[idx];
 				const int class_id = class_ids[idx];
 				const float conf = confidences[idx];
 
 				// 随机颜色。
-				const cv::Scalar color(
-				    (class_id * 37 + 80) % 255,
-				    (class_id * 73 + 160) % 255,
-				    (class_id * 113 + 40) % 255);
+				const cv::Scalar color((class_id * 37 + 80) % 255,
+				                       (class_id * 73 + 160) % 255,
+				                       (class_id * 113 + 40) % 255);
 
 				cv::rectangle(result, box, color, 2);
 
 				std::string label;
 
-				if(class_id >= 0 &&
-				   static_cast<std::size_t>(class_id) <
-				       nn_class_names_.size())
+				if(class_id >= 0
+				   && static_cast<std::size_t>(class_id)
+				       < nn_class_names_.size())
 				{
 					label = nn_class_names_[class_id];
 				}
@@ -450,9 +447,9 @@ namespace etest::vision
 					label = "class_" + std::to_string(class_id);
 				}
 
-				label +=
-				    " " +
-				    std::to_string(static_cast<int>(conf * 100)) + "%";
+				label += " "
+				    + std::to_string(static_cast<int>(conf * 100))
+				    + "%";
 
 				int baseline = 0;
 				const cv::Size text_size = cv::getTextSize(
@@ -460,13 +457,11 @@ namespace etest::vision
 
 				cv::rectangle(
 				    result,
-				    cv::Point(box.x,
-				              box.y - text_size.height - 5),
-				    cv::Point(box.x + text_size.width, box.y),
-				    color, cv::FILLED);
+				    cv::Point(box.x, box.y - text_size.height - 5),
+				    cv::Point(box.x + text_size.width, box.y), color,
+				    cv::FILLED);
 
-				cv::putText(result, label,
-				            cv::Point(box.x, box.y - 5),
+				cv::putText(result, label, cv::Point(box.x, box.y - 5),
 				            cv::FONT_HERSHEY_SIMPLEX, 0.5,
 				            cv::Scalar(255, 255, 255), 2);
 			}
@@ -475,24 +470,23 @@ namespace etest::vision
 		}
 		catch(const cv::Exception& error)
 		{
-			ETEST_LOG_ERROR("VISION_NN",
-			                std::string("detectNn exception: ") +
-			                    error.what());
+			ETEST_LOG_ERROR(
+			    "VISION_NN",
+			    std::string("detectNn exception: ") + error.what());
 
 			return frame.clone();
 		}
 		catch(const std::exception& error)
 		{
-			ETEST_LOG_ERROR("VISION_NN",
-			                std::string("detectNn exception: ") +
-			                    error.what());
+			ETEST_LOG_ERROR(
+			    "VISION_NN",
+			    std::string("detectNn exception: ") + error.what());
 
 			return frame.clone();
 		}
 		catch(...)
 		{
-			ETEST_LOG_ERROR("VISION_NN",
-			                "unknown detectNn exception");
+			ETEST_LOG_ERROR("VISION_NN", "unknown detectNn exception");
 
 			return frame.clone();
 		}

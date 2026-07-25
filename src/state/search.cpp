@@ -40,10 +40,8 @@ namespace etest::state
 		}
 
 		const std::string preview_window = "Camera Preview";
-		const std::string ctrl_window = "Control (ESC/q to exit)";
 
 		bool preview_open = false;
-		bool ctrl_open = false;
 		bool show_preview = search_cfg.show_preview;
 
 		// 节流日志的时间间隔。
@@ -133,43 +131,14 @@ namespace etest::state
 				cv::imshow(preview_window, display_frame);
 			}
 
-			// 5) 控制面板 — 始终存在以确保 waitKey 能捕获按键。
-			if(!ctrl_open)
-			{
-				cv::namedWindow(ctrl_window, cv::WINDOW_NORMAL);
-				cv::resizeWindow(ctrl_window, 320, 50);
-				ctrl_open = true;
-			}
-
-			{
-				cv::Mat panel(50, 320, CV_8UC3,
-				              cv::Scalar(45, 45, 45));
-				cv::putText(panel, "ESC / q : exit program",
-				            cv::Point(10, 25),
-				            cv::FONT_HERSHEY_SIMPLEX, 0.55,
-				            cv::Scalar(220, 220, 220), 1);
-				cv::imshow(ctrl_window, panel);
-			}
-
-			// 6) 统一的按键处理。
+			// 5) 按键处理 — ESC/q 退出。
 			const int key = cv::waitKey(1) & 0xFF;
 
 			if(key == 27 || key == 'q' || key == 'Q')
 			{
-				if(show_preview)
-				{
-					ETEST_LOG_INFO("SEARCH",
-					               "preview window closed by user");
-					cv::destroyWindow(preview_window);
-					preview_open = false;
-					show_preview = false;
-				}
-				else
-				{
-					ETEST_LOG_INFO("SEARCH",
-					               "exit requested via keyboard");
-					break;
-				}
+				ETEST_LOG_INFO("SEARCH",
+				               "exit requested via keyboard");
+				break;
 			}
 
 		}

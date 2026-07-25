@@ -5,4 +5,5 @@ source = "/dev/v4l/by-id/usb-lihappe8_Corp._USB_2.0_Camera-video-index0"
 
 width = 640
 height = 480
-fps = 60
+fps = 30
+fourcc = "MJPG"
