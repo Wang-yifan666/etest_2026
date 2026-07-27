@@ -84,12 +84,23 @@ namespace
 		        + ", vision.morphology_kernel="
 		        + std::to_string(config.vision.morphology_kernel));
 
-		ETEST_LOG_INFO("CONFIG",
-		               "uart.device=" + config.uart.device
-		                   + ", uart.baudrate="
-		                   + std::to_string(config.uart.baudrate)
-		                   + ", uart.timeout_ms="
-		                   + std::to_string(config.uart.timeout_ms));
+		ETEST_LOG_INFO(
+		    "CONFIG",
+		    "uart.device=" + config.uart.device + ", uart.baudrate="
+		        + std::to_string(config.uart.baudrate)
+		        + ", uart.timeout_ms="
+		        + std::to_string(config.uart.timeout_ms)
+		        + ", uart.write_timeout_ms="
+		        + std::to_string(config.uart.write_timeout_ms)
+		        + ", uart.reconnect_interval_ms="
+		        + std::to_string(config.uart.reconnect_interval_ms)
+		        + ", uart.auto_reconnect="
+		        + std::string(config.uart.auto_reconnect ? "true"
+		                                                 : "false")
+		        + ", uart.max_line_length="
+		        + std::to_string(config.uart.max_line_length)
+		        + ", uart.queue_capacity="
+		        + std::to_string(config.uart.queue_capacity));
 
 		ETEST_LOG_INFO(
 		    "CONFIG",

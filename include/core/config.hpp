@@ -69,7 +69,7 @@ namespace etest
 		int baudrate = 115200;
 
 		// termios 的 VTIME 精度为 100 ms。
-		int timeout_ms = 100;
+		int timeout_ms = 50;
 
 		// 单次完整发送允许的最大等待时间。
 		int write_timeout_ms = 200;
