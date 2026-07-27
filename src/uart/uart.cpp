@@ -147,7 +147,8 @@ namespace etest
 		    || type == UartMessageType::WARNING
 		    || type == UartMessageType::DONE
 		    || type == UartMessageType::BOOT
-		    || type == UartMessageType::KEY_EVENT;
+		    || type == UartMessageType::KEY_EVENT
+		    || type == UartMessageType::PROTOCOL;
 	}
 
 	UartBlockAssembler::UartBlockAssembler(int timeout_ms) noexcept:
@@ -1141,7 +1142,8 @@ namespace etest
 		    || type == UartMessageType::WARNING
 		    || type == UartMessageType::DONE
 		    || type == UartMessageType::BOOT
-		    || type == UartMessageType::KEY_EVENT;
+		    || type == UartMessageType::KEY_EVENT
+		    || type == UartMessageType::PROTOCOL;
 	}
 
 	void Uart::pushMessage(UartMessage message) noexcept

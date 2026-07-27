@@ -9,6 +9,7 @@ namespace etest::state
 
 State runStart(AppContext& ctx, const RuntimeConfig& runtime,
                const SearchConfig& search_cfg,
+               const UartConfig& uart_cfg,
                bool show_preview);
 
 }

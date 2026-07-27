@@ -363,12 +363,14 @@ int main(int argc, char* argv[])
 				{
 				case etest::State::START:
 					current_state = etest::state::runStart(
-					    ctx, cfg.runtime, cfg.search, show_preview);
+					    ctx, cfg.runtime, cfg.search, cfg.uart,
+					    show_preview);
 					break;
 
 				case etest::State::SEARCH:
 					current_state = etest::state::runSearch(
-					    ctx, cfg.search, allow_keyboard_exit);
+					    ctx, cfg.search, cfg.uart,
+					    allow_keyboard_exit);
 					break;
 
 				case etest::State::ERROR:

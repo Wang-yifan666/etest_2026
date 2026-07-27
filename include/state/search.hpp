@@ -8,6 +8,7 @@ namespace etest::state
 {
 
 State runSearch(AppContext& ctx, const SearchConfig& search_cfg,
+                const UartConfig& uart_cfg,
                 bool allow_keyboard_exit);
 
 }
