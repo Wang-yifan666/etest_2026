@@ -1,0 +1,20 @@
+# 比赛模式
+
+[runtime]
+headless = true
+allow_keyboard_exit = false
+enable_self_check = true
+enable_auto_recovery = true
+
+[search]
+show_preview = false
+enable_nn = false
+
+[logger]
+# 比赛时只写文件，不输出终端
+file = true
+terminal = false
+# 每条日志立即刷新，防止掉电丢失
+flush_each_write = true
+# 最低日志等级为 INFO，减少不必要输出
+min_level = "INFO"

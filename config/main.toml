@@ -1,23 +1,57 @@
+[mode]
+# 默认不启用模式文件。比赛时设为 true 并指定 name = "competition"
+enabled = false
+name = "competition"
+
+[runtime]
+headless = false
+allow_keyboard_exit = true
+enable_self_check = true
+enable_auto_recovery = true
+camera_retry_interval_ms = 500
+uart_retry_interval_ms = 1000
+
+[logger]
+file = true
+# 比赛时关闭终端输出，减少 CPU 占用
+terminal = true
+directory = "data/log"
+flush_each_write = true
+min_level = "INFO"
+# 单位 ms，每个节流窗口只输出一条匹配日志
+throttle_interval_ms = 500
+
+[camera]
+source = "0"
+width = 640
+height = 480
+fps = 30
+fourcc = "MJPG"
+
+[vision]
+red_h1_min = 0
+red_h1_max = 10
+red_h2_min = 170
+red_h2_max = 180
+saturation_min = 100
+value_min = 80
+min_area = 200.0
+morphology_kernel = 5
+
 [uart]
-
-# 树莓派或 WSL 中的实际串口设备。
-# 比赛机若使用 USB-UART，建议改成 /dev/serial/by-id/... 的稳定路径。
-device = "/dev/serial0"
-
+device = "/dev/ttyAMA0"
 baudrate = 115200
-
-# poll() 的单次读等待时间。
 timeout_ms = 50
-
-# 单次完整发送允许的最大等待时间。
 write_timeout_ms = 200
-
-# 设备不存在或掉线后的重连周期。
 reconnect_interval_ms = 1000
 auto_reconnect = true
-
-# 超长行视为坏包，丢弃到下一个换行。
 max_line_length = 512
-
-# 有界消息队列；满时优先保留错误、警告、完成、启动和按键事件。
 queue_capacity = 256
+
+[search]
+show_preview = true
+enable_nn = false
+model_path = "model/yolov5s.onnx"
+class_names_path = "model/coco.names"
+nn_confidence_threshold = 0.5
+nn_nms_threshold = 0.4

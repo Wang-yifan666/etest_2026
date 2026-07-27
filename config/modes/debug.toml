@@ -1,0 +1,18 @@
+# 调试模式
+
+[runtime]
+headless = false
+allow_keyboard_exit = true
+enable_self_check = true
+enable_auto_recovery = true
+
+[search]
+show_preview = true
+enable_nn = false
+
+[logger]
+# 调试时同时输出终端和文件
+file = true
+terminal = true
+# 最低日志等级为 DEBUG，方便排查问题
+min_level = "DEBUG"
