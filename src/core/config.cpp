@@ -892,22 +892,22 @@ void extractAppConfig(etest::AppConfig& config,
 
 	config.uart.handshake_timeout_ms =
 	    getInt(raw_config, "uart.handshake_timeout_ms",
-	           config.uart.handshake_timeout_ms, 100, 30000, result,
+	           config.uart.handshake_timeout_ms, 100, 10000, result,
 	           &config.uart.source_handshake_timeout_ms);
 
 	config.uart.heartbeat_interval_ms =
 	    getInt(raw_config, "uart.heartbeat_interval_ms",
-	           config.uart.heartbeat_interval_ms, 100, 30000, result,
+	           config.uart.heartbeat_interval_ms, 100, 10000, result,
 	           &config.uart.source_heartbeat_interval_ms);
 
 	config.uart.heartbeat_timeout_ms =
 	    getInt(raw_config, "uart.heartbeat_timeout_ms",
-	           config.uart.heartbeat_timeout_ms, 200, 60000, result,
+	           config.uart.heartbeat_timeout_ms, 300, 60000, result,
 	           &config.uart.source_heartbeat_timeout_ms);
 
 	config.uart.protocol_version =
 	    getInt(raw_config, "uart.protocol_version",
-	           config.uart.protocol_version, 1, 99, result,
+	           config.uart.protocol_version, 4, 4, result,
 	           &config.uart.source_protocol_version);
 
 	// ---- [search] ----
@@ -1119,7 +1119,7 @@ loadAppConfigInternal(const std::string& config_dir)
 	result.config_dir = config_dir;
 	result.mode_name = "";
 
-	// 从 C++ 默认值开始
+	// 从 C++ 默认值开始（protocol_version=4）
 	etest::AppConfig config;
 
 	// 第1层：main.toml
@@ -1162,7 +1162,6 @@ loadAppConfigInternal(const std::string& config_dir)
 
 			if(applied)
 			{
-				// 记录成功应用
 				addMessage(result, etest::ConfigMessageLevel::WARN,
 				           "applied mode " + config.mode.name
 				               + " from " + mode_path);
@@ -1297,11 +1296,9 @@ loadAppConfigFromMainFile(const std::string& main_toml_path)
 	}
 	else
 	{
-		// 没有路径分隔符，使用当前目录
 		dir = ".";
 	}
 
-	// 避免空目录
 	if(dir.empty())
 	{
 		dir = ".";
@@ -1398,7 +1395,9 @@ std::string UartConfig::to_string() const
 	       + std::string(auto_reconnect ? "true" : "false")
 	       + ", max_line_length="
 	       + std::to_string(max_line_length) + ", queue_capacity="
-	       + std::to_string(queue_capacity);
+	       + std::to_string(queue_capacity)
+	       + ", protocol_version="
+	       + std::to_string(protocol_version);
 }
 
 std::string SearchConfig::to_string() const
@@ -1469,6 +1468,40 @@ bool validateConfig(const AppConfig& config,
 	if(config.uart.device.empty())
 	{
 		warn("uart.device is empty");
+	}
+
+	// 协议版本只接受 4
+	if(config.uart.protocol_version != 4)
+	{
+		err("protocol_version must be 4, got "
+		     + std::to_string(config.uart.protocol_version));
+	}
+
+	// handshake_timeout_ms: 100~10000
+	if(config.uart.handshake_timeout_ms < 100
+	   || config.uart.handshake_timeout_ms > 10000)
+	{
+		err("handshake_timeout_ms must be in [100, 10000]");
+	}
+
+	// heartbeat_interval_ms: 100~10000
+	if(config.uart.heartbeat_interval_ms < 100
+	   || config.uart.heartbeat_interval_ms > 10000)
+	{
+		err("heartbeat_interval_ms must be in [100, 10000]");
+	}
+
+	// heartbeat_timeout_ms must be > heartbeat_interval_ms
+	if(config.uart.heartbeat_timeout_ms
+	   <= config.uart.heartbeat_interval_ms)
+	{
+		err("heartbeat_timeout_ms must be > heartbeat_interval_ms");
+	}
+
+	if(config.uart.heartbeat_timeout_ms < 300
+	   || config.uart.heartbeat_timeout_ms > 60000)
+	{
+		err("heartbeat_timeout_ms must be in [300, 60000]");
 	}
 
 	// 校验日志输出

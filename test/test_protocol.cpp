@@ -1,231 +1,304 @@
+/**
+ * @file test/test_protocol.cpp
+ * @brief V4 协议辅助函数单元测试
+ *
+ * 测试 makeTargetLine、makeLostLine、isBootOk、isPingResponse、
+ * getProtocolVersion。
+ * 所有测试调用真实的 src/uart/protocol.cpp 实现，不复制代码。
+ */
+
 #include "uart/protocol.hpp"
+#include "uart/uart.hpp"
 
 #include <cassert>
-#include <cstring>
+#include <cmath>
+#include <cstdint>
 #include <iostream>
+#include <limits>
 #include <string>
 
 using namespace etest::uart::protocol;
+using namespace etest;
 
-// 测试 1：CRC16 已知测试向量
-static void test_crc16_known_vector()
+static int passed = 0;
+static int failed = 0;
+
+static void check(const std::string& name, bool condition)
 {
-	// 空数据：CRC16-CCITT 初始值为 0xFFFF，空数据 CRC = 0xFFFF
-	const std::uint8_t empty = 0;
-	assert(crc16(&empty, 0) == 0xFFFF);
-
-	// 测试字符串 "123456789"
-	const std::string test = "123456789";
-	const std::uint16_t result = crc16(
-	    reinterpret_cast<const std::uint8_t*>(test.data()),
-	    test.size());
-
-	// CRC16-CCITT of "123456789" = 0x29B1
-	assert(result == 0x29B1);
-
-	std::cout << "[PASS] test_crc16_known_vector\n";
+	if(condition)
+	{
+		++passed;
+		std::cout << "  PASS: " << name << '\n';
+	}
+	else
+	{
+		++failed;
+		std::cerr << "  FAIL: " << name << '\n';
+	}
 }
 
-// 测试 2：正确协议帧编码和解码
-static void test_encode_decode_valid_frame()
+// =============================================================================
+// makeTargetLine 测试
+// =============================================================================
+
+static void test_makeTargetLine_correct()
 {
-	const std::string frame =
-	    encodeMessage(1, "HELLO", 1, "UPPER");
-
-	assert(!frame.empty());
-	assert(frame[0] == '@');
-
-	// 解码
-	const auto decoded = decodeFrame(frame);
-
-	assert(decoded.valid);
-	assert(decoded.version == 1);
-	assert(decoded.type == "HELLO");
-	assert(decoded.seq == 1);
-	assert(decoded.payload == "UPPER");
-
-	std::cout << "[PASS] test_encode_decode_valid_frame\n";
+	auto result = makeTargetLine(7, 12.345, 98.10, -2.50, 0.876);
+	check("makeTargetLine correct output", result.has_value());
+	check("makeTargetLine format TARGET,7,12.35,98.10,-2.50,0.876",
+	      result.value() == "TARGET,7,12.35,98.10,-2.50,0.876");
 }
 
-// 测试 3：错误 CRC 被拒绝
-static void test_decode_bad_crc_rejected()
+static void test_makeTargetLine_seq_wrap()
 {
-	// 构造一个正确帧，然后修改 CRC
-	const std::string frame =
-	    encodeMessage(1, "PING", 3, "0");
-
-	// 修改最后一个字符
-	std::string bad_frame = frame;
-	bad_frame.back() = '0';
-
-	const auto decoded = decodeFrame(bad_frame);
-
-	assert(!decoded.valid);
-	assert(!decoded.error.empty());
-
-	std::cout << "[PASS] test_decode_bad_crc_rejected\n";
+	auto result = makeTargetLine(0xFFFFFFFF, 1.0, 2.0, 3.0, 0.5);
+	check("makeTargetLine seq wrap ok", result.has_value());
 }
 
-// 测试 4：超长帧被拒绝
-static void test_decode_frame_too_long()
+static void test_makeTargetLine_nan_rejected()
 {
-	std::string long_frame(600, 'X');
-	long_frame[0] = '@';
+	auto result = makeTargetLine(1, std::nan(""), 2.0, 3.0, 0.5);
+	check("makeTargetLine NaN x rejected", !result.has_value());
 
-	const auto decoded = decodeFrame(long_frame);
+	auto result2 = makeTargetLine(1, 2.0, std::nan(""), 3.0, 0.5);
+	check("makeTargetLine NaN y rejected", !result2.has_value());
 
-	assert(!decoded.valid);
-	assert(decoded.error.find("too long") != std::string::npos);
+	auto result3 = makeTargetLine(1, 2.0, 3.0, std::nan(""), 0.5);
+	check("makeTargetLine NaN angle rejected", !result3.has_value());
 
-	std::cout << "[PASS] test_decode_frame_too_long\n";
+	auto result4 = makeTargetLine(1, 2.0, 3.0, 4.0, std::nan(""));
+	check("makeTargetLine NaN confidence rejected",
+	      !result4.has_value());
 }
 
-// 测试 5：字段缺失被拒绝
-static void test_decode_missing_fields()
+static void test_makeTargetLine_inf_rejected()
 {
-	// 只有 @1,HELLO
-	const auto decoded = decodeFrame("@1,HELLO");
+	auto inf = std::numeric_limits<double>::infinity();
+	auto result = makeTargetLine(1, inf, 2.0, 3.0, 0.5);
+	check("makeTargetLine Inf rejected", !result.has_value());
 
-	assert(!decoded.valid);
-	assert(decoded.error.find("missing field") != std::string::npos);
-
-	std::cout << "[PASS] test_decode_missing_fields\n";
+	auto neg_inf = -std::numeric_limits<double>::infinity();
+	auto result2 = makeTargetLine(1, 2.0, neg_inf, 3.0, 0.5);
+	check("makeTargetLine -Inf rejected", !result2.has_value());
 }
 
-// 测试 6：半包拼接
-static void test_half_packet_reassembly()
+static void test_makeTargetLine_confidence_lt0()
 {
-	FrameBuffer buffer;
-
-	// 发送前半部分
-	const std::string frame =
-	    encodeMessage(1, "TARGET", 100, "320.5;241.2;0.92");
-
-	const std::string first_half =
-	    frame.substr(0, frame.size() / 2);
-
-	const std::string second_half =
-	    frame.substr(frame.size() / 2);
-
-	auto frames = buffer.feed(first_half);
-	assert(frames.empty()); // 没有完整帧
-
-	frames = buffer.feed(second_half + "\n");
-	assert(!frames.empty());
-	assert(frames[0] == frame);
-
-	std::cout << "[PASS] test_half_packet_reassembly\n";
+	auto result = makeTargetLine(1, 2.0, 3.0, 4.0, -0.1);
+	check("makeTargetLine confidence<0 rejected", !result.has_value());
 }
 
-// 测试 7：多包拆分
-static void test_multiple_packets()
+static void test_makeTargetLine_confidence_gt1()
 {
-	FrameBuffer buffer;
-
-	const std::string f1 = encodeMessage(1, "PING", 1, "0");
-	const std::string f2 = encodeMessage(1, "PONG", 1, "0");
-
-	const std::string data = f1 + "\n" + f2 + "\n";
-
-	auto frames = buffer.feed(data);
-
-	assert(frames.size() == 2);
-	assert(frames[0] == f1);
-	assert(frames[1] == f2);
-
-	std::cout << "[PASS] test_multiple_packets\n";
+	auto result = makeTargetLine(1, 2.0, 3.0, 4.0, 1.1);
+	check("makeTargetLine confidence>1 rejected", !result.has_value());
 }
 
-// 测试 8：TARGET 编码解码
-static void test_target_encode_decode()
+static void test_makeTargetLine_zero_confidence()
 {
-	const std::string frame =
-	    encodeMessage(1, "TARGET", 153, "320.5;241.2;-3.7;0.92");
-
-	const auto decoded = decodeFrame(frame);
-
-	assert(decoded.valid);
-	assert(decoded.type == "TARGET");
-	assert(decoded.seq == 153);
-	assert(decoded.payload == "320.5;241.2;-3.7;0.92");
-
-	std::cout << "[PASS] test_target_encode_decode\n";
+	auto result = makeTargetLine(1, 0.0, 0.0, 0.0, 0.0);
+	check("makeTargetLine confidence=0 ok", result.has_value());
 }
 
-// 测试 9：LOST 不含旧坐标
-static void test_lost_no_coordinates()
+static void test_makeTargetLine_one_confidence()
 {
-	const std::string frame = encodeMessage(1, "LOST", 154, "0");
-
-	const auto decoded = decodeFrame(frame);
-
-	assert(decoded.valid);
-	assert(decoded.type == "LOST");
-	assert(decoded.seq == 154);
-
-	// LOST 的负载中不应包含坐标
-	assert(decoded.payload.find(';') == std::string::npos);
-
-	std::cout << "[PASS] test_lost_no_coordinates\n";
+	auto result = makeTargetLine(1, 0.0, 0.0, 0.0, 1.0);
+	check("makeTargetLine confidence=1 ok", result.has_value());
 }
 
-// 测试 10：crc16ToHex 和 hexToCrc16 往返
-static void test_crc_hex_roundtrip()
+// =============================================================================
+// makeLostLine 测试
+// =============================================================================
+
+static void test_makeLostLine_correct()
 {
-	std::uint16_t original = 0xA3F8;
-	std::string hex = crc16ToHex(original);
-	assert(hex.size() == 4);
-
-	std::uint16_t parsed = 0;
-	assert(hexToCrc16(hex, parsed));
-	assert(parsed == original);
-
-	std::cout << "[PASS] test_crc_hex_roundtrip\n";
+	std::string line = makeLostLine(8);
+	check("makeLostLine format LOST,8", line == "LOST,8");
 }
 
-// 测试 11：无效 CRC 十六进制
-static void test_invalid_crc_hex()
+static void test_makeLostLine_large_seq()
 {
-	std::uint16_t out = 0;
-
-	assert(!hexToCrc16("XYZ", out));     // 太短
-	assert(!hexToCrc16("GHIJ", out));    // 无效字符
-	assert(!hexToCrc16("12 34", out));   // 含空格
-
-	std::cout << "[PASS] test_invalid_crc_hex\n";
+	std::string line = makeLostLine(4294967295u);
+	check("makeLostLine large seq", !line.empty());
 }
 
-// 测试 12：FrameBuffer 半包清空
-static void test_frame_buffer_reset()
+// =============================================================================
+// isBootOk 测试
+// =============================================================================
+
+static void test_isBootOk_valid()
 {
-	FrameBuffer buffer;
-
-	buffer.feed("@1,HELLO,"); // 半包
-
-	buffer.reset();
-
-	auto frames = buffer.feed("1,UPPER,12AB\n");
-
-	assert(frames.empty()); // 前半部分已丢失
-
-	std::cout << "[PASS] test_frame_buffer_reset\n";
+	// 构造正确的 BOOT,OK 消息：parseLine("BOOT,OK")
+	auto msg = Uart::parseLine("BOOT,OK");
+	// parseLine 设置 tag="BOOT", fields=["OK"]
+	check("parseLine BOOT,OK -> type BOOT",
+	      msg.type == UartMessageType::BOOT);
+	check("isBootOk BOOT,OK -> true", isBootOk(msg));
 }
+
+static void test_isBootOk_boot_error()
+{
+	auto msg = Uart::parseLine("BOOT,ERROR");
+	check("isBootOk BOOT,ERROR -> false", !isBootOk(msg));
+}
+
+static void test_isBootOk_extra_fields()
+{
+	auto msg = Uart::parseLine("BOOT,OK,EXTRA");
+	check("isBootOk BOOT,OK,EXTRA -> false (fields.size!=1)",
+	      !isBootOk(msg));
+}
+
+static void test_isBootOk_wrong_tag()
+{
+	auto msg = Uart::parseLine("OK,PING");
+	check("isBootOk OK,PING -> false", !isBootOk(msg));
+}
+
+// =============================================================================
+// isPingResponse 测试
+// =============================================================================
+
+static void test_isPingResponse_valid()
+{
+	auto msg = Uart::parseLine("OK,PING");
+	// parseLine: tag="OK", type=OK, fields=["PING"]
+	check("parseLine OK,PING -> type OK",
+	      msg.type == UartMessageType::OK);
+	check("isPingResponse OK,PING -> true", isPingResponse(msg));
+}
+
+static void test_isPingResponse_extra()
+{
+	auto msg = Uart::parseLine("OK,PING,EXTRA");
+	check("isPingResponse OK,PING,EXTRA -> false",
+	      !isPingResponse(msg));
+}
+
+static void test_isPingResponse_ping_extra()
+{
+	auto msg = Uart::parseLine("OK,PING_EXTRA");
+	check("isPingResponse OK,PING_EXTRA -> false",
+	      !isPingResponse(msg));
+}
+
+static void test_isPingResponse_wrong_type()
+{
+	auto msg = Uart::parseLine("ERR,PING");
+	check("isPingResponse ERR,PING -> false", !isPingResponse(msg));
+}
+
+// =============================================================================
+// getProtocolVersion 测试
+// =============================================================================
+
+static void test_getProtocolVersion_valid()
+{
+	auto msg = Uart::parseLine("PROTO,4");
+	auto v = getProtocolVersion(msg);
+	check("getProtocolVersion PROTO,4 -> 4", v.has_value() && *v == 4);
+}
+
+static void test_getProtocolVersion_abc_rejected()
+{
+	auto msg = Uart::parseLine("PROTO,abc");
+	auto v = getProtocolVersion(msg);
+	check("getProtocolVersion PROTO,abc -> nullopt", !v.has_value());
+}
+
+static void test_getProtocolVersion_extra_rejected()
+{
+	auto msg = Uart::parseLine("PROTO,4,EXTRA");
+	auto v = getProtocolVersion(msg);
+	check("getProtocolVersion PROTO,4,EXTRA -> nullopt",
+	      !v.has_value());
+}
+
+static void test_getProtocolVersion_empty()
+{
+	auto msg = Uart::parseLine("PROTO,");
+	auto v = getProtocolVersion(msg);
+	check("getProtocolVersion PROTO, -> nullopt", !v.has_value());
+}
+
+static void test_getProtocolVersion_proto_query()
+{
+	auto msg = Uart::parseLine("PROTO?");
+	// PROTO? 会被解析为类型 DATA（因为末尾有?，不匹配PROTO）
+	// 确认 getProtocolVersion 拒绝它
+	auto v = getProtocolVersion(msg);
+	check("getProtocolVersion PROTO? -> nullopt (tag mismatch)",
+	      !v.has_value());
+}
+
+// =============================================================================
+// UART 行解析测试（\n vs \r\n 兼容性）
+// =============================================================================
+
+static void test_parseLine_crlf()
+{
+	// parseLine 不处理末尾换行，只接收纯文本行
+	auto msg = Uart::parseLine("BOOT,OK");
+	check("parseLine BOOT,OK (no newline)",
+	      msg.type == UartMessageType::BOOT);
+}
+
+static void test_parseLine_proto()
+{
+	auto msg = Uart::parseLine("PROTO,4");
+	check("parseLine PROTO,4 -> type PROTOCOL",
+	      msg.type == UartMessageType::PROTOCOL);
+}
+
+// =============================================================================
+// 入口
+// =============================================================================
 
 int main()
 {
-	test_crc16_known_vector();
-	test_encode_decode_valid_frame();
-	test_decode_bad_crc_rejected();
-	test_decode_frame_too_long();
-	test_decode_missing_fields();
-	test_half_packet_reassembly();
-	test_multiple_packets();
-	test_target_encode_decode();
-	test_lost_no_coordinates();
-	test_crc_hex_roundtrip();
-	test_invalid_crc_hex();
-	test_frame_buffer_reset();
+	std::cout << "=== V4 Protocol Unit Tests ===\n\n";
 
-	std::cout << "\nall protocol tests passed\n";
-	return 0;
+	std::cout << "[1] makeTargetLine\n";
+	test_makeTargetLine_correct();
+	test_makeTargetLine_seq_wrap();
+	test_makeTargetLine_nan_rejected();
+	test_makeTargetLine_inf_rejected();
+	test_makeTargetLine_confidence_lt0();
+	test_makeTargetLine_confidence_gt1();
+	test_makeTargetLine_zero_confidence();
+	test_makeTargetLine_one_confidence();
+
+	std::cout << "\n[2] makeLostLine\n";
+	test_makeLostLine_correct();
+	test_makeLostLine_large_seq();
+
+	std::cout << "\n[3] isBootOk\n";
+	test_isBootOk_valid();
+	test_isBootOk_boot_error();
+	test_isBootOk_extra_fields();
+	test_isBootOk_wrong_tag();
+
+	std::cout << "\n[4] isPingResponse\n";
+	test_isPingResponse_valid();
+	test_isPingResponse_extra();
+	test_isPingResponse_ping_extra();
+	test_isPingResponse_wrong_type();
+
+	std::cout << "\n[5] getProtocolVersion\n";
+	test_getProtocolVersion_valid();
+	test_getProtocolVersion_abc_rejected();
+	test_getProtocolVersion_extra_rejected();
+	test_getProtocolVersion_empty();
+	test_getProtocolVersion_proto_query();
+
+	std::cout << "\n[6] UART parseLine\n";
+	test_parseLine_crlf();
+	test_parseLine_proto();
+
+	std::cout << '\n' << "========================================\n";
+	std::cout << "Results: " << passed << " passed, " << failed
+	          << " failed, " << (passed + failed) << " total\n";
+	std::cout << "========================================\n";
+
+	return failed == 0 ? 0 : 1;
 }

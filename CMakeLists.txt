@@ -7,9 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(OpenCV REQUIRED)
 
-# =========================================================================
-# 可执行文件
-# =========================================================================
+# exe
 add_executable(etest_2026
     src/main.cpp
     src/core/config.cpp
@@ -29,18 +27,19 @@ add_executable(etest_2026
 add_executable(etest_protocol
     test/test_protocol.cpp
     src/uart/protocol.cpp
+    src/uart/uart.cpp
+    src/core/logger.cpp
 )
 target_include_directories(etest_protocol PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_compile_options(etest_protocol PRIVATE -Wall -Wextra -pedantic)
+target_link_libraries(etest_protocol PRIVATE pthread)
 add_test(NAME protocol_test COMMAND etest_protocol)
 
 target_include_directories(etest_2026 PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(etest_2026 PRIVATE ${OpenCV_LIBS} pthread)
 target_compile_options(etest_2026 PRIVATE -Wall -Wextra -pedantic)
 
-# =========================================================================
-# 测试用可执行文件 (只用 assert 和 CTest)
-# =========================================================================
+# 测试用exe
 add_executable(etest_test
     test/test.cpp
     src/core/config.cpp
@@ -53,9 +52,7 @@ enable_testing()
 
 add_test(NAME config_test COMMAND etest_test)
 
-# =========================================================================
 # WSL 下 OpenCV 依赖附加库
-# =========================================================================
 if(WSL)
     target_link_libraries(etest_2026 PRIVATE opencv_core opencv_imgproc opencv_dnn opencv_videoio opencv_highgui)
     target_link_libraries(etest_test PRIVATE opencv_core)

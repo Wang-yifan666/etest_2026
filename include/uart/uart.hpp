@@ -26,6 +26,7 @@ namespace etest
 		KEY_EVENT,
 		BLOCK_BEGIN,
 		BLOCK_END,
+		PROTOCOL,
 		DATA,
 		UNKNOWN
 	};

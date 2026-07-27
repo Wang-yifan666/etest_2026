@@ -3,17 +3,47 @@
 #include "core/config.hpp"
 #include "core/logger.hpp"
 #include "uart/protocol.hpp"
+#include "uart/uart.hpp"
 
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 
 #include <chrono>
-#include <sstream>
+#include <cmath>
 #include <string>
 #include <thread>
 
 namespace etest::state
 {
+
+	namespace
+	{
+
+		// 节流检查：同一消息在 throttle_ms 内只输出一次
+		bool shouldThrottle(
+		    const std::string& msg, std::string& last_msg,
+		    std::chrono::steady_clock::time_point& last_time,
+		    int throttle_ms = 2000)
+		{
+			const auto now = std::chrono::steady_clock::now();
+
+			if(msg == last_msg)
+			{
+				const auto elapsed = std::chrono::duration_cast<
+				    std::chrono::milliseconds>(now - last_time);
+
+				if(elapsed.count() < throttle_ms)
+				{
+					return true;
+				}
+			}
+
+			last_msg = msg;
+			last_time = now;
+			return false;
+		}
+
+	} // namespace
 
 	State runSearch(AppContext& ctx, const SearchConfig& search_cfg,
 	                bool allow_keyboard_exit)
@@ -55,6 +85,20 @@ namespace etest::state
 		const auto target_frame_interval =
 		    std::chrono::milliseconds(33);
 		auto last_frame_time = std::chrono::steady_clock::now();
+
+		// 心跳定时
+		auto last_ping_time = std::chrono::steady_clock::now();
+		auto last_response_time = std::chrono::steady_clock::now();
+
+		// 发送失败节流
+		std::string last_send_error;
+		auto last_send_error_time = std::chrono::steady_clock::now()
+		    - std::chrono::milliseconds(5000);
+		constexpr int send_error_throttle_ms = 2000;
+
+		// 心跳超时日志节流
+		std::string last_hb_error;
+		auto last_hb_error_time = last_send_error_time;
 
 		while(ctx.running)
 		{
@@ -99,38 +143,218 @@ namespace etest::state
 
 			last_frame_time = std::chrono::steady_clock::now();
 
-			// 2) 执行视觉算法（无论是否预览）
+			// 2) 接收并处理 UART 消息（每循环最多 16 条）
+			{
+				UartMessage msg;
+				int processed = 0;
+				constexpr int max_per_loop = 16;
+
+				while(processed < max_per_loop && ctx.uart.tryPop(msg))
+				{
+					++processed;
+
+					// 处理 BOOT,OK（下位机重启）
+					if(uart::protocol::isBootOk(msg))
+					{
+						ETEST_LOG_WARN("SEARCH",
+						               "lower machine reboot detected: "
+						                   + msg.raw);
+
+						ctx.lower_machine_online = false;
+
+						// 重新握手：发送 PING
+						ctx.uart.sendLine("PING");
+						last_ping_time =
+						    std::chrono::steady_clock::now();
+						continue;
+					}
+
+					// 处理 OK,PING
+					if(uart::protocol::isPingResponse(msg))
+					{
+						ctx.lower_machine_online = true;
+						last_response_time =
+						    std::chrono::steady_clock::now();
+
+						// 从离线恢复
+						static bool was_offline = false;
+						if(was_offline)
+						{
+							ETEST_LOG_INFO(
+							    "SEARCH",
+							    "heartbeat restored; lower machine online");
+							was_offline = false;
+						}
+						continue;
+					}
+
+					// 处理 PROTO 响应
+					if(msg.type == UartMessageType::PROTOCOL)
+					{
+						auto proto_ver =
+						    uart::protocol::getProtocolVersion(msg);
+
+						if(proto_ver.has_value() && *proto_ver == 4)
+						{
+							ETEST_LOG_INFO(
+							    "SEARCH",
+							    "protocol version re-confirmed: 4");
+							ctx.lower_machine_online = true;
+							last_response_time =
+							    std::chrono::steady_clock::now();
+						}
+						else if(proto_ver.has_value())
+						{
+							ETEST_LOG_ERROR(
+							    "SEARCH",
+							    "protocol version mismatch: got "
+							        + std::to_string(*proto_ver)
+							        + ", expected 4");
+						}
+						else
+						{
+							ETEST_LOG_ERROR(
+							    "SEARCH",
+							    "invalid PROTO message: " + msg.raw);
+						}
+						continue;
+					}
+
+					// 处理 ERR / WARN
+					if(msg.type == UartMessageType::ERROR
+					   || msg.type == UartMessageType::WARNING)
+					{
+						ETEST_LOG_WARN("SEARCH",
+						               "UART message: " + msg.raw);
+					}
+
+					// 收到任何合法消息 = 更新响应时间
+					if(msg.type != UartMessageType::UNKNOWN)
+					{
+						last_response_time =
+						    std::chrono::steady_clock::now();
+					}
+				}
+			}
+
+			// 3) 心跳发送
+			{
+				const auto now = std::chrono::steady_clock::now();
+				const auto elapsed =
+				    std::chrono::duration_cast<
+				        std::chrono::milliseconds>(now - last_ping_time)
+				        .count();
+
+				if(elapsed >= 500) // heartbeat_interval_ms
+				{
+					if(ctx.uart.isOpen())
+					{
+						ctx.uart.sendLine("PING");
+					}
+					last_ping_time = now;
+				}
+
+				// 超时判断
+				const auto response_elapsed =
+				    std::chrono::duration_cast<
+				        std::chrono::milliseconds>(now
+				                                   - last_response_time)
+				        .count();
+
+				if(response_elapsed > 2000) // heartbeat_timeout_ms
+				{
+					if(ctx.lower_machine_online)
+					{
+						ctx.lower_machine_online = false;
+
+						const std::string err_msg = "heartbeat timeout";
+						if(!shouldThrottle(err_msg, last_hb_error,
+						                   last_hb_error_time))
+						{
+							ETEST_LOG_WARN(
+							    "SEARCH",
+							    "heartbeat timeout, lower machine offline");
+						}
+					}
+				}
+			}
+
+			// 4) 执行视觉算法（无论是否预览）
 			ctx.vision_result = ctx.vision.process(
 			    ctx.frame, vision::VisionMode::ColorTarget);
 
-			// 3) 发送目标结果（无论是否预览）
+			// 5) 发送目标结果（无论是否预览）
 			if(ctx.uart.isOpen())
 			{
 				if(ctx.vision_result.valid)
 				{
-					std::ostringstream payload;
-					payload << ctx.vision_result.x << ";"
-					        << ctx.vision_result.y << ";"
-					        << ctx.vision_result.angle << ";"
-					        << ctx.vision_result.confidence;
+					auto line = uart::protocol::makeTargetLine(
+					    ++ctx.uart_seq, ctx.vision_result.x,
+					    ctx.vision_result.y, ctx.vision_result.angle,
+					    ctx.vision_result.confidence);
 
-					const std::string frame =
-					    uart::protocol::encodeMessage(
-					        1, "TARGET", ++ctx.uart_seq, payload.str());
+					if(line.has_value())
+					{
+						if(!ctx.uart.sendLine(*line))
+						{
+							const std::string err_msg =
+							    "failed to send TARGET";
 
-					ctx.uart.sendLine(frame);
+							if(!shouldThrottle(err_msg, last_send_error,
+							                   last_send_error_time,
+							                   send_error_throttle_ms))
+							{
+								ETEST_LOG_ERROR("SEARCH", err_msg);
+							}
+						}
+					}
+					else
+					{
+						// 视觉结果包含非法数值，记录并发送 LOST
+						ETEST_LOG_ERROR(
+						    "SEARCH",
+						    "invalid vision result values; sending LOST");
+
+						const std::string lost_line =
+						    uart::protocol::makeLostLine(
+						        ++ctx.uart_seq);
+
+						if(!ctx.uart.sendLine(lost_line))
+						{
+							const std::string err_msg =
+							    "failed to send LOST (invalid target)";
+
+							if(!shouldThrottle(err_msg, last_send_error,
+							                   last_send_error_time,
+							                   send_error_throttle_ms))
+							{
+								ETEST_LOG_ERROR("SEARCH", err_msg);
+							}
+						}
+					}
 				}
 				else
 				{
-					const std::string frame =
-					    uart::protocol::encodeMessage(
-					        1, "LOST", ++ctx.uart_seq, "0");
+					// 目标丢失
+					const std::string lost_line =
+					    uart::protocol::makeLostLine(++ctx.uart_seq);
 
-					ctx.uart.sendLine(frame);
+					if(!ctx.uart.sendLine(lost_line))
+					{
+						const std::string err_msg =
+						    "failed to send LOST";
+
+						if(!shouldThrottle(err_msg, last_send_error,
+						                   last_send_error_time,
+						                   send_error_throttle_ms))
+						{
+							ETEST_LOG_ERROR("SEARCH", err_msg);
+						}
+					}
 				}
 			}
 
-			// 4) 节流日志
+			// 6) 节流日志
 			const auto now = std::chrono::steady_clock::now();
 			const auto elapsed =
 			    std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -159,7 +383,7 @@ namespace etest::state
 				last_throttle_time = now;
 			}
 
-			// 5) 仅预览模式绘制和键盘
+			// 7) 仅预览模式绘制和键盘
 			if(show_preview)
 			{
 				cv::Mat display = ctx.frame.clone();

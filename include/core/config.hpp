@@ -160,7 +160,7 @@ struct UartConfig
 	int handshake_timeout_ms = 1500;
 	int heartbeat_interval_ms = 500;
 	int heartbeat_timeout_ms = 2000;
-	int protocol_version = 1;
+	int protocol_version = 4;  // V4 only
 
 	SourceInfo source_device;
 	SourceInfo source_baudrate;

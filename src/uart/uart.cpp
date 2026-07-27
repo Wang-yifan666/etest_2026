@@ -865,6 +865,10 @@ namespace etest
 			{
 				message.type = UartMessageType::KEY_EVENT;
 			}
+			else if(message.tag == "PROTO")
+			{
+				message.type = UartMessageType::PROTOCOL;
+			}
 			else if(endsWith(message.tag, "_BEGIN"))
 			{
 				message.type = UartMessageType::BLOCK_BEGIN;

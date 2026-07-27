@@ -1,73 +1,48 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
-#include <vector>
+
+namespace etest
+{
+struct UartMessage;
+}
 
 namespace etest::uart::protocol
 {
 
-// 协议常量
+// 工程通信协议 V4 辅助函数
 
-constexpr int kProtocolVersion = 1;
-constexpr std::size_t kMaxFrameLength = 512;
-constexpr char kFrameDelimiter = '\n';
+// 构造 TARGET 行：TARGET,<seq>,<x>,<y>,<angle>,<confidence>
+// x/y/angle 保留两位小数，confidence 保留三位小数
+// 使用 std::locale::classic()，不受系统区域设置影响
+// 拒绝 NaN、Inf、confidence 不在 0~1 等非法输入
+// 返回不含 \r\n 的行文本，非法时返回 std::nullopt
+std::optional<std::string> makeTargetLine(
+    std::uint32_t seq,
+    double x,
+    double y,
+    double angle,
+    double confidence);
 
-// CRC16-CCITT
+// 构造 LOST 行：LOST,<seq>
+// 返回不含 \r\n 的行文本
+std::string makeLostLine(std::uint32_t seq);
 
-// 计算 CRC16-CCITT（多项式 0x1021，初始值 0xFFFF）
-// 计算范围由调用者决定
-std::uint16_t crc16(const std::uint8_t* data, std::size_t size) noexcept;
+// 严格判断是否为 BOOT,OK 消息
+// tag=="BOOT" && fields.size()==1 && fields[0]=="OK"
+// 注意：UartMessage 的 fields 不包含 tag，tag 是单独存储的
+bool isBootOk(const UartMessage& message) noexcept;
 
-// 将 16 位 CRC 编码为 4 字符十六进制大写字符串
-std::string crc16ToHex(std::uint16_t crc);
+// 严格判断是否为 PING 响应：OK,PING
+// type 必须为 OK，且 fields[0] 必须完全等于 "PING"
+bool isPingResponse(const UartMessage& message) noexcept;
 
-// 从十六进制字符串解析 CRC16
-bool hexToCrc16(const std::string& hex, std::uint16_t& out);
-
-// 消息编解码
-
-struct DecodedMessage
-{
-	bool valid = false;
-	int version = 0;
-	std::string type;
-	std::uint32_t seq = 0;
-	std::string payload;
-	std::string error;
-};
-
-// 编码消息为帧：@1,TYPE,SEQ,PAYLOAD,CRC16
-// TYPE: 消息类型（HELLO, READY, PING, PONG, TARGET, LOST, ERROR 等）
-// SEQ: 序列号（0 表示无序列号）
-// PAYLOAD: 消息负载
-// 返回完整帧（不含换行符）
-std::string encodeMessage(int version, const std::string& type,
-                          std::uint32_t seq,
-                          const std::string& payload);
-
-// 解码一个完整帧（不含换行符前缀 @ 和尾随换行符需要调用者剥离）
-// 只解码格式为 @version,type,seq,payload,crc 的帧
-DecodedMessage decodeFrame(const std::string& frame);
-
-// 帧缓冲（处理半包、粘包）
-
-class FrameBuffer
-{
-public:
-	// 喂入原始字节数据。返回已解析的完整帧（不含换行符）。
-	// 半包暂存在内部缓冲区，粘包分批返回。
-	std::vector<std::string> feed(const std::uint8_t* data,
-	                              std::size_t size);
-
-	// 喂入字符串数据
-	std::vector<std::string> feed(const std::string& data);
-
-	// 清空缓冲区
-	void reset();
-
-private:
-	std::string buffer_;
-};
+// 解析 PROTO,<version> 中的版本号
+// tag 必须为 "PROTO"，fields.size()==1，fields[0] 为十进制整数
+// 版本非法时返回 std::nullopt
+std::optional<int> getProtocolVersion(
+    const UartMessage& message) noexcept;
 
 } // namespace etest::uart::protocol

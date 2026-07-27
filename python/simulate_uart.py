@@ -1,153 +1,420 @@
 #!/usr/bin/env python3
-"""模拟下位机 — 协议编解码与测试"""
+"""下位机串口模拟器（工程通信协议 V4 专用）
+
+支持场景：
+  normal         正常响应（BOOT,OK → PING→OK,PING → PROTO?→PROTO,4）
+  boot_ok_only   只发送 BOOT,OK 后无其他响应
+  no_response    完全不响应（模拟掉线）
+  wrong_version  返回错误的协议版本 PROTO,3
+  error_warn     随机发送 WARN/ERR 消息
+  noise          随机发送乱码/噪声
+  restart        运行中期发送 BOOT,OK 模拟重启
+  half_packet    在正常流中插入半包（无换行符）
+  multi_per_line 一行多个消息（模拟粘包）
+  lf_only        只使用 \n（不使用 \r\n）
+
+协议说明：
+  - 纯文本协议
+  - 以 \r\n 或 \n 为一条消息
+  - 所有消息使用 ASCII 文本
+  - 字段之间使用英文逗号分隔
+  - 不使用帧头、CRC 等二进制协议特性
+
+使用方式：
+  python simulate_uart.py --port /dev/ttyUSB0 --scenario normal
+  python simulate_uart.py --port /tmp/virtual_uart --scenario wrong_version
+  python simulate_uart.py --pty --scenario normal
+
+依赖：
+  pip install pyserial
+"""
 
 import argparse
-import struct
+import os
+import random
 import sys
 import time
-import random
 
-# CRC16-CCITT 查表 (多项式 0x1021)
-CRC16_TABLE = [
-    0x0000,0x1021,0x2042,0x3063,0x4084,0x50A5,0x60C6,0x70E7,
-    0x8108,0x9129,0xA14A,0xB16B,0xC18C,0xD1AD,0xE1CE,0xF1EF,
-    0x1231,0x0210,0x3273,0x2252,0x52B5,0x4294,0x72F7,0x62D6,
-    0x9339,0x8318,0xB37B,0xA35A,0xD3BD,0xC39C,0xF3FF,0xE3DE,
-    0x2462,0x3443,0x0420,0x1401,0x64E6,0x74C7,0x44A4,0x5485,
-    0xA56A,0xB54B,0x8528,0x9509,0xE5EE,0xF5CF,0xC5AC,0xD58D,
-    0x3653,0x2672,0x1611,0x0630,0x76D7,0x66F6,0x5695,0x46B4,
-    0xB75B,0xA77A,0x9719,0x8738,0xF7DF,0xE7FE,0xD79D,0xC7BC,
-    0x48C4,0x58E5,0x6886,0x78A7,0x0840,0x1861,0x2802,0x3823,
-    0xC9CC,0xD9ED,0xE98E,0xF9AF,0x8948,0x9969,0xA90A,0xB92B,
-    0x5AF5,0x4AD4,0x7AB7,0x6A96,0x1A71,0x0A50,0x3A33,0x2A12,
-    0xDBFD,0xCBDC,0xFBBF,0xEB9E,0x9B79,0x8B58,0xBB3B,0xAB1A,
-    0x6CA6,0x7C87,0x4CE4,0x5CC5,0x2C22,0x3C03,0x0C60,0x1C41,
-    0xEDAE,0xFD8F,0xCDEC,0xDDCD,0xAD2A,0xBD0B,0x8D68,0x9D49,
-    0x7E97,0x6EB6,0x5ED5,0x4EF4,0x3E13,0x2E32,0x1E51,0x0E70,
-    0xFF9F,0xEFBE,0xDFDD,0xCFFC,0xBF1B,0xAF3A,0x9F59,0x8F78,
-    0x9188,0x81A9,0xB1CA,0xA1EB,0xD10C,0xC12D,0xF14E,0xE16F,
-    0x1080,0x00A1,0x30C2,0x20E3,0x5004,0x4025,0x7046,0x6067,
-    0x83B9,0x9398,0xA3FB,0xB3DA,0xC33D,0xD31C,0xE37F,0xF35E,
-    0x02B1,0x1290,0x22F3,0x32D2,0x4235,0x5214,0x6277,0x7256,
-    0xB5EA,0xA5CB,0x95A8,0x8589,0xF56E,0xE54F,0xD52C,0xC50D,
-    0x34E2,0x24C3,0x14A0,0x0481,0x7466,0x6447,0x5424,0x4405,
-    0xA7DB,0xB7FA,0x8799,0x97B8,0xE75F,0xF77E,0xC71D,0xD73C,
-    0x26D3,0x36F2,0x0691,0x16B0,0x6657,0x7676,0x4615,0x5634,
-    0xD94C,0xC96D,0xF90E,0xE92F,0x99C8,0x89E9,0xB98A,0xA9AB,
-    0x5844,0x4865,0x7806,0x6827,0x18C0,0x08E1,0x3882,0x28A3,
-    0xCB7D,0xDB5C,0xEB3F,0xFB1E,0x8BF9,0x9BD8,0xABBB,0xBB9A,
-    0x4A75,0x5A54,0x6A37,0x7A16,0x0AF1,0x1AD0,0x2AB3,0x3A92,
-    0xFD2E,0xED0F,0xDD6C,0xCD4D,0xBDAA,0xAD8B,0x9DE8,0x8DC9,
-    0x7C26,0x6C07,0x5C64,0x4C45,0x3CA2,0x2C83,0x1CE0,0x0CC1,
-    0xEF1F,0xFF3E,0xCF5D,0xDF7C,0xAF9B,0xBFBA,0x8FD9,0x9FF8,
-    0x6E17,0x7E36,0x4E55,0x5E74,0x2E93,0x3EB2,0x0ED1,0x1EF0,
+try:
+    import serial
+except ImportError:
+    print("[FATAL] pyserial 未安装，请执行: pip install pyserial")
+    sys.exit(1)
+
+
+# =============================================================================
+# 消息处理（V4 协议）
+# =============================================================================
+
+def handle_message(line, scenario_state):
+    """处理一条上位机消息，返回应回复的消息列表。"""
+    line = line.strip()
+
+    if not line:
+        return []
+
+    scenario = scenario_state.get("scenario", "normal")
+
+    if scenario == "no_response":
+        return []
+
+    if scenario == "normal":
+        return _handle_normal(line)
+
+    if scenario == "boot_ok_only":
+        return []
+
+    if scenario == "wrong_version":
+        return _handle_wrong_version(line)
+
+    if scenario == "error_warn":
+        return _handle_error_warn(line)
+
+    if scenario == "noise":
+        return _handle_noise(line)
+
+    if scenario == "restart":
+        return _handle_restart(line, scenario_state)
+
+    if scenario == "half_packet":
+        return _handle_half_packet(line, scenario_state)
+
+    if scenario == "multi_per_line":
+        return _handle_multi_per_line(line)
+
+    if scenario == "lf_only":
+        return _handle_lf_only(line, scenario_state)
+
+    return _handle_normal(line)
+
+
+def _handle_normal(line):
+    """正常场景：按 V4 协议回复。"""
+    if line == "PING":
+        return ["OK,PING"]
+
+    if line == "PROTO?":
+        return ["PROTO,4"]
+
+    if line.startswith("TARGET,"):
+        parts = line.split(",")
+        if len(parts) == 6:
+            try:
+                seq = int(parts[1])
+                x = float(parts[2])
+                y = float(parts[3])
+                angle = float(parts[4])
+                conf = float(parts[5])
+                print(f"[SIM] TARGET seq={seq} pos=({x},{y}) "
+                      f"angle={angle} conf={conf}", file=sys.stderr)
+            except ValueError:
+                print(f"[SIM] TARGET parse error: {line}", file=sys.stderr)
+        else:
+            print(f"[SIM] TARGET wrong field count: {len(parts)}",
+                  file=sys.stderr)
+        return []  # 不逐条回复视觉消息
+
+    if line.startswith("LOST,"):
+        parts = line.split(",")
+        if len(parts) == 2:
+            try:
+                seq = int(parts[1])
+                print(f"[SIM] LOST seq={seq}", file=sys.stderr)
+            except ValueError:
+                print(f"[SIM] LOST parse error: {line}", file=sys.stderr)
+        return []
+
+    # 其他命令：静默忽略
+    return []
+
+
+def _handle_wrong_version(line):
+    """返回错误的协议版本。"""
+    if line == "PING":
+        return ["OK,PING"]
+
+    if line == "PROTO?":
+        return ["PROTO,3"]  # 故意返回 3 而不是 4
+
+    return _handle_normal(line)
+
+
+def _handle_error_warn(line):
+    """正常响应 + 随机 WARN/ERR。"""
+    responses = _handle_normal(line)
+
+    if random.random() < 0.2:
+        warn_msgs = [
+            "WARN,UART,NOISE,BUS_BURST,",
+            "WARN,UART,NOISE,OVERRUN,",
+            "WARN,POWER,LOW_BATTERY,3.7V,",
+        ]
+        responses.append(random.choice(warn_msgs))
+
+    if random.random() < 0.1:
+        err_msgs = [
+            "ERR,UART,NOISE,DATA_DROP,",
+            "ERR,MOTOR,OVERCURRENT,LEFT,2.3A",
+            "ERR,IMU,SPI_FAIL,,",
+        ]
+        responses.append(random.choice(err_msgs))
+
+    return responses
+
+
+def _handle_noise(line):
+    """随机插入乱码/噪声。"""
+    responses = _handle_normal(line)
+
+    if random.random() < 0.3:
+        noise = "".join(
+            chr(random.randint(0, 255)) for _ in range(random.randint(1, 20))
+        )
+        responses.append(noise)
+
+    return responses
+
+
+def _handle_restart(line, state):
+    reply_count = state.get("restart_reply_count", 0)
+
+    if reply_count > 10 and random.random() < 0.1:
+        state["restart_reply_count"] = 0
+        return ["BOOT,OK"]
+
+    state["restart_reply_count"] = reply_count + 1
+    return _handle_normal(line)
+
+
+def _handle_half_packet(line, state):
+    """在正常响应中偶尔插入无换行符的半包数据。"""
+    responses = _handle_normal(line)
+
+    half_count = state.get("half_count", 0)
+    state["half_count"] = half_count + 1
+
+    if half_count % 5 == 3:
+        half_data = "TARGET,99,320.00,240.00,10.00,0.950"
+        responses.append(("RAW", half_data))
+
+    return responses
+
+
+def _handle_multi_per_line(line):
+    """多消息粘包（一次发送多条完整消息）。"""
+    responses = _handle_normal(line)
+
+    if line == "PING" and random.random() < 0.3:
+        extra = [
+            "OK,PING",
+            "STATUS,IMU.YAW,45.2",
+        ]
+        return extra
+
+    return responses
+
+
+def _handle_lf_only(line, state):
+    """故意只使用 \n 作为行结束符。"""
+    responses = _handle_normal(line)
+    state["use_crlf"] = False
+    return responses
+
+
+# =============================================================================
+# 串口通信
+# =============================================================================
+
+def open_serial(port, baudrate=115200):
+    """打开真实串口。"""
+    ser = serial.Serial(
+        port=port,
+        baudrate=baudrate,
+        bytesize=serial.EIGHTBITS,
+        parity=serial.PARITY_NONE,
+        stopbits=serial.STOPBITS_ONE,
+        timeout=0.1,
+    )
+    print(f"[INFO] 串口已打开: {port} @ {baudrate}")
+    return ser
+
+
+def open_pty():
+    """创建伪终端对，返回 (controller_ser, slave_name)。"""
+    import pty
+    import tty
+
+    master_fd, slave_fd = pty.openpty()
+    tty.setraw(master_fd)
+
+    slave_name = os.ttyname(slave_fd)
+
+    class PtySerial:
+        def __init__(self, fd, name):
+            self.fd = fd
+            self.name = name
+            self._buf = b""
+
+        def write(self, data):
+            if isinstance(data, str):
+                data = data.encode("utf-8")
+            return os.write(self.fd, data)
+
+        def read(self, size=1024):
+            try:
+                return os.read(self.fd, size)
+            except BlockingIOError:
+                return b""
+
+        def close(self):
+            os.close(self.fd)
+
+    return PtySerial(master_fd, slave_name), slave_name
+
+
+def run_loop(ser, scenario, use_crlf=True):
+    """主循环：接收 → 处理 → 回复。"""
+    state = {
+        "scenario": scenario,
+        "restart_reply_count": 0,
+        "half_count": 0,
+        "use_crlf": True,
+    }
+
+    line_ending = "\r\n"
+    rx_buf = ""
+
+    # 下位机启动后主动发送 BOOT,OK
+    boot_line = "BOOT,OK"
+    _send_line(ser, boot_line, line_ending)
+    print(f"[TX] {boot_line!r}")
+
+    print(f"[INFO] 场景: {scenario}, 行结束符: CRLF={use_crlf}")
+    print("[INFO] 等待上位机数据...\n")
+
+    while True:
+        try:
+            data = ser.read(4096)
+        except Exception as e:
+            print(f"[ERROR] 串口读取失败: {e}")
+            time.sleep(1)
+            continue
+
+        if not data:
+            time.sleep(0.01)
+            continue
+
+        if isinstance(data, bytes):
+            data = data.decode("utf-8", errors="replace")
+
+        rx_buf += data
+
+        while "\n" in rx_buf:
+            idx = rx_buf.index("\n")
+            line = rx_buf[:idx]
+            rx_buf = rx_buf[idx + 1:]
+
+            if line.endswith("\r"):
+                line = line[:-1]
+
+            if not line:
+                continue
+
+            print(f"[RX] {line!r}")
+
+            responses = handle_message(line, state)
+
+            for resp in responses:
+                if isinstance(resp, tuple) and resp[0] == "RAW":
+                    raw_data = resp[1]
+                    if isinstance(raw_data, str):
+                        raw_data = raw_data.encode("utf-8")
+                    ser.write(raw_data)
+                    print(f"[TX RAW] {raw_data!r}")
+                else:
+                    ending = line_ending
+                    if not state.get("use_crlf", True):
+                        ending = "\n"
+                    _send_line(ser, resp, ending)
+                    print(f"[TX] {resp!r}")
+
+            if len(rx_buf) > 4096:
+                print("[WARN] 接收缓冲过大，清空")
+                rx_buf = ""
+
+
+def _send_line(ser, line, ending="\r\n"):
+    """发送一行文本。"""
+    data = line + ending
+    if isinstance(data, str):
+        data = data.encode("utf-8")
+    ser.write(data)
+
+
+# =============================================================================
+# 入口
+# =============================================================================
+
+SCENARIOS = [
+    "normal",
+    "boot_ok_only",
+    "no_response",
+    "wrong_version",
+    "error_warn",
+    "noise",
+    "restart",
+    "half_packet",
+    "multi_per_line",
+    "lf_only",
 ]
 
 
-def crc16(data: bytes) -> int:
-    crc = 0xFFFF
-    for b in data:
-        crc = ((crc << 8) ^ CRC16_TABLE[((crc >> 8) ^ b) & 0xFF]) & 0xFFFF
-    return crc
-
-
-def encode_message(version: int, msg_type: str, seq: int, payload: str) -> str:
-    body = f"{msg_type},{seq},{payload}"
-    crc = crc16(body.encode())
-    return f"@{version},{body},{crc:04X}"
-
-
-def decode_frame(frame: str):
-    """返回 (version, type, seq, payload) 或 None"""
-    if not frame.startswith("@"):
-        return None
-    parts = frame[1:].split(",")
-    if len(parts) != 5:
-        return None
-    version_str, msg_type, seq_str, payload, crc_str = parts
-    try:
-        version = int(version_str)
-        seq = int(seq_str)
-    except ValueError:
-        return None
-    crc_body = f"{msg_type},{seq_str},{payload}"
-    expected = crc16(crc_body.encode())
-    try:
-        actual = int(crc_str, 16)
-    except ValueError:
-        return None
-    if expected != actual:
-        return None
-    return version, msg_type, seq, payload
-
-
 def main():
-    parser = argparse.ArgumentParser(description="模拟下位机")
-    parser.add_argument("--no-reply", action="store_true", help="不回复任何消息")
-    parser.add_argument("--bad-crc", action="store_true", help="回复错误 CRC")
-    parser.add_argument("--delay-ms", type=int, default=0, help="回复延迟(ms)")
-    parser.add_argument("--half-packet", action="store_true", help="半包发送")
-    parser.add_argument("--restart", action="store_true", help="模拟下位机重启")
-    parser.add_argument("--random-bad", action="store_true", help="随机发送坏包")
+    parser = argparse.ArgumentParser(
+        description="下位机串口模拟器（工程通信协议 V4）"
+    )
+    parser.add_argument(
+        "--port", default="/dev/ttyUSB0",
+        help="串口设备路径（默认 /dev/ttyUSB0）"
+    )
+    parser.add_argument(
+        "--baudrate", type=int, default=115200,
+        help="波特率（默认 115200）"
+    )
+    parser.add_argument(
+        "--scenario", default="normal",
+        choices=SCENARIOS,
+        help="模拟场景"
+    )
+    parser.add_argument(
+        "--pty", action="store_true",
+        help="使用伪终端模式（不需要物理串口）"
+    )
+    parser.add_argument(
+        "--list-scenarios", action="store_true",
+        help="列出所有可用场景"
+    )
     args = parser.parse_args()
 
-    print("[SIMULATOR] started", file=sys.stderr)
-    if args.no_reply:
-        print("[SIMULATOR] no-reply mode", file=sys.stderr)
+    if args.list_scenarios:
+        print("可用场景：")
+        for s in SCENARIOS:
+            print(f"  {s}")
+        return
 
-    restart_count = 0
-    lines_since_restart = 0
+    if args.pty:
+        ser, slave_name = open_pty()
+        print(f"[INFO] 伪终端已创建，上位机请连接: {slave_name}")
+    else:
+        ser = open_serial(args.port, args.baudrate)
 
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
-
-        lines_since_restart += 1
-
-        if args.restart and lines_since_restart > 20:
-            restart_count += 1
-            print(f"[SIMULATOR] restart #{restart_count}", file=sys.stderr)
-            lines_since_restart = 0
-            continue
-
-        decoded = decode_frame(line)
-        if decoded is None:
-            print(f"[SIMULATOR] bad frame: {line}", file=sys.stderr)
-            continue
-
-        version, msg_type, seq, payload = decoded
-        print(f"[SIMULATOR] RECV: {msg_type} seq={seq} payload={payload}", file=sys.stderr)
-
-        if args.no_reply:
-            continue
-
-        if args.delay_ms > 0:
-            time.sleep(args.delay_ms / 1000.0)
-
-        if msg_type == "HELLO":
-            reply = encode_message(1, "READY", seq, "OK")
-            if args.bad_crc:
-                reply = reply[:-1] + "0"
-            print(reply, flush=True)
-        elif msg_type == "PING":
-            reply = encode_message(1, "PONG", seq, "0")
-            if args.bad_crc and random.random() < 0.5:
-                reply = reply[:-1] + "0"
-            print(reply, flush=True)
-        elif msg_type in ("TARGET", "LOST", "ERROR"):
-            print(f"[SIMULATOR] OK: {msg_type}", file=sys.stderr)
-
-        if args.half_packet and random.random() < 0.2:
-            print(f"[SIMULATOR] half-packet mode active", file=sys.stderr)
-            # 发送一半然后重新发送完整
-            time.sleep(0.1)
-
-        if args.random_bad and random.random() < 0.1:
-            print("BAD_FRAME_WITHOUT_AT\n", flush=True)
-            print(f"[SIMULATOR] sent random bad frame", file=sys.stderr)
-
-    print("[SIMULATOR] stopped", file=sys.stderr)
+    try:
+        run_loop(ser, args.scenario)
+    except KeyboardInterrupt:
+        print("\n[INFO] 模拟器退出")
+    finally:
+        ser.close()
+        print("[INFO] 串口已关闭")
 
 
 if __name__ == "__main__":
