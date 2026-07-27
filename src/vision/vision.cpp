@@ -418,6 +418,9 @@ namespace etest::vision
 			                  nn_confidence_threshold_,
 			                  nn_nms_threshold_, nms_indices);
 
+			// 填充检测结果，供日志输出。
+			last_detections_.clear();
+
 			// 绘制结果。
 			cv::Mat result = frame.clone();
 
@@ -427,6 +430,24 @@ namespace etest::vision
 				const int class_id = class_ids[idx];
 				const float conf = confidences[idx];
 
+				std::string class_name;
+
+				if(class_id >= 0
+				   && static_cast<std::size_t>(class_id)
+				       < nn_class_names_.size())
+				{
+					class_name = nn_class_names_[class_id];
+				}
+				else
+				{
+					class_name = "class_" + std::to_string(class_id);
+				}
+
+				last_detections_.push_back(
+				    {class_name, conf, box.x, box.y, box.x,
+				     box.y + box.height, box.x + box.width,
+				     box.y + box.height, box.x + box.width, box.y});
+
 				// 随机颜色。
 				const cv::Scalar color((class_id * 37 + 80) % 255,
 				                       (class_id * 73 + 160) % 255,
@@ -434,18 +455,7 @@ namespace etest::vision
 
 				cv::rectangle(result, box, color, 2);
 
-				std::string label;
-
-				if(class_id >= 0
-				   && static_cast<std::size_t>(class_id)
-				       < nn_class_names_.size())
-				{
-					label = nn_class_names_[class_id];
-				}
-				else
-				{
-					label = "class_" + std::to_string(class_id);
-				}
+				std::string label = class_name;
 
 				label += " "
 				    + std::to_string(static_cast<int>(conf * 100))
@@ -495,6 +505,12 @@ namespace etest::vision
 	bool VisionProcessor::isNnLoaded() const noexcept
 	{
 		return nn_loaded_;
+	}
+
+	const std::vector<DetectionInfo>&
+	VisionProcessor::getLastDetections() const noexcept
+	{
+		return last_detections_;
 	}
 
 } // namespace etest::vision

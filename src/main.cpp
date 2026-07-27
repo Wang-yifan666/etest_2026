@@ -148,6 +148,8 @@ int main(int argc, char* argv[])
 
 		etest::Uart uart(config_result.config.uart);
 
+		uart.start();
+
 		etest::AppContext ctx{camera,    vision, uart,
 		                      cv::Mat{}, {},     true};
 
@@ -219,7 +221,7 @@ int main(int argc, char* argv[])
 		}
 
 		ctx.camera.release();
-		ctx.uart.close();
+		ctx.uart.stop();
 	}
 	catch(const std::exception& error)
 	{

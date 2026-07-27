@@ -30,6 +30,21 @@ namespace etest::vision
 		float area = 0.0F;
 	};
 
+	// 单次神经网络检测中识别出的一个物品。
+	struct DetectionInfo
+	{
+		std::string class_name;
+		float confidence = 0.0F;
+		int x1 = 0;
+		int y1 = 0;
+		int x2 = 0;
+		int y2 = 0;
+		int x3 = 0;
+		int y3 = 0;
+		int x4 = 0;
+		int y4 = 0;
+	};
+
 	class VisionProcessor
 	{
 	public:
@@ -49,7 +64,12 @@ namespace etest::vision
 		                 double nms_threshold) noexcept;
 
 		// 对输入帧执行神经网络检测，返回绘制了检测框的帧。
+		// 检测到的物品信息可以通过 getLastDetections() 获取。
 		cv::Mat detectNn(const cv::Mat& frame) noexcept;
+
+		// 返回最近一次 detectNn() 检测到的物品列表。
+		const std::vector<DetectionInfo>& getLastDetections()
+		    const noexcept;
 
 		// 神经网络是否已加载。
 		bool isNnLoaded() const noexcept;
@@ -67,6 +87,9 @@ namespace etest::vision
 		double nn_confidence_threshold_ = 0.5;
 		double nn_nms_threshold_ = 0.4;
 		std::vector<std::string> nn_output_names_;
+
+		// 最近一次 detectNn() 的检测结果。
+		std::vector<DetectionInfo> last_detections_;
 	};
 
 } // namespace etest::vision

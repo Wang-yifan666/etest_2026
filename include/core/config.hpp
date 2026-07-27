@@ -70,6 +70,19 @@ namespace etest
 
 		// termios 的 VTIME 精度为 100 ms。
 		int timeout_ms = 100;
+
+		// 单次完整发送允许的最大等待时间。
+		int write_timeout_ms = 200;
+
+		// 设备不存在或掉线后的重连周期。
+		int reconnect_interval_ms = 1000;
+		bool auto_reconnect = true;
+
+		// 超长行视为坏包，丢弃到下一个换行。
+		int max_line_length = 512;
+
+		// 有界消息队列容量。
+		int queue_capacity = 256;
 	};
 
 	struct AppConfig

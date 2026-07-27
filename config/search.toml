@@ -13,7 +13,7 @@ model_path = "model/yolov5s.onnx"
 class_names_path = "model/coco.names"
 
 # 置信度阈值，低于该值的检测结果会被过滤
-nn_confidence_threshold = 0.5
+nn_confidence_threshold = 0.35
 
 # NMS (非极大值抑制) 的 IoU 阈值
 nn_nms_threshold = 0.6

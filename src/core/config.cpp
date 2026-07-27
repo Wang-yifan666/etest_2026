@@ -550,6 +550,11 @@ namespace
 		    "uart.device",
 		    "uart.baudrate",
 		    "uart.timeout_ms",
+		    "uart.write_timeout_ms",
+		    "uart.reconnect_interval_ms",
+		    "uart.auto_reconnect",
+		    "uart.max_line_length",
+		    "uart.queue_capacity",
 
 		    "search.show_preview",
 		    "search.enable_nn",
@@ -673,6 +678,26 @@ namespace
 		config.uart.timeout_ms =
 		    getInt(raw_config, "uart.timeout_ms",
 		           config.uart.timeout_ms, 0, 10000, result);
+
+		config.uart.write_timeout_ms =
+		    getInt(raw_config, "uart.write_timeout_ms",
+		           config.uart.write_timeout_ms, 0, 60000, result);
+
+		config.uart.reconnect_interval_ms = getInt(
+		    raw_config, "uart.reconnect_interval_ms",
+		    config.uart.reconnect_interval_ms, 50, 60000, result);
+
+		config.uart.auto_reconnect =
+		    getBool(raw_config, "uart.auto_reconnect",
+		            config.uart.auto_reconnect, result);
+
+		config.uart.max_line_length =
+		    getInt(raw_config, "uart.max_line_length",
+		           config.uart.max_line_length, 32, 4096, result);
+
+		config.uart.queue_capacity =
+		    getInt(raw_config, "uart.queue_capacity",
+		           config.uart.queue_capacity, 1, 65536, result);
 
 		config.logger.throttle_interval_ms = getInt(
 		    raw_config, "logger.throttle_interval_ms",

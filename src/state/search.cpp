@@ -61,8 +61,7 @@ namespace etest::state
 		{
 			++frame_count;
 
-			const auto loop_start =
-			    std::chrono::steady_clock::now();
+			const auto loop_start = std::chrono::steady_clock::now();
 
 			const auto since_last_frame =
 			    std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -70,8 +69,8 @@ namespace etest::state
 
 			if(since_last_frame < target_frame_interval)
 			{
-				std::this_thread::sleep_for(
-				    target_frame_interval - since_last_frame);
+				std::this_thread::sleep_for(target_frame_interval
+				                            - since_last_frame);
 			}
 
 			// 1) 读取帧。
@@ -95,9 +94,46 @@ namespace etest::state
 
 			if(elapsed.count() >= throttle_ms)
 			{
-				ETEST_LOG_INFO("SEARCH",
-				               "searching... frame="
-				                   + std::to_string(frame_count));
+				std::string msg =
+				    "searching... frame=" + std::to_string(frame_count);
+
+				if(search_cfg.enable_nn && ctx.vision.isNnLoaded())
+				{
+					const auto& detections =
+					    ctx.vision.getLastDetections();
+
+					if(detections.empty())
+					{
+						msg += " | detected: nothing";
+					}
+					else
+					{
+						msg += " | detected: ";
+						for(std::size_t i = 0; i < detections.size();
+						    ++i)
+						{
+							if(i > 0)
+							{
+								msg += ", ";
+							}
+
+							const auto& d = detections[i];
+							msg += d.class_name + "("
+							    + std::to_string(d.confidence)
+							    + ")"
+							    + "[(" + std::to_string(d.x1)
+							    + "," + std::to_string(d.y1)
+							    + ")(" + std::to_string(d.x2)
+							    + "," + std::to_string(d.y2)
+							    + ")(" + std::to_string(d.x3)
+							    + "," + std::to_string(d.y3)
+							    + ")(" + std::to_string(d.x4)
+							    + "," + std::to_string(d.y4) + ")]";
+						}
+					}
+				}
+
+				ETEST_LOG_INFO("SEARCH", msg);
 
 				last_throttle_time = now;
 			}
@@ -136,11 +172,9 @@ namespace etest::state
 
 			if(key == 27 || key == 'q' || key == 'Q')
 			{
-				ETEST_LOG_INFO("SEARCH",
-				               "exit requested via keyboard");
+				ETEST_LOG_INFO("SEARCH", "exit requested via keyboard");
 				break;
 			}
-
 		}
 
 		cv::destroyAllWindows();
