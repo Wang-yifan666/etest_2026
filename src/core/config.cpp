@@ -1195,6 +1195,21 @@ loadAppConfigInternal(const std::string& config_dir)
 		}
 	}
 
+	// 交叉校验：心跳超时必须大于心跳间隔
+	if(config.uart.heartbeat_timeout_ms
+	   <= config.uart.heartbeat_interval_ms)
+	{
+		config.uart.heartbeat_timeout_ms =
+		    std::min(60000,
+		             config.uart.heartbeat_interval_ms * 3);
+
+		addMessage(result, etest::ConfigMessageLevel::ERROR,
+		           "heartbeat_timeout_ms must be greater than "
+		           "heartbeat_interval_ms; adjusted to "
+		               + std::to_string(
+		                   config.uart.heartbeat_timeout_ms));
+	}
+
 	result.config = std::move(config);
 
 	return result;
@@ -1396,6 +1411,12 @@ std::string UartConfig::to_string() const
 	       + ", max_line_length="
 	       + std::to_string(max_line_length) + ", queue_capacity="
 	       + std::to_string(queue_capacity)
+	       + ", handshake_timeout_ms="
+	       + std::to_string(handshake_timeout_ms)
+	       + ", heartbeat_interval_ms="
+	       + std::to_string(heartbeat_interval_ms)
+	       + ", heartbeat_timeout_ms="
+	       + std::to_string(heartbeat_timeout_ms)
 	       + ", protocol_version="
 	       + std::to_string(protocol_version);
 }

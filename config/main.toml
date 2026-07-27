@@ -47,6 +47,10 @@ reconnect_interval_ms = 1000
 auto_reconnect = true
 max_line_length = 512
 queue_capacity = 256
+protocol_version = 4
+handshake_timeout_ms = 1500
+heartbeat_interval_ms = 500
+heartbeat_timeout_ms = 2000
 
 [search]
 show_preview = true

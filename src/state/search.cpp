@@ -103,6 +103,9 @@ State runSearch(AppContext& ctx, const SearchConfig& search_cfg,
 	    ? LinkState::ONLINE
 	    : LinkState::WAIT_PING;
 
+	auto link_state_since = std::chrono::steady_clock::now();
+	int handshake_retry_count = 0;
+
 	// 心跳离线标识（非 static，循环外局部变量）
 	bool heartbeat_offline = !ctx.lower_machine_online;
 
@@ -203,6 +206,8 @@ State runSearch(AppContext& ctx, const SearchConfig& search_cfg,
 						// 收到 PING 响应，发送 PROTO? 进入版本确认
 						ctx.uart.sendLine("PROTO?");
 						link_state = LinkState::WAIT_PROTO;
+						link_state_since =
+						    std::chrono::steady_clock::now();
 						continue;
 					}
 
@@ -239,6 +244,7 @@ State runSearch(AppContext& ctx, const SearchConfig& search_cfg,
 							    "protocol version re-confirmed: "
 							        + std::to_string(*proto_ver));
 
+							handshake_retry_count = 0;
 							ctx.lower_machine_online = true;
 							link_state = LinkState::ONLINE;
 
@@ -355,75 +361,130 @@ State runSearch(AppContext& ctx, const SearchConfig& search_cfg,
 					}
 				}
 			}
+
+			// WAIT_PROTO 超时重试
+			if(link_state == LinkState::WAIT_PROTO)
+			{
+				const auto proto_elapsed =
+				    std::chrono::duration_cast<
+				        std::chrono::milliseconds>(
+				        now - link_state_since)
+				        .count();
+
+				if(proto_elapsed
+				   >= uart_cfg.handshake_timeout_ms)
+				{
+					if(handshake_retry_count < 3)
+					{
+						++handshake_retry_count;
+						ctx.uart.sendLine("PROTO?");
+						link_state_since = now;
+						ETEST_LOG_WARN(
+						    "SEARCH",
+						    "PROTO response timeout; retry "
+						        + std::to_string(
+						            handshake_retry_count));
+					}
+					else
+					{
+						handshake_retry_count = 0;
+						link_state = LinkState::WAIT_PING;
+						ctx.lower_machine_online = false;
+						link_state_since = now;
+						ETEST_LOG_ERROR(
+						    "SEARCH",
+						    "runtime handshake failed; "
+						    "restarting from PING");
+					}
+				}
+			}
 		}
 
 		// 4) 执行视觉算法（无论是否预览）
 		ctx.vision_result = ctx.vision.process(
 		    ctx.frame, vision::VisionMode::ColorTarget);
 
-		// 5) 发送目标结果（无论是否预览）
-		if(ctx.uart.isOpen())
+		// 5) 发送目标结果（仅在完成握手且在线时发送）
 		{
-			if(ctx.vision_result.valid)
+			const bool can_send_vision =
+			    ctx.uart.isOpen()
+			    && ctx.lower_machine_online
+			    && link_state == LinkState::ONLINE;
+
+			if(can_send_vision)
 			{
-				auto line = uart::protocol::makeTargetLine(
-				    ++ctx.uart_seq, ctx.vision_result.x,
-				    ctx.vision_result.y, ctx.vision_result.angle,
-				    ctx.vision_result.confidence);
-
-				if(line.has_value())
+				if(ctx.vision_result.valid)
 				{
-					if(!ctx.uart.sendLine(*line))
-					{
-						const std::string err_msg =
-						    "failed to send TARGET";
+					auto line = uart::protocol::makeTargetLine(
+					    ++ctx.uart_seq, ctx.vision_result.x,
+					    ctx.vision_result.y,
+					    ctx.vision_result.angle,
+					    ctx.vision_result.confidence);
 
-						if(!shouldThrottle(err_msg, last_send_error,
-						                   last_send_error_time,
-						                   send_error_throttle_ms))
+					if(line.has_value())
+					{
+						if(!ctx.uart.sendLine(*line))
 						{
-							ETEST_LOG_ERROR("SEARCH", err_msg);
+							const std::string err_msg =
+							    "failed to send TARGET";
+
+							if(!shouldThrottle(
+							       err_msg, last_send_error,
+							       last_send_error_time,
+							       send_error_throttle_ms))
+							{
+								ETEST_LOG_ERROR("SEARCH",
+								                err_msg);
+							}
+						}
+					}
+					else
+					{
+						ETEST_LOG_ERROR(
+						    "SEARCH",
+						    "invalid vision result values; "
+						    "sending LOST");
+
+						const std::string lost_line =
+						    uart::protocol::makeLostLine(
+						        ++ctx.uart_seq);
+
+						if(!ctx.uart.sendLine(lost_line))
+						{
+							const std::string err_msg =
+							    "failed to send LOST "
+							    "(invalid target)";
+
+							if(!shouldThrottle(
+							       err_msg, last_send_error,
+							       last_send_error_time,
+							       send_error_throttle_ms))
+							{
+								ETEST_LOG_ERROR("SEARCH",
+								                err_msg);
+							}
 						}
 					}
 				}
 				else
 				{
-					ETEST_LOG_ERROR(
-					    "SEARCH",
-					    "invalid vision result values; sending LOST");
-
 					const std::string lost_line =
-					    uart::protocol::makeLostLine(++ctx.uart_seq);
+					    uart::protocol::makeLostLine(
+					        ++ctx.uart_seq);
 
 					if(!ctx.uart.sendLine(lost_line))
 					{
 						const std::string err_msg =
-						    "failed to send LOST (invalid target)";
+						    "failed to send LOST";
 
-						if(!shouldThrottle(err_msg, last_send_error,
-						                   last_send_error_time,
-						                   send_error_throttle_ms))
+						if(!shouldThrottle(
+						       err_msg, last_send_error,
+						       last_send_error_time,
+						       send_error_throttle_ms))
 						{
-							ETEST_LOG_ERROR("SEARCH", err_msg);
+							ETEST_LOG_ERROR("SEARCH",
+							                err_msg);
 						}
-					}
-				}
-			}
-			else
-			{
-				const std::string lost_line =
-				    uart::protocol::makeLostLine(++ctx.uart_seq);
-
-				if(!ctx.uart.sendLine(lost_line))
-				{
-					const std::string err_msg =
-					    "failed to send LOST";
-
-					if(!shouldThrottle(err_msg, last_send_error,
-					                   last_send_error_time,
-					                   send_error_throttle_ms))
-					{
-						ETEST_LOG_ERROR("SEARCH", err_msg);
 					}
 				}
 			}
