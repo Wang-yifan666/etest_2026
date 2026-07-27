@@ -11,7 +11,8 @@
 #include "core/config.hpp"
 #include "state/state.hpp"
 
-// 内联纯函数实现（避免链接 OpenCV）
+// 复制 context.cpp 中的纯函数签名用于测试（避免链接 OpenCV）
+// 这些函数的逻辑必须与 src/core/context.cpp 保持一致
 namespace etest
 {
 	enum class ExitReason
@@ -24,13 +25,24 @@ namespace etest
 	inline RecoveryAction faultActionForConsecutiveCount(int count)
 	{
 		if(count >= 10)
-			return etest::RecoveryAction::RESTART_PROCESS;
-		return etest::RecoveryAction::CONTINUE;
+		{
+			return RecoveryAction::RESTART_PROCESS;
+		}
+		return RecoveryAction::CONTINUE;
 	}
 
 	inline int exitCodeForReason(ExitReason reason)
 	{
-		return reason == ExitReason::RESTART_REQUIRED ? 1 : 0;
+		switch(reason)
+		{
+		case ExitReason::NORMAL:
+			return 0;
+		case ExitReason::SAFE_STOP:
+			return 0;
+		case ExitReason::RESTART_REQUIRED:
+			return 1;
+		}
+		return 1;
 	}
 } // namespace etest
 
@@ -266,7 +278,7 @@ static void test_mode_overrides_normal_config()
 	std::cout << "[PASS] test_mode_overrides_normal_config\n";
 }
 
-// P0-4: 测试真实的纯函数
+// 纯函数逻辑测试（与 src/core/context.cpp 一致的函数体，验证阈值和退出码）
 static void test_fault_action_for_consecutive_count()
 {
 	assert(etest::faultActionForConsecutiveCount(0)
@@ -296,27 +308,13 @@ static void test_exit_code_for_reason()
 	std::cout << "[PASS] test_exit_code_for_reason\n";
 }
 
-static void test_run_error_sets_exit_reason_on_restart()
-{
-	// 用假的引用构造最小 AppContext 来测试 runError
-	// 这里只验证 FaultInfo 逻辑，不使用真实硬件
-	etest::FaultInfo fault;
-	fault.source = etest::FaultSource::INTERNAL;
-	fault.action = etest::RecoveryAction::RESTART_PROCESS;
-
-	// 验证 action 是 RESTART_PROCESS
-	assert(fault.action == etest::RecoveryAction::RESTART_PROCESS);
-
-	std::cout << "[PASS] test_run_error_sets_exit_reason_on_restart\n";
-}
-
 static void test_error_entry_count_safe_stop()
 {
-	// 验证 5 次后应该触发 SAFE_STOP
+	// 模拟 runError() 中的逻辑：连续 5 次 ERROR → SAFE_STOP
 	int count = 0;
 	for(int i = 0; i < 4; ++i)
 		count++;
-	assert(count < 5);
+	assert(count == 4);
 
 	count++;
 	assert(count >= 5);
@@ -337,7 +335,6 @@ int main()
 
 	test_fault_action_for_consecutive_count();
 	test_exit_code_for_reason();
-	test_run_error_sets_exit_reason_on_restart();
 	test_error_entry_count_safe_stop();
 
 	std::cout << "\nall tests passed\n";
