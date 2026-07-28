@@ -1,9 +1,14 @@
 [camera]
 
-# 使用稳定的 by-id 路径，优先于 /dev/video0
-source = "/dev/v4l/by-id/usb-lihappe8_Corp._USB_2.0_Camera-video-index0"
+# 摄像头设备路径、数字索引或视频文件路径
+source = "0"
 
 width = 640
 height = 480
 fps = 30
 fourcc = "MJPG"
+
+# 视频回放
+loop_video = false
+realtime_playback = true
+playback_fps = 30

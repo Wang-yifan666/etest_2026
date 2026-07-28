@@ -325,12 +325,15 @@ int main(int argc, char* argv[])
 
 		etest::vision::VisionProcessor vision(cfg.vision);
 
+		etest::vision::VideoRecorder recorder(cfg.record);
+
 		etest::Uart uart(cfg.uart);
 
 		uart.start();
 
 		etest::AppContext ctx{camera,
 		                      vision,
+		                      recorder,
 		                      uart,
 		                      cv::Mat{},
 		                      {},
@@ -493,6 +496,7 @@ int main(int argc, char* argv[])
 			}
 		}
 
+		ctx.recorder.release();
 		ctx.camera.release();
 		ctx.uart.stop();
 

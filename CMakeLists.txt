@@ -19,7 +19,9 @@ add_executable(etest_2026
     src/state/end.cpp
     src/state/error.cpp
     src/vision/camera.cpp
+    src/vision/video_recorder.cpp
     src/vision/vision.cpp
+    src/vision/vision_utils.cpp
     src/uart/uart.cpp
     src/uart/protocol.cpp
 )

@@ -172,9 +172,9 @@ State runStart(AppContext& ctx, const RuntimeConfig& runtime,
 			}
 
 			ctx.last_fault = {
-			    FaultSource::CAMERA, RecoveryAction::RETRY,
+			    FaultSource::CAMERA, RecoveryAction::REOPEN_CAMERA,
 			    "CAM_OPEN_FAIL", "camera open failed; will retry"};
-			return State::SEARCH;
+			return State::ERROR;
 		}
 	}
 
@@ -185,13 +185,14 @@ State runStart(AppContext& ctx, const RuntimeConfig& runtime,
 		               "self-check: reading initial frames");
 
 		int frames_read = 0;
-		const int required_frames = 5;
+		const int warmup_frames =
+		    ctx.camera.isFileSource() ? 0 : 5;
 		std::string last_throttle_msg;
 		auto last_throttle_time = std::chrono::steady_clock::now()
 		    - std::chrono::milliseconds(1000);
 		int frame_failures = 0;
 
-		while(frames_read < required_frames && ctx.running)
+		while(frames_read < warmup_frames && ctx.running)
 		{
 			if(ctx.shutdown_flag != nullptr
 			   && ctx.shutdown_flag->load())

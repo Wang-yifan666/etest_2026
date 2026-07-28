@@ -120,7 +120,7 @@ namespace etest::state
 				               "camera reopened successfully");
 				ctx.last_fault = {};
 				ctx.error_state_entry_count = 0;
-				return State::SEARCH;
+				return State::START;
 			}
 
 			ETEST_LOG_ERROR("STATE_ERROR",

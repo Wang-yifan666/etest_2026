@@ -638,6 +638,8 @@ namespace
 		    "camera.fps",
 		    "camera.fourcc",
 		    "camera.loop_video",
+		    "camera.realtime_playback",
+		    "camera.playback_fps",
 
 		    "vision.red_h1_min",
 		    "vision.red_h1_max",
@@ -660,6 +662,14 @@ namespace
 		    "uart.heartbeat_interval_ms",
 		    "uart.heartbeat_timeout_ms",
 		    "uart.protocol_version",
+
+		    "record.enabled",
+		    "record.save_raw",
+		    "record.save_debug",
+		    "record.directory",
+		    "record.fourcc",
+		    "record.fps",
+		    "record.segment_seconds",
 
 		    "search.show_preview",
 		    "search.enable_nn",
@@ -796,6 +806,16 @@ namespace
 		    raw_config, "camera.loop_video", config.camera.loop_video,
 		    result, &config.camera.source_loop_video);
 
+		config.camera.realtime_playback =
+		    getBool(raw_config, "camera.realtime_playback",
+		            config.camera.realtime_playback, result,
+		            &config.camera.source_realtime_playback);
+
+		config.camera.playback_fps =
+		    getInt(raw_config, "camera.playback_fps",
+		           config.camera.playback_fps, 1, 240, result,
+		           &config.camera.source_playback_fps);
+
 		// ---- [vision] ----
 		config.vision.red_h1_min = getInt(
 		    raw_config, "vision.red_h1_min", config.vision.red_h1_min,
@@ -897,6 +917,36 @@ namespace
 		    getInt(raw_config, "uart.protocol_version",
 		           config.uart.protocol_version, 4, 4, result,
 		           &config.uart.source_protocol_version);
+
+		// ---- [record] ----
+		config.record.enabled =
+		    getBool(raw_config, "record.enabled", config.record.enabled,
+		            result, &config.record.source_enabled);
+
+		config.record.save_raw = getBool(
+		    raw_config, "record.save_raw", config.record.save_raw,
+		    result, &config.record.source_save_raw);
+
+		config.record.save_debug = getBool(
+		    raw_config, "record.save_debug", config.record.save_debug,
+		    result, &config.record.source_save_debug);
+
+		config.record.directory = getString(
+		    raw_config, "record.directory", config.record.directory,
+		    false, result, &config.record.source_directory);
+
+		config.record.fourcc =
+		    getString(raw_config, "record.fourcc", config.record.fourcc,
+		              false, result, &config.record.source_fourcc);
+
+		config.record.fps =
+		    getInt(raw_config, "record.fps", config.record.fps, 1, 240,
+		           result, &config.record.source_fps);
+
+		config.record.segment_seconds =
+		    getInt(raw_config, "record.segment_seconds",
+		           config.record.segment_seconds, 10, 3600, result,
+		           &config.record.source_segment_seconds);
 
 		// ---- [search] ----
 		config.search.show_preview =
@@ -1109,16 +1159,28 @@ namespace
 		// 从 C++ 默认值开始（protocol_version=4）
 		etest::AppConfig config;
 
-		// 第1层：main.toml
+		// 第1层：main.toml（仅 [mode]）
 		loadFileLayer(config, config_dir + "/main.toml", result);
 
-		// 第2层：logger.toml
+		// 第2层：runtime.toml
+		loadFileLayer(config, config_dir + "/runtime.toml", result);
+
+		// 第3层：logger.toml
 		loadFileLayer(config, config_dir + "/logger.toml", result);
 
-		// 第3层：camera.toml
+		// 第4层：camera.toml
 		loadFileLayer(config, config_dir + "/camera.toml", result);
 
-		// 第4层：search.toml
+		// 第5层：vision.toml
+		loadFileLayer(config, config_dir + "/vision.toml", result);
+
+		// 第6层：uart.toml
+		loadFileLayer(config, config_dir + "/uart.toml", result);
+
+		// 第7层：record.toml
+		loadFileLayer(config, config_dir + "/record.toml", result);
+
+		// 第8层：search.toml
 		loadFileLayer(config, config_dir + "/search.toml", result);
 
 		// 模式处理
@@ -1404,6 +1466,17 @@ namespace etest
 		    + ", heartbeat_timeout_ms="
 		    + std::to_string(heartbeat_timeout_ms)
 		    + ", protocol_version=" + std::to_string(protocol_version);
+	}
+
+	std::string RecordConfig::to_string() const
+	{
+		return "enabled=" + std::string(enabled ? "true" : "false")
+		    + ", save_raw=" + std::string(save_raw ? "true" : "false")
+		    + ", save_debug="
+		    + std::string(save_debug ? "true" : "false")
+		    + ", directory=" + directory + ", fourcc=" + fourcc
+		    + ", fps=" + std::to_string(fps)
+		    + ", segment_seconds=" + std::to_string(segment_seconds);
 	}
 
 	std::string SearchConfig::to_string() const

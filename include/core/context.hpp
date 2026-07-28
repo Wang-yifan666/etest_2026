@@ -7,6 +7,7 @@
 #include "state/state.hpp"
 #include "uart/uart.hpp"
 #include "vision/camera.hpp"
+#include "vision/video_recorder.hpp"
 #include "vision/vision.hpp"
 
 namespace etest
@@ -23,6 +24,7 @@ namespace etest
 	{
 		vision::Camera& camera;
 		vision::VisionProcessor& vision;
+		vision::VideoRecorder& recorder;
 		Uart& uart;
 
 		cv::Mat frame;

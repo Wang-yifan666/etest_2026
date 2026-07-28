@@ -1,0 +1,7 @@
+[runtime]
+headless = false
+allow_keyboard_exit = true
+enable_self_check = true
+enable_auto_recovery = true
+camera_retry_interval_ms = 500
+uart_retry_interval_ms = 1000

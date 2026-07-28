@@ -1,0 +1,8 @@
+[record]
+enabled = false
+save_raw = true
+save_debug = false
+directory = "data/video"
+fourcc = "MJPG"
+fps = 30
+segment_seconds = 300

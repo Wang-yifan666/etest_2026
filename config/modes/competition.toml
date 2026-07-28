@@ -18,3 +18,22 @@ terminal = false
 flush_each_write = true
 # 最低日志等级为 INFO，减少不必要输出
 min_level = "INFO"
+
+[camera]
+# 树莓派摄像头
+source = "/dev/video0"
+width = 640
+height = 480
+fps = 30
+fourcc = "MJPG"
+loop_video = false
+realtime_playback = false
+
+[record]
+enabled = true
+save_raw = true
+save_debug = false
+directory = "data/video"
+fourcc = "MJPG"
+fps = 30
+segment_seconds = 300

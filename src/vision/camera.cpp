@@ -253,60 +253,27 @@ bool Camera::read(cv::Mat& frame) noexcept
 				read_error_reported_ = true;
 			}
 
-			if(consecutive_failures_ >= kMaxConsecutiveFailures)
+			// 仅文件源需要在此处理循环回放和 EOF 检测。
+			// 真实摄像头重连由 ERROR 状态统一负责。
+			if(file_source_ && consecutive_failures_ >= kMaxConsecutiveFailures)
 			{
-				// 文件源：到达 EOF
-				if(file_source_)
+				if(config_.loop_video)
 				{
-					if(config_.loop_video)
-					{
-						ETEST_LOG_INFO(
-						    "CAMERA",
-						    "file source ended; looping back to start");
-
-						cap_.set(cv::CAP_PROP_POS_FRAMES, 0);
-						consecutive_failures_ = 0;
-						state_ = CameraState::OK;
-						// 下一帧尝试读取
-						return read(frame);
-					}
-
 					ETEST_LOG_INFO(
 					    "CAMERA",
-					    "file source reached end; "
-					    "not reopening");
+					    "file source ended; looping back to start");
 
-					state_ = CameraState::FILE_EOF;
-					return false;
+					cap_.set(cv::CAP_PROP_POS_FRAMES, 0);
+					consecutive_failures_ = 0;
+					state_ = CameraState::OK;
+					return read(frame);
 				}
 
-				ETEST_LOG_WARN(
+				ETEST_LOG_INFO(
 				    "CAMERA",
-				    "too many consecutive read failures; "
-				    "reopening camera");
+				    "file source reached end; not reopening");
 
-				cap_.release();
-
-				if(open())
-				{
-					ETEST_LOG_INFO("CAMERA",
-					               "camera reopened successfully");
-				}
-				else
-				{
-					ETEST_LOG_ERROR("CAMERA",
-					                "camera reopen failed");
-
-					state_ = CameraState::DISCONNECTED;
-
-					// 重连失败时休眠，避免高频重试
-					if(retry_interval_ms_ > 0)
-					{
-						std::this_thread::sleep_for(
-						    std::chrono::milliseconds(
-						        retry_interval_ms_));
-					}
-				}
+				state_ = CameraState::FILE_EOF;
 			}
 
 			return false;
@@ -394,6 +361,16 @@ int Camera::consecutiveFailures() const noexcept
 bool Camera::isFileSource() const noexcept
 {
 	return file_source_;
+}
+
+bool Camera::realtimePlayback() const noexcept
+{
+	return config_.realtime_playback;
+}
+
+int Camera::playbackFps() const noexcept
+{
+	return config_.playback_fps;
 }
 
 void Camera::release() noexcept
