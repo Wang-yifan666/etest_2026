@@ -1,6 +1,6 @@
 [mode]
-# 默认不启用模式文件。比赛时设为 true 并指定 name = "competition"
-enabled = false
+# 比赛时必须启用
+enabled = true
 name = "competition"
 
 [runtime]
