@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <climits>
+#include <cstdlib>
 #include <exception>
 #include <sstream>
 #include <thread>
@@ -95,7 +97,15 @@ bool Camera::open() noexcept
 		else if(device_path)
 		{
 			// Linux / WSL / Raspberry Pi 上优先使用 V4L2。
-			success = cap_.open(config_.source, cv::CAP_V4L2);
+			// 解析符号链接（如 /dev/v4l/by-id/... → /dev/video0），
+			// 因为 OpenCV 的 V4L2 后端无法直接打开 by-id 路径。
+			std::string resolved_path = config_.source;
+			char real_path[PATH_MAX] = {};
+			if(::realpath(config_.source.c_str(), real_path) != nullptr)
+			{
+				resolved_path = real_path;
+			}
+			success = cap_.open(resolved_path, cv::CAP_V4L2);
 
 			if(!success)
 			{
