@@ -3,31 +3,31 @@
 namespace etest
 {
 
-RecoveryAction faultActionForConsecutiveCount(int count)
-{
-	if(count >= 10)
+	RecoveryAction faultActionForConsecutiveCount(int count)
 	{
-		return RecoveryAction::RESTART_PROCESS;
+		if(count >= 10)
+		{
+			return RecoveryAction::RESTART_PROCESS;
+		}
+
+		return RecoveryAction::CONTINUE;
 	}
 
-	return RecoveryAction::CONTINUE;
-}
-
-int exitCodeForReason(ExitReason reason)
-{
-	switch(reason)
+	int exitCodeForReason(ExitReason reason)
 	{
-	case ExitReason::NORMAL:
-		return 0;
+		switch(reason)
+		{
+		case ExitReason::NORMAL:
+			return 0;
 
-	case ExitReason::SAFE_STOP:
-		return 0;
+		case ExitReason::SAFE_STOP:
+			return 0;
 
-	case ExitReason::RESTART_REQUIRED:
+		case ExitReason::RESTART_REQUIRED:
+			return 1;
+		}
+
 		return 1;
 	}
-
-	return 1;
-}
 
 } // namespace etest

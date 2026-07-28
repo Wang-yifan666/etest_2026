@@ -11,518 +11,517 @@
 namespace etest::state
 {
 
-namespace
-{
-
-bool shouldThrottle(
-    std::string& last_msg,
-    std::chrono::steady_clock::time_point& last_time,
-    const std::string& msg, int throttle_ms = 500)
-{
-	const auto now = std::chrono::steady_clock::now();
-
-	if(msg == last_msg)
+	namespace
 	{
-		const auto elapsed = std::chrono::duration_cast<
-		    std::chrono::milliseconds>(now - last_time);
 
-		if(elapsed.count() < throttle_ms)
+		bool shouldThrottle(
+		    std::string& last_msg,
+		    std::chrono::steady_clock::time_point& last_time,
+		    const std::string& msg, int throttle_ms = 500)
 		{
-			return true;
+			const auto now = std::chrono::steady_clock::now();
+
+			if(msg == last_msg)
+			{
+				const auto elapsed = std::chrono::duration_cast<
+				    std::chrono::milliseconds>(now - last_time);
+
+				if(elapsed.count() < throttle_ms)
+				{
+					return true;
+				}
+			}
+
+			last_msg = msg;
+			last_time = now;
+			return false;
 		}
-	}
 
-	last_msg = msg;
-	last_time = now;
-	return false;
-}
+	} // namespace
 
-} // namespace
-
-State runStart(AppContext& ctx, const RuntimeConfig& runtime,
-               const SearchConfig& search_cfg,
-               const UartConfig& uart_cfg,
-               bool show_preview)
-{
-	ETEST_LOG_INFO("STATE_START", "system initialization started");
-
-	ETEST_LOG_INFO(
-	    "STATE_START",
-	    "runtime.headless="
-	        + std::string(runtime.headless ? "true" : "false")
-	        + ", runtime.allow_keyboard_exit="
-	        + std::string(runtime.allow_keyboard_exit ? "true"
-	                                                  : "false")
-	        + ", runtime.enable_self_check="
-	        + std::string(runtime.enable_self_check ? "true"
-	                                                : "false")
-	        + ", runtime.enable_auto_recovery="
-	        + std::string(runtime.enable_auto_recovery ? "true"
-	                                                   : "false")
-	        + ", show_preview="
-	        + std::string(show_preview ? "true" : "false"));
-
-	// 简化自检
-	if(!runtime.enable_self_check)
+	State runStart(AppContext& ctx, const RuntimeConfig& runtime,
+	               const SearchConfig& search_cfg,
+	               const UartConfig& uart_cfg, bool show_preview)
 	{
-		ETEST_LOG_WARN("STATE_START",
-		               "enable_self_check=false; "
-		               "performing simplified self-check");
+		ETEST_LOG_INFO("STATE_START", "system initialization started");
+
+		ETEST_LOG_INFO(
+		    "STATE_START",
+		    "runtime.headless="
+		        + std::string(runtime.headless ? "true" : "false")
+		        + ", runtime.allow_keyboard_exit="
+		        + std::string(runtime.allow_keyboard_exit ? "true"
+		                                                  : "false")
+		        + ", runtime.enable_self_check="
+		        + std::string(runtime.enable_self_check ? "true"
+		                                                : "false")
+		        + ", runtime.enable_auto_recovery="
+		        + std::string(runtime.enable_auto_recovery ? "true"
+		                                                   : "false")
+		        + ", show_preview="
+		        + std::string(show_preview ? "true" : "false"));
+
+		// 简化自检
+		if(!runtime.enable_self_check)
+		{
+			ETEST_LOG_WARN("STATE_START",
+			               "enable_self_check=false; "
+			               "performing simplified self-check");
+
+			if(!ctx.camera.isOpened() && !ctx.camera.open())
+			{
+				ETEST_LOG_WARN(
+				    "STATE_START",
+				    "camera failed to open during simplified check");
+			}
+
+			if(!ctx.uart.isRunning())
+			{
+				ETEST_LOG_WARN(
+				    "STATE_START",
+				    "UART not running during simplified check");
+			}
+
+			ETEST_LOG_INFO("STATE_START",
+			               "simplified check done; entering SEARCH");
+
+			return State::SEARCH;
+		}
+
+		bool camera_ready = true;
+		bool lower_machine_ready = false;
+
+		// 1. 检查摄像头
+		ETEST_LOG_INFO("STATE_START", "self-check: opening camera");
 
 		if(!ctx.camera.isOpened() && !ctx.camera.open())
 		{
-			ETEST_LOG_WARN(
-			    "STATE_START",
-			    "camera failed to open during simplified check");
-		}
-
-		if(!ctx.uart.isRunning())
-		{
-			ETEST_LOG_WARN(
-			    "STATE_START",
-			    "UART not running during simplified check");
-		}
-
-		ETEST_LOG_INFO("STATE_START",
-		               "simplified check done; entering SEARCH");
-
-		return State::SEARCH;
-	}
-
-	bool camera_ready = true;
-	bool lower_machine_ready = false;
-
-	// 1. 检查摄像头
-	ETEST_LOG_INFO("STATE_START", "self-check: opening camera");
-
-	if(!ctx.camera.isOpened() && !ctx.camera.open())
-	{
-		ETEST_LOG_ERROR("STATE_START",
-		                "camera failed to open initially");
-
-		bool camera_ok = false;
-
-		int retry_count = 0;
-		const int max_retries = 30;
-		std::string last_throttle_msg;
-		auto last_throttle_time = std::chrono::steady_clock::now()
-		    - std::chrono::milliseconds(1000);
-
-		while(!camera_ok && ctx.running
-		      && retry_count < max_retries)
-		{
-			if(ctx.shutdown_flag != nullptr
-			   && ctx.shutdown_flag->load())
-			{
-				ETEST_LOG_INFO(
-				    "STATE_START",
-				    "shutdown requested during camera retry");
-
-				return State::END;
-			}
-
-			const int interval = runtime.camera_retry_interval_ms;
-
-			if(interval > 0)
-			{
-				std::this_thread::sleep_for(
-				    std::chrono::milliseconds(interval));
-			}
-
-			if(ctx.camera.open())
-			{
-				camera_ok = true;
-
-				ETEST_LOG_INFO("STATE_START",
-				               "camera opened after "
-				                   + std::to_string(retry_count + 1)
-				                   + " retries");
-			}
-			else
-			{
-				++retry_count;
-
-				const std::string msg = "camera retry "
-				    + std::to_string(retry_count) + "/"
-				    + std::to_string(max_retries);
-
-				if(!shouldThrottle(last_throttle_msg,
-				                   last_throttle_time, msg))
-				{
-					ETEST_LOG_ERROR("STATE_START", msg);
-				}
-			}
-		}
-
-		if(!camera_ok)
-		{
 			ETEST_LOG_ERROR("STATE_START",
-			                "camera failed to open after "
-			                    + std::to_string(max_retries)
-			                    + " retries");
+			                "camera failed to open initially");
 
-			camera_ready = false;
+			bool camera_ok = false;
 
-			if(!runtime.enable_auto_recovery)
+			int retry_count = 0;
+			const int max_retries = 30;
+			std::string last_throttle_msg;
+			auto last_throttle_time = std::chrono::steady_clock::now()
+			    - std::chrono::milliseconds(1000);
+
+			while(!camera_ok && ctx.running
+			      && retry_count < max_retries)
 			{
-				ctx.last_fault = {
-				    FaultSource::CAMERA, RecoveryAction::SAFE_STOP,
-				    "CAM_OPEN_FAIL", "camera open failed"};
-				return State::END;
-			}
-
-			ctx.last_fault = {
-			    FaultSource::CAMERA, RecoveryAction::REOPEN_CAMERA,
-			    "CAM_OPEN_FAIL", "camera open failed; will retry"};
-			return State::ERROR;
-		}
-	}
-
-	// 2. 连续读取 5 帧确认摄像头稳定
-	if(camera_ready)
-	{
-		ETEST_LOG_INFO("STATE_START",
-		               "self-check: reading initial frames");
-
-		int frames_read = 0;
-		const int warmup_frames =
-		    ctx.camera.isFileSource() ? 0 : 5;
-		std::string last_throttle_msg;
-		auto last_throttle_time = std::chrono::steady_clock::now()
-		    - std::chrono::milliseconds(1000);
-		int frame_failures = 0;
-
-		while(frames_read < warmup_frames && ctx.running)
-		{
-			if(ctx.shutdown_flag != nullptr
-			   && ctx.shutdown_flag->load())
-			{
-				return State::END;
-			}
-
-			cv::Mat test_frame;
-
-			if(ctx.camera.read(test_frame) && !test_frame.empty())
-			{
-				++frames_read;
-
-				if(frames_read == 1)
+				if(ctx.shutdown_flag != nullptr
+				   && ctx.shutdown_flag->load())
 				{
 					ETEST_LOG_INFO(
 					    "STATE_START",
-					    "actual frame size: "
-					        + std::to_string(test_frame.cols) + "x"
-					        + std::to_string(test_frame.rows));
+					    "shutdown requested during camera retry");
+
+					return State::END;
 				}
 
-				if(ctx.camera.getState()
-				   == vision::CameraState::FILE_EOF)
-				{
-					ETEST_LOG_INFO("STATE_START",
-					               "file source ended after "
-					                   + std::to_string(frames_read)
-					                   + " frames");
+				const int interval = runtime.camera_retry_interval_ms;
 
-					break;
+				if(interval > 0)
+				{
+					std::this_thread::sleep_for(
+					    std::chrono::milliseconds(interval));
+				}
+
+				if(ctx.camera.open())
+				{
+					camera_ok = true;
+
+					ETEST_LOG_INFO("STATE_START",
+					               "camera opened after "
+					                   + std::to_string(retry_count + 1)
+					                   + " retries");
+				}
+				else
+				{
+					++retry_count;
+
+					const std::string msg = "camera retry "
+					    + std::to_string(retry_count) + "/"
+					    + std::to_string(max_retries);
+
+					if(!shouldThrottle(last_throttle_msg,
+					                   last_throttle_time, msg))
+					{
+						ETEST_LOG_ERROR("STATE_START", msg);
+					}
 				}
 			}
-			else
+
+			if(!camera_ok)
 			{
-				++frame_failures;
+				ETEST_LOG_ERROR("STATE_START",
+				                "camera failed to open after "
+				                    + std::to_string(max_retries)
+				                    + " retries");
 
-				const std::string msg = "frame read failed ("
-				    + std::to_string(frame_failures) + ")";
+				camera_ready = false;
 
-				if(!shouldThrottle(last_throttle_msg,
-				                   last_throttle_time, msg))
+				if(!runtime.enable_auto_recovery)
 				{
-					ETEST_LOG_ERROR("STATE_START", msg);
+					ctx.last_fault = {
+					    FaultSource::CAMERA, RecoveryAction::SAFE_STOP,
+					    "CAM_OPEN_FAIL", "camera open failed"};
+					return State::END;
 				}
 
-				if(frame_failures >= 10)
-				{
-					ETEST_LOG_ERROR(
-					    "STATE_START",
-					    "too many frame read failures during check");
-
-					camera_ready = false;
-					break;
-				}
-
-				std::this_thread::sleep_for(
-				    std::chrono::milliseconds(100));
+				ctx.last_fault = {
+				    FaultSource::CAMERA, RecoveryAction::REOPEN_CAMERA,
+				    "CAM_OPEN_FAIL", "camera open failed; will retry"};
+				return State::ERROR;
 			}
 		}
 
+		// 2. 连续读取 5 帧确认摄像头稳定
 		if(camera_ready)
 		{
 			ETEST_LOG_INFO("STATE_START",
-			               "read " + std::to_string(frames_read)
-			                   + " initial frames successfully");
-		}
-	}
+			               "self-check: reading initial frames");
 
-	// 3. 检查 UART 后台线程
-	ETEST_LOG_INFO("STATE_START", "self-check: checking UART");
+			int frames_read = 0;
+			const int warmup_frames = ctx.camera.isFileSource() ? 0 : 5;
+			std::string last_throttle_msg;
+			auto last_throttle_time = std::chrono::steady_clock::now()
+			    - std::chrono::milliseconds(1000);
+			int frame_failures = 0;
 
-	if(!ctx.uart.isRunning())
-	{
-		ETEST_LOG_WARN("STATE_START", "UART thread is not running");
-
-		if(runtime.enable_auto_recovery)
-		{
-			ctx.uart.start();
-		}
-
-		if(!ctx.uart.isRunning())
-		{
-			ETEST_LOG_ERROR("STATE_START", "UART failed to start");
-
-			ctx.last_fault = {
-			    FaultSource::UART, RecoveryAction::RECONNECT_UART,
-			    "UART_NOT_RUNNING", "UART not running"};
-		}
-	}
-
-	// 4. V4 握手：等待可选 BOOT,OK → 发送 PING → 等待 OK,PING →
-	//              发送 PROTO? → 等待 PROTO,<expected>
-	ETEST_LOG_INFO("STATE_START", "self-check: V4 handshake");
-
-	if(!ctx.uart.isOpen())
-	{
-		ETEST_LOG_ERROR("STATE_START",
-		                "UART not open; cannot perform handshake");
-	}
-	else
-	{
-		const int timeout_ms = uart_cfg.handshake_timeout_ms;
-		const int expected_version = uart_cfg.protocol_version;
-
-		// 步骤 4a：等待可选的 BOOT,OK
-		{
-			UartMessage msg;
-			const auto boot_deadline =
-			    std::chrono::steady_clock::now()
-			    + std::chrono::milliseconds(timeout_ms / 2);
-
-			while(std::chrono::steady_clock::now() < boot_deadline)
+			while(frames_read < warmup_frames && ctx.running)
 			{
-				if(!ctx.running)
-					break;
-
 				if(ctx.shutdown_flag != nullptr
 				   && ctx.shutdown_flag->load())
 				{
 					return State::END;
 				}
 
-				if(ctx.uart.waitPop(msg, 100))
+				cv::Mat test_frame;
+
+				if(ctx.camera.read(test_frame) && !test_frame.empty())
 				{
-					if(uart::protocol::isBootOk(msg))
+					++frames_read;
+
+					if(frames_read == 1)
 					{
 						ETEST_LOG_INFO(
 						    "STATE_START",
-						    "received BOOT,OK from lower machine");
-						break;
+						    "actual frame size: "
+						        + std::to_string(test_frame.cols) + "x"
+						        + std::to_string(test_frame.rows));
 					}
 
-					if(msg.type == UartMessageType::ERROR
-					   || msg.type == UartMessageType::WARNING)
+					if(ctx.camera.getState()
+					   == vision::CameraState::FILE_EOF)
 					{
-						ETEST_LOG_WARN("STATE_START",
-						               "early message: " + msg.raw);
-					}
-				}
-			}
-		}
-
-		// 步骤 4b：发送 PING 并等待 OK,PING
-		{
-			ETEST_LOG_INFO("STATE_START", "sending PING");
-			ctx.uart.sendLine("PING");
-
-			UartMessage msg;
-			bool ping_ok = false;
-			const auto ping_deadline =
-			    std::chrono::steady_clock::now()
-			    + std::chrono::milliseconds(timeout_ms);
-
-			while(std::chrono::steady_clock::now() < ping_deadline)
-			{
-				if(!ctx.running)
-					break;
-
-				if(ctx.shutdown_flag != nullptr
-				   && ctx.shutdown_flag->load())
-				{
-					return State::END;
-				}
-
-				if(ctx.uart.waitPop(msg, 100))
-				{
-					if(uart::protocol::isPingResponse(msg))
-					{
-						ping_ok = true;
 						ETEST_LOG_INFO("STATE_START",
-						               "received OK,PING");
+						               "file source ended after "
+						                   + std::to_string(frames_read)
+						                   + " frames");
+
+						break;
+					}
+				}
+				else
+				{
+					++frame_failures;
+
+					const std::string msg = "frame read failed ("
+					    + std::to_string(frame_failures) + ")";
+
+					if(!shouldThrottle(last_throttle_msg,
+					                   last_throttle_time, msg))
+					{
+						ETEST_LOG_ERROR("STATE_START", msg);
+					}
+
+					if(frame_failures >= 10)
+					{
+						ETEST_LOG_ERROR(
+						    "STATE_START",
+						    "too many frame read failures during check");
+
+						camera_ready = false;
 						break;
 					}
 
-					if(msg.type == UartMessageType::ERROR
-					   || msg.type == UartMessageType::WARNING)
-					{
-						ETEST_LOG_WARN(
-						    "STATE_START",
-						    "message during PING wait: " + msg.raw);
-					}
+					std::this_thread::sleep_for(
+					    std::chrono::milliseconds(100));
 				}
 			}
 
-			if(!ping_ok)
+			if(camera_ready)
 			{
-				ETEST_LOG_ERROR(
-				    "STATE_START",
-				    "PING timeout; no OK,PING received");
-				ctx.lower_machine_online = false;
+				ETEST_LOG_INFO("STATE_START",
+				               "read " + std::to_string(frames_read)
+				                   + " initial frames successfully");
 			}
 		}
 
-		// 步骤 4c：发送 PROTO? 并等待 PROTO,<expected_version>
-		// 即使 PING 超时也尝试 PROTO 查询
+		// 3. 检查 UART 后台线程
+		ETEST_LOG_INFO("STATE_START", "self-check: checking UART");
+
+		if(!ctx.uart.isRunning())
 		{
-			ETEST_LOG_INFO("STATE_START", "sending PROTO?");
-			ctx.uart.sendLine("PROTO?");
+			ETEST_LOG_WARN("STATE_START", "UART thread is not running");
 
-			UartMessage msg;
-			bool proto_ok = false;
-			const auto proto_deadline =
-			    std::chrono::steady_clock::now()
-			    + std::chrono::milliseconds(timeout_ms);
-
-			while(std::chrono::steady_clock::now() < proto_deadline)
+			if(runtime.enable_auto_recovery)
 			{
-				if(!ctx.running)
-					break;
-
-				if(ctx.shutdown_flag != nullptr
-				   && ctx.shutdown_flag->load())
-				{
-					return State::END;
-				}
-
-				if(ctx.uart.waitPop(msg, 100))
-				{
-					if(msg.type == UartMessageType::PROTOCOL)
-					{
-						auto version =
-						    uart::protocol::getProtocolVersion(msg);
-
-						if(version.has_value()
-						   && *version == expected_version)
-						{
-							proto_ok = true;
-							lower_machine_ready = true;
-							ctx.lower_machine_online = true;
-
-							ETEST_LOG_INFO(
-							    "STATE_START",
-							    "protocol version confirmed: "
-							        + std::to_string(*version));
-							break;
-						}
-						else if(version.has_value())
-						{
-							ETEST_LOG_ERROR(
-							    "STATE_START",
-							    "protocol version mismatch: got "
-							        + std::to_string(*version)
-							        + ", expected "
-							        + std::to_string(expected_version));
-						}
-						else
-						{
-							ETEST_LOG_ERROR(
-							    "STATE_START",
-							    "invalid PROTO message: "
-							        + msg.raw);
-						}
-					}
-
-					if(msg.type == UartMessageType::ERROR
-					   || msg.type == UartMessageType::WARNING)
-					{
-						ETEST_LOG_WARN("STATE_START",
-						               "message during PROTO wait: "
-						                   + msg.raw);
-					}
-
-					if(uart::protocol::isPingResponse(msg))
-					{
-						ctx.lower_machine_online = true;
-					}
-				}
+				ctx.uart.start();
 			}
 
-			if(!proto_ok)
+			if(!ctx.uart.isRunning())
 			{
-				ETEST_LOG_ERROR("STATE_START",
-				                "protocol version check failed");
-				ctx.lower_machine_online = false;
+				ETEST_LOG_ERROR("STATE_START", "UART failed to start");
+
+				ctx.last_fault = {
+				    FaultSource::UART, RecoveryAction::RECONNECT_UART,
+				    "UART_NOT_RUNNING", "UART not running"};
 			}
 		}
-	}
 
-	// 5. 自检结果
-	{
-		std::string self_check_result;
+		// 4. V4 握手：等待可选 BOOT,OK → 发送 PING → 等待 OK,PING →
+		//              发送 PROTO? → 等待 PROTO,<expected>
+		ETEST_LOG_INFO("STATE_START", "self-check: V4 handshake");
 
-		if(camera_ready && lower_machine_ready)
+		if(!ctx.uart.isOpen())
 		{
-			self_check_result =
-			    "SELF_CHECK_OK: camera ready, lower controller online";
-		}
-		else if(camera_ready && !lower_machine_ready)
-		{
-			self_check_result =
-			    "SELF_CHECK_DEGRADED: camera ready, lower controller offline";
-
-			if(!runtime.enable_auto_recovery)
-			{
-				ETEST_LOG_ERROR(
-				    "STATE_START",
-				    "lower controller offline and auto-recovery disabled");
-				ctx.running = false;
-				return State::END;
-			}
-
-			ETEST_LOG_WARN(
-			    "STATE_START",
-			    "auto-recovery enabled; proceeding in degraded mode");
-		}
-		else if(!camera_ready && lower_machine_ready)
-		{
-			self_check_result =
-			    "SELF_CHECK_DEGRADED: camera failed, lower controller online";
+			ETEST_LOG_ERROR("STATE_START",
+			                "UART not open; cannot perform handshake");
 		}
 		else
 		{
-			self_check_result =
-			    "SELF_CHECK_FAILED: camera failed, lower controller offline";
+			const int timeout_ms = uart_cfg.handshake_timeout_ms;
+			const int expected_version = uart_cfg.protocol_version;
 
-			if(!runtime.enable_auto_recovery)
+			// 步骤 4a：等待可选的 BOOT,OK
 			{
-				ctx.running = false;
-				return State::END;
+				UartMessage msg;
+				const auto boot_deadline =
+				    std::chrono::steady_clock::now()
+				    + std::chrono::milliseconds(timeout_ms / 2);
+
+				while(std::chrono::steady_clock::now() < boot_deadline)
+				{
+					if(!ctx.running)
+						break;
+
+					if(ctx.shutdown_flag != nullptr
+					   && ctx.shutdown_flag->load())
+					{
+						return State::END;
+					}
+
+					if(ctx.uart.waitPop(msg, 100))
+					{
+						if(uart::protocol::isBootOk(msg))
+						{
+							ETEST_LOG_INFO(
+							    "STATE_START",
+							    "received BOOT,OK from lower machine");
+							break;
+						}
+
+						if(msg.type == UartMessageType::ERROR
+						   || msg.type == UartMessageType::WARNING)
+						{
+							ETEST_LOG_WARN("STATE_START",
+							               "early message: " + msg.raw);
+						}
+					}
+				}
+			}
+
+			// 步骤 4b：发送 PING 并等待 OK,PING
+			{
+				ETEST_LOG_INFO("STATE_START", "sending PING");
+				ctx.uart.sendLine("PING");
+
+				UartMessage msg;
+				bool ping_ok = false;
+				const auto ping_deadline =
+				    std::chrono::steady_clock::now()
+				    + std::chrono::milliseconds(timeout_ms);
+
+				while(std::chrono::steady_clock::now() < ping_deadline)
+				{
+					if(!ctx.running)
+						break;
+
+					if(ctx.shutdown_flag != nullptr
+					   && ctx.shutdown_flag->load())
+					{
+						return State::END;
+					}
+
+					if(ctx.uart.waitPop(msg, 100))
+					{
+						if(uart::protocol::isPingResponse(msg))
+						{
+							ping_ok = true;
+							ETEST_LOG_INFO("STATE_START",
+							               "received OK,PING");
+							break;
+						}
+
+						if(msg.type == UartMessageType::ERROR
+						   || msg.type == UartMessageType::WARNING)
+						{
+							ETEST_LOG_WARN(
+							    "STATE_START",
+							    "message during PING wait: " + msg.raw);
+						}
+					}
+				}
+
+				if(!ping_ok)
+				{
+					ETEST_LOG_ERROR(
+					    "STATE_START",
+					    "PING timeout; no OK,PING received");
+					ctx.lower_machine_online = false;
+				}
+			}
+
+			// 步骤 4c：发送 PROTO? 并等待 PROTO,<expected_version>
+			// 即使 PING 超时也尝试 PROTO 查询
+			{
+				ETEST_LOG_INFO("STATE_START", "sending PROTO?");
+				ctx.uart.sendLine("PROTO?");
+
+				UartMessage msg;
+				bool proto_ok = false;
+				const auto proto_deadline =
+				    std::chrono::steady_clock::now()
+				    + std::chrono::milliseconds(timeout_ms);
+
+				while(std::chrono::steady_clock::now() < proto_deadline)
+				{
+					if(!ctx.running)
+						break;
+
+					if(ctx.shutdown_flag != nullptr
+					   && ctx.shutdown_flag->load())
+					{
+						return State::END;
+					}
+
+					if(ctx.uart.waitPop(msg, 100))
+					{
+						if(msg.type == UartMessageType::PROTOCOL)
+						{
+							auto version =
+							    uart::protocol::getProtocolVersion(msg);
+
+							if(version.has_value()
+							   && *version == expected_version)
+							{
+								proto_ok = true;
+								lower_machine_ready = true;
+								ctx.lower_machine_online = true;
+
+								ETEST_LOG_INFO(
+								    "STATE_START",
+								    "protocol version confirmed: "
+								        + std::to_string(*version));
+								break;
+							}
+							else if(version.has_value())
+							{
+								ETEST_LOG_ERROR(
+								    "STATE_START",
+								    "protocol version mismatch: got "
+								        + std::to_string(*version)
+								        + ", expected "
+								        + std::to_string(
+								            expected_version));
+							}
+							else
+							{
+								ETEST_LOG_ERROR(
+								    "STATE_START",
+								    "invalid PROTO message: "
+								        + msg.raw);
+							}
+						}
+
+						if(msg.type == UartMessageType::ERROR
+						   || msg.type == UartMessageType::WARNING)
+						{
+							ETEST_LOG_WARN("STATE_START",
+							               "message during PROTO wait: "
+							                   + msg.raw);
+						}
+
+						if(uart::protocol::isPingResponse(msg))
+						{
+							ctx.lower_machine_online = true;
+						}
+					}
+				}
+
+				if(!proto_ok)
+				{
+					ETEST_LOG_ERROR("STATE_START",
+					                "protocol version check failed");
+					ctx.lower_machine_online = false;
+				}
 			}
 		}
 
-		ETEST_LOG_INFO("STATE_START", self_check_result);
+		// 5. 自检结果
+		{
+			std::string self_check_result;
+
+			if(camera_ready && lower_machine_ready)
+			{
+				self_check_result =
+				    "SELF_CHECK_OK: camera ready, lower controller online";
+			}
+			else if(camera_ready && !lower_machine_ready)
+			{
+				self_check_result =
+				    "SELF_CHECK_DEGRADED: camera ready, lower controller offline";
+
+				if(!runtime.enable_auto_recovery)
+				{
+					ETEST_LOG_ERROR(
+					    "STATE_START",
+					    "lower controller offline and auto-recovery disabled");
+					ctx.running = false;
+					return State::END;
+				}
+
+				ETEST_LOG_WARN(
+				    "STATE_START",
+				    "auto-recovery enabled; proceeding in degraded mode");
+			}
+			else if(!camera_ready && lower_machine_ready)
+			{
+				self_check_result =
+				    "SELF_CHECK_DEGRADED: camera failed, lower controller online";
+			}
+			else
+			{
+				self_check_result =
+				    "SELF_CHECK_FAILED: camera failed, lower controller offline";
+
+				if(!runtime.enable_auto_recovery)
+				{
+					ctx.running = false;
+					return State::END;
+				}
+			}
+
+			ETEST_LOG_INFO("STATE_START", self_check_result);
+		}
+
+		ETEST_LOG_INFO("STATE_START",
+		               "self-check complete; entering SEARCH state");
+
+		return State::SEARCH;
 	}
-
-	ETEST_LOG_INFO("STATE_START",
-	               "self-check complete; entering SEARCH state");
-
-	return State::SEARCH;
-}
 
 } // namespace etest::state

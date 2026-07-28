@@ -1,4 +1,3 @@
 [mode]
-# 比赛时必须启用
 enabled = true
 name = "competition"

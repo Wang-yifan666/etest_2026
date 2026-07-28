@@ -18,7 +18,6 @@ namespace
 {
 
 	// 信号处理
-
 	std::atomic_bool g_shutdown_requested{false};
 
 	void signalHandler(int /*signum*/)
@@ -287,9 +286,7 @@ int main(int argc, char* argv[])
 		return 1;
 	}
 
-	// =========================================================================
 	// 1. 初始化配置
-	// =========================================================================
 	etest::ConfigLoadResult config_result;
 
 	if(args.is_single_file)
@@ -301,9 +298,7 @@ int main(int argc, char* argv[])
 		config_result = etest::loadAppConfigFromDir(args.path);
 	}
 
-	// =========================================================================
 	// 2. 初始化日志系统
-	// =========================================================================
 	auto& logger = etest::Logger::instance();
 
 	logger.init(config_result.config.logger);
@@ -372,8 +367,7 @@ int main(int argc, char* argv[])
 
 				case etest::State::SEARCH:
 					current_state = etest::state::runSearch(
-					    ctx, cfg.search, cfg.uart,
-					    allow_keyboard_exit);
+					    ctx, cfg.search, cfg.uart, allow_keyboard_exit);
 					break;
 
 				case etest::State::ERROR:

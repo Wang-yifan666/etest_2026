@@ -2,17 +2,21 @@
 Description=etest_2026 competition control program
 After=multi-user.target
 
+# 比赛程序异常退出后持续尝试拉起
+StartLimitIntervalSec=0
+
 [Service]
 Type=simple
 User=REPLACE_WITH_USER
 WorkingDirectory=REPLACE_WITH_WORKDIR
 ExecStart=REPLACE_WITH_EXECUTABLE --config-dir REPLACE_WITH_CONFIGDIR
+
 Restart=on-failure
-RestartSec=1
-StartLimitIntervalSec=60
-StartLimitBurst=5
+RestartSec=2
+
 KillSignal=SIGTERM
 TimeoutStopSec=10
+
 StandardOutput=journal
 StandardError=journal
 
