@@ -679,6 +679,11 @@ namespace
 		    "vision.ball.track_min_aspect_ratio",
 		    "vision.ball.track_stable_frames",
 		    "vision.ball.track_lost_timeout_frames",
+		    "vision.ball.track_search_roi_x",
+		    "vision.ball.track_search_roi_y",
+		    "vision.ball.track_search_roi_w",
+		    "vision.ball.track_search_roi_h",
+		    "vision.ball.track_horizontal_angle_max",
 
 		    "uart.device",
 		    "uart.baudrate",
@@ -1083,6 +1088,31 @@ namespace
 			           ball.track_lost_timeout_frames, 5, 600,
 			           result,
 			           &ball.source_track_lost_timeout_frames);
+
+ball.track_search_roi_x =
+    getInt(raw_config, "vision.ball.track_search_roi_x",
+           ball.track_search_roi_x, 0, 4096, result,
+           &ball.source_track_search_roi_x);
+
+ball.track_search_roi_y =
+    getInt(raw_config, "vision.ball.track_search_roi_y",
+           ball.track_search_roi_y, 0, 2160, result,
+           &ball.source_track_search_roi_y);
+
+ball.track_search_roi_w =
+    getInt(raw_config, "vision.ball.track_search_roi_w",
+           ball.track_search_roi_w, 1, 4096, result,
+           &ball.source_track_search_roi_w);
+
+ball.track_search_roi_h =
+    getInt(raw_config, "vision.ball.track_search_roi_h",
+           ball.track_search_roi_h, 1, 2160, result,
+           &ball.source_track_search_roi_h);
+
+ball.track_horizontal_angle_max =
+    getDouble(raw_config, "vision.ball.track_horizontal_angle_max",
+              ball.track_horizontal_angle_max, 0.0, 90.0, result,
+              &ball.source_track_horizontal_angle_max);
 		}
 
 		// ---- [uart] ----

@@ -127,8 +127,7 @@ VisionResult VisionProcessor::detectColorTarget(
 	cv::Mat hsv;
 	cv::cvtColor(frame, hsv, cv::COLOR_BGR2HSV);
 
-	cv::Mat mask1;
-	cv::Mat mask2;
+	cv::Mat mask1, mask2;
 	cv::inRange(
 	    hsv,
 	    cv::Scalar(config_.red_h1_min, config_.saturation_min,
@@ -193,7 +192,7 @@ VisionResult VisionProcessor::detectColorTarget(
 }
 
 // ────────────────────────────────────────────────────────────
-// 白色轨道检测
+// 白色轨道检测（搜索区域 + 横向形态学 + 角度过滤）
 // ────────────────────────────────────────────────────────────
 
 TrackResult VisionProcessor::detectWhiteTrack(
@@ -212,32 +211,57 @@ TrackResult VisionProcessor::detectWhiteTrack(
 
 		const auto& ball = config_.ball;
 
-		cv::Mat hsv;
-		cv::cvtColor(frame, hsv, cv::COLOR_BGR2HSV);
+		// 1) 限定搜索区域，排除衣服/桌面
+		cv::Rect search_roi(
+		    ball.track_search_roi_x,
+		    ball.track_search_roi_y,
+		    ball.track_search_roi_w,
+		    ball.track_search_roi_h);
+		search_roi &= cv::Rect(0, 0, frame.cols, frame.rows);
 
-		cv::Mat mask;
+		if(search_roi.empty() || search_roi.area() < 100)
+		{
+			debug_track_mask_ = cv::Mat::zeros(
+			    frame.size(), CV_8UC1);
+			return result;
+		}
+
+		const cv::Mat search_image = frame(search_roi);
+
+		// 2) HSV 白色阈值（收紧）
+		cv::Mat hsv;
+		cv::cvtColor(search_image, hsv, cv::COLOR_BGR2HSV);
+
+		cv::Mat white_mask;
 		cv::inRange(
 		    hsv,
 		    cv::Scalar(0, 0, ball.white_v_min),
 		    cv::Scalar(180, ball.white_s_max, 255),
-		    mask);
+		    white_mask);
 
+		// 3) 横向形态学开运算：分离竖直手臂
+		const cv::Mat horizontal_kernel =
+		    cv::getStructuringElement(
+		        cv::MORPH_RECT, cv::Size(31, 3));
+		cv::morphologyEx(white_mask, white_mask,
+		                 cv::MORPH_OPEN, horizontal_kernel);
+
+		// 4) 横向闭运算：连接轨道碎片
 		const cv::Mat close_kernel =
 		    cv::getStructuringElement(
 		        cv::MORPH_RECT, cv::Size(21, 7));
-		const cv::Mat open_kernel =
-		    cv::getStructuringElement(
-		        cv::MORPH_RECT, cv::Size(5, 5));
+		cv::morphologyEx(white_mask, white_mask,
+		                 cv::MORPH_CLOSE, close_kernel);
 
-		cv::morphologyEx(mask, mask, cv::MORPH_CLOSE,
-		                 close_kernel);
-		cv::morphologyEx(mask, mask, cv::MORPH_OPEN,
-		                 open_kernel);
+		// 将局部 mask 放回全图坐标供调试显示
+		debug_track_mask_ = cv::Mat::zeros(
+		    frame.size(), CV_8UC1);
+		white_mask.copyTo(debug_track_mask_(search_roi));
 
-		debug_track_mask_ = mask.clone();
-
+		// 5) 轮廓筛选：面积 + 长宽比 + 横向角度
 		std::vector<std::vector<cv::Point>> contours;
-		cv::findContours(mask, contours, cv::RETR_EXTERNAL,
+		cv::findContours(white_mask, contours,
+		                 cv::RETR_EXTERNAL,
 		                 cv::CHAIN_APPROX_SIMPLE);
 
 		const double image_area =
@@ -251,19 +275,17 @@ TrackResult VisionProcessor::detectWhiteTrack(
 			const double area = cv::contourArea(contour);
 			if(area
 			   < image_area * ball.track_min_area_ratio)
-			{
 				continue;
-			}
 
 			const cv::RotatedRect rect =
 			    cv::minAreaRect(contour);
 
-			const double width = rect.size.width;
-			const double height = rect.size.height;
 			const double long_side =
-			    std::max(width, height);
+			    std::max(rect.size.width,
+			             rect.size.height);
 			const double short_side =
-			    std::min(width, height);
+			    std::min(rect.size.width,
+			             rect.size.height);
 
 			if(short_side < 5.0) continue;
 
@@ -271,8 +293,27 @@ TrackResult VisionProcessor::detectWhiteTrack(
 			if(aspect < ball.track_min_aspect_ratio)
 				continue;
 
-			if(rect.center.y < frame.rows * 0.20
-			   || rect.center.y > frame.rows * 0.90)
+			// 横向角度过滤
+			cv::Point2f pts[4];
+			rect.points(pts);
+
+			const cv::Point2f e1 = pts[1] - pts[0];
+			const cv::Point2f e2 = pts[2] - pts[1];
+			const cv::Point2f long_edge =
+			    cv::norm(e1) >= cv::norm(e2) ? e1 : e2;
+
+			const double angle_deg =
+			    std::atan2(long_edge.y, long_edge.x)
+			    * 180.0 / CV_PI;
+
+			const double horizontal_deviation =
+			    std::min(
+			        std::abs(angle_deg),
+			        std::abs(
+			            180.0 - std::abs(angle_deg)));
+
+			if(horizontal_deviation
+			   > ball.track_horizontal_angle_max)
 				continue;
 
 			const double score =
@@ -287,11 +328,20 @@ TrackResult VisionProcessor::detectWhiteTrack(
 
 		if(best_score < 0.0) return result;
 
+		// 6) 提取轴线（局部坐标 → 全图坐标）
 		cv::Point2f points[4];
 		best_rect.points(points);
 
-		const double edge01 = cv::norm(points[1] - points[0]);
-		const double edge12 = cv::norm(points[2] - points[1]);
+		for(auto& p: points)
+		{
+			p.x += search_roi.x;
+			p.y += search_roi.y;
+		}
+
+		const double edge01 =
+		    cv::norm(points[1] - points[0]);
+		const double edge12 =
+		    cv::norm(points[2] - points[1]);
 
 		cv::Point2f axis_p1, axis_p2;
 		if(edge01 >= edge12)
@@ -305,18 +355,26 @@ TrackResult VisionProcessor::detectWhiteTrack(
 			axis_p2 = (points[2] + points[3]) * 0.5F;
 		}
 
-		cv::Rect roi = best_rect.boundingRect();
+		cv::Rect roi(
+		    search_roi.x + best_rect.boundingRect().x,
+		    search_roi.y + best_rect.boundingRect().y,
+		    best_rect.boundingRect().width,
+		    best_rect.boundingRect().height);
 		roi &= cv::Rect(0, 0, frame.cols, frame.rows);
 
 		if(roi.empty())
 		{
 			ETEST_LOG_ERROR("TRACK",
-			                "detected track produced empty ROI");
+			                "track ROI empty after clamp");
 			return result;
 		}
 
 		result.valid = true;
-		result.rect = best_rect;
+		result.rect = cv::RotatedRect(
+		    cv::Point2f(
+		        best_rect.center.x + search_roi.x,
+		        best_rect.center.y + search_roi.y),
+		    best_rect.size, best_rect.angle);
 		result.bounding_roi = roi;
 		result.axis_p1 = axis_p1;
 		result.axis_p2 = axis_p2;
@@ -583,8 +641,7 @@ VisionResult VisionProcessor::detectBall(const cv::Mat& frame)
 		const double aspect =
 		    static_cast<double>(box.width)
 		    / std::max(1, box.height);
-		if(aspect < 0.70 || aspect > 1.40)
-			continue;
+		if(aspect < 0.70 || aspect > 1.40) continue;
 
 		const cv::Moments moments = cv::moments(contour);
 		if(std::abs(moments.m00) < 1e-6) continue;
@@ -713,7 +770,6 @@ VisionResult VisionProcessor::detectBall(const cv::Mat& frame)
 	if(ball_state_ == BallState::REACQUIRE_BALL)
 	{
 		ball_state_ = BallState::TRACK_BALL;
-		// ball_lost_frame_count_ 已在上面重置为 0
 		ETEST_LOG_INFO(
 		    "VISION",
 		    "Ball reacquired; resuming TRACK");
@@ -834,7 +890,7 @@ VisionResult VisionProcessor::detectBall(const cv::Mat& frame)
 }
 
 // ────────────────────────────────────────────────────────────
-// 调试绘制（分屏：原始标注 | track mask | ball binary | 状态）
+// 调试绘制（分屏）
 // ────────────────────────────────────────────────────────────
 
 void VisionProcessor::drawDebugInfo(
@@ -903,27 +959,25 @@ void VisionProcessor::drawBallDebugInfo(
 		const int w = frame.cols;
 		const int h = frame.rows;
 
-		cv::Mat canvas(
-		    cv::Size(w * 2, h),
-		    frame.type(),
-		    cv::Scalar(0, 0, 0));
+		cv::Mat canvas(cv::Size(w * 2, h),
+		               frame.type(),
+		               cv::Scalar(0, 0, 0));
 
 		// 左上：原始标注帧
-		cv::Mat top_left = canvas(
-		    cv::Rect(0, 0, w, h / 2));
-		cv::Mat src_top =
-		    frame(cv::Rect(0, 0, w, h / 2));
+		cv::Mat top_left = canvas(cv::Rect(0, 0, w, h / 2));
+		cv::Mat src_top = frame(cv::Rect(0, 0, w, h / 2));
 		src_top.copyTo(top_left);
 
 		if(track_locked_)
 		{
 			const cv::Rect& roi =
 			    locked_track_.bounding_roi;
+			// 球搜索 ROI（绿色）
 			cv::rectangle(
 			    top_left,
 			    makeInnerRoi(roi, frame.size()),
 			    cv::Scalar(0, 255, 0), 1);
-
+			// 轨道轴线（黄色）
 			cv::line(
 			    top_left,
 			    cv::Point(
@@ -964,8 +1018,7 @@ void VisionProcessor::drawBallDebugInfo(
 		}
 		else
 		{
-			const char* state_text =
-			    "FIND_TRACK";
+			const char* state_text = "FIND_TRACK";
 			switch(ball_state_)
 			{
 			case BallState::CALIBRATE_ZERO:
@@ -984,7 +1037,6 @@ void VisionProcessor::drawBallDebugInfo(
 			default:
 				break;
 			}
-
 			cv::putText(top_left,
 			            std::string(state_text),
 			            cv::Point(5, 15),
@@ -994,61 +1046,63 @@ void VisionProcessor::drawBallDebugInfo(
 		}
 
 		// 右上：track mask
-		cv::Mat top_right = canvas(
-		    cv::Rect(w, 0, w, h / 2));
+		cv::Mat top_right =
+		    canvas(cv::Rect(w, 0, w, h / 2));
 		if(!debug_track_mask_.empty())
 		{
-			cv::Mat mask_top = debug_track_mask_(
-			    cv::Rect(
-			        0, 0,
-			        std::min(debug_track_mask_.cols,
-			                 w),
-			        std::min(debug_track_mask_.rows,
-			                 h / 2)));
+			const int mw = std::min(
+			    debug_track_mask_.cols, w);
+			const int mh = std::min(
+			    debug_track_mask_.rows, h / 2);
+			cv::Mat mask_top =
+			    debug_track_mask_(
+			        cv::Rect(0, 0, mw, mh));
 			cv::Mat mask_color;
 			cv::cvtColor(mask_top, mask_color,
 			             cv::COLOR_GRAY2BGR);
 			mask_color.copyTo(
-			    top_right(
-			        cv::Rect(0, 0, mask_color.cols,
-			                 mask_color.rows)));
+			    top_right(cv::Rect(
+			        0, 0, mask_color.cols,
+			        mask_color.rows)));
 		}
 
 		// 左下：ball binary
-		cv::Mat bottom_left = canvas(
-		    cv::Rect(0, h / 2, w, h / 2));
+		cv::Mat bottom_left =
+		    canvas(cv::Rect(0, h / 2, w, h / 2));
 		if(!debug_ball_binary_.empty())
 		{
-			cv::Mat bin_half = debug_ball_binary_(
-			    cv::Rect(
-			        0, 0,
-			        std::min(debug_ball_binary_.cols,
-			                 w),
-			        std::min(debug_ball_binary_.rows,
-			                 h / 2)));
+			const int bw = std::min(
+			    debug_ball_binary_.cols, w);
+			const int bh = std::min(
+			    debug_ball_binary_.rows, h / 2);
+			cv::Mat bin_half =
+			    debug_ball_binary_(
+			        cv::Rect(0, 0, bw, bh));
 			cv::Mat bin_color;
 			cv::cvtColor(bin_half, bin_color,
 			             cv::COLOR_GRAY2BGR);
 			bin_color.copyTo(
-			    bottom_left(
-			        cv::Rect(0, 0, bin_color.cols,
-			                 bin_color.rows)));
+			    bottom_left(cv::Rect(
+			        0, 0, bin_color.cols,
+			        bin_color.rows)));
 		}
 
 		// 右下：状态文本
-		cv::Mat bottom_right = canvas(
-		    cv::Rect(w, h / 2, w, h / 2));
+		cv::Mat bottom_right =
+		    canvas(cv::Rect(w, h / 2, w, h / 2));
 		std::string status_text;
 		if(result.valid && result.calibrated)
 		{
-			status_text = "OK offset="
+			status_text =
+			    "OK offset="
 			    + std::to_string(result.offset_mm)
 			    + "mm";
 		}
 		else if(result.error_code
 		         == "ZERO_CALIBRATING")
 		{
-			status_text = "CALIBRATING "
+			status_text =
+			    "CALIBRATING "
 			    + std::to_string(
 			          zero_buffer_.size())
 			    + "/"
@@ -1059,7 +1113,6 @@ void VisionProcessor::drawBallDebugInfo(
 		{
 			status_text = result.error_code;
 		}
-
 		cv::putText(bottom_right, status_text,
 		            cv::Point(5, 20),
 		            cv::FONT_HERSHEY_SIMPLEX,
@@ -1080,7 +1133,8 @@ void VisionProcessor::drawBallDebugInfo(
 	catch(...)
 	{
 		ETEST_LOG_ERROR(
-		    "VISION", "unknown ball draw exception");
+		    "VISION",
+		    "unknown ball draw exception");
 	}
 }
 
@@ -1211,8 +1265,7 @@ cv::Mat VisionProcessor::detectNn(
 				int best_cls = 0;
 				for(int c = 0; c < 80; ++c)
 				{
-					const float cf =
-					    rd[5 + c];
+					const float cf = rd[5 + c];
 					if(cf > max_cls)
 					{
 						max_cls = cf;
@@ -1220,8 +1273,7 @@ cv::Mat VisionProcessor::detectNn(
 					}
 				}
 
-				const float fc =
-				    obj * max_cls;
+				const float fc = obj * max_cls;
 				if(fc < nn_confidence_threshold_)
 					continue;
 
@@ -1273,9 +1325,8 @@ cv::Mat VisionProcessor::detectNn(
 			     box.y + box.height,
 			     box.x + box.width, box.y});
 
-			cv::rectangle(
-			    result, box,
-			    cv::Scalar(0, 255, 0), 2);
+			cv::rectangle(result, box,
+			              cv::Scalar(0, 255, 0), 2);
 			cv::putText(
 			    result,
 			    name + " "
@@ -1294,23 +1345,20 @@ cv::Mat VisionProcessor::detectNn(
 	{
 		ETEST_LOG_ERROR(
 		    "VISION_NN",
-		    std::string("detectNn: ")
-		        + error.what());
+		    std::string("detectNn: ") + error.what());
 		return frame.clone();
 	}
 	catch(const std::exception& error)
 	{
 		ETEST_LOG_ERROR(
 		    "VISION_NN",
-		    std::string("detectNn: ")
-		        + error.what());
+		    std::string("detectNn: ") + error.what());
 		return frame.clone();
 	}
 	catch(...)
 	{
 		ETEST_LOG_ERROR(
-		    "VISION_NN",
-		    "unknown detectNn exception");
+		    "VISION_NN", "unknown detectNn exception");
 		return frame.clone();
 	}
 }

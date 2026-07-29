@@ -170,12 +170,26 @@ namespace etest
 		int track_stable_frames = 10;
 		int track_lost_timeout_frames = 30;
 
+		// 轨道搜索区域（整幅图像坐标，基于 640×480 工作分辨率）
+		int track_search_roi_x = 0;
+		int track_search_roi_y = 220;
+		int track_search_roi_w = 640;
+		int track_search_roi_h = 220;
+
+		// 轨道横向角度限制（度），用于排除竖直手臂
+		double track_horizontal_angle_max = 20.0;
+
 		SourceInfo source_white_s_max;
 		SourceInfo source_white_v_min;
 		SourceInfo source_track_min_area_ratio;
 		SourceInfo source_track_min_aspect_ratio;
 		SourceInfo source_track_stable_frames;
 		SourceInfo source_track_lost_timeout_frames;
+		SourceInfo source_track_search_roi_x;
+		SourceInfo source_track_search_roi_y;
+		SourceInfo source_track_search_roi_w;
+		SourceInfo source_track_search_roi_h;
+		SourceInfo source_track_horizontal_angle_max;
 
 		SourceInfo source_roi_x;
 		SourceInfo source_roi_y;
