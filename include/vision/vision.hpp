@@ -5,6 +5,7 @@
 #include <opencv2/core.hpp>
 #include <opencv2/dnn.hpp>
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <deque>
@@ -27,10 +28,10 @@ namespace etest::vision
 
 	enum class BallState
 	{
-		FIND_TRACK,     // 寻找白色轨道
-		CALIBRATE_ZERO, // 零点标定
-		TRACK_BALL,     // 正常追踪
-		REACQUIRE_BALL  // 球丢失，重捕获
+		FIND_TRACK,
+		CALIBRATE_ZERO,
+		TRACK_BALL,
+		REACQUIRE_BALL
 	};
 
 	struct VisionResult
@@ -43,15 +44,13 @@ namespace etest::vision
 		double confidence = 0.0;
 		std::uint64_t frame_id = 0;
 		std::int64_t timestamp_ms = 0;
-		std::string target_type; // "RED_TARGET", "BALL" etc.
-		std::string error_code;  // "" if valid, else reason
+		std::string target_type;
+		std::string error_code;
 
-		// Ball 模式专用（仅 target_type=="BALL" 时有效）
 		int offset_mm = 0;
 		bool calibrated = false;
 	};
 
-	// 单次神经网络检测中识别出的一个物品。
 	struct DetectionInfo
 	{
 		std::string class_name;
@@ -66,7 +65,6 @@ namespace etest::vision
 		int y4 = 0;
 	};
 
-	// 白色轨道检测结果
 	struct TrackResult
 	{
 		bool valid = false;
@@ -75,6 +73,25 @@ namespace etest::vision
 		cv::Point2f axis_p1;
 		cv::Point2f axis_p2;
 		double confidence = 0.0;
+	};
+
+	struct BallCandidate
+	{
+		cv::Point2f center;
+		float radius = 0.0F;
+
+		double normalized_x = 0.0;
+		double mean_inner_gray = 255.0;
+		double mean_ring_gray = 255.0;
+		double ring_contrast = 0.0;
+
+		double radius_score = 0.0;
+		double center_score = 0.0;
+		double darkness_score = 0.0;
+		double contrast_score = 0.0;
+		double quality = 0.0;
+
+		bool passed = false;
 	};
 
 	class VisionProcessor
@@ -88,36 +105,40 @@ namespace etest::vision
 		void drawDebugInfo(cv::Mat& frame,
 		                   const VisionResult& result) noexcept;
 
-		// 加载 ONNX 模型和类别文件。
 		bool loadNnModel(const std::string& onnx_path,
 		                 const std::string& class_names_path,
 		                 double confidence_threshold,
 		                 double nms_threshold) noexcept;
 
-		// 对输入帧执行神经网络检测，返回绘制了检测框的帧。
 		cv::Mat detectNn(const cv::Mat& frame) noexcept;
 
-		// 返回最近一次 detectNn() 检测到的物品列表。
 		const std::vector<DetectionInfo>& getLastDetections()
 		    const noexcept;
 
-		// 神经网络是否已加载。
 		bool isNnLoaded() const noexcept;
 
 	private:
 		VisionResult detectColorTarget(const cv::Mat& frame);
 		VisionResult detectBall(const cv::Mat& frame);
 
-		// ── 棕色管道检测 ──
 		TrackResult detectBrownPipe(const cv::Mat& frame) noexcept;
 		bool isTrackSimilar(const TrackResult& a,
 		                    const TrackResult& b) const noexcept;
 
-		// Ball 调试绘制
 		void drawBallDebugInfo(cv::Mat& frame,
 		                       const VisionResult& result) noexcept;
 
-		// 从轨道 bounding box 向内收缩生成球检测 ROI
+	public:
+		bool orderTrackCorners(
+		    const cv::RotatedRect& rect,
+		    std::array<cv::Point2f, 4>& ordered) noexcept;
+
+		bool updateWarpMatrices() noexcept;
+
+		std::vector<BallCandidate> detectBallCandidates(
+		    const cv::Mat& warped_roi) noexcept;
+
+	private:
 		static cv::Rect makeInnerRoi(
 		    const cv::Rect& track_roi,
 		    const cv::Size& work_size) noexcept;
@@ -126,53 +147,66 @@ namespace etest::vision
 		bool empty_frame_reported_ = false;
 		std::uint64_t frame_id_counter_ = 0;
 
-		// 神经网络相关。
 		cv::dnn::Net nn_net_;
 		bool nn_loaded_ = false;
 		std::vector<std::string> nn_class_names_;
 		double nn_confidence_threshold_ = 0.5;
 		double nn_nms_threshold_ = 0.4;
 		std::vector<std::string> nn_output_names_;
-
-		// 最近一次 detectNn() 的检测结果。
 		std::vector<DetectionInfo> last_detections_;
 
-		// ── Ball 检测状态机 ──
 		BallState ball_state_ = BallState::FIND_TRACK;
-
 		bool ball_lost_ = false;
 		int ball_lost_frame_count_ = 0;
 		int track_lost_frame_count_ = 0;
-		bool has_last_ball_center_ = false;
-		cv::Point2f last_ball_center_{-1.0F, -1.0F};
 
 		std::deque<double> zero_buffer_;
 		bool zero_locked_ = false;
 		double zero_position_px_ = 0.0;
 
-		bool ball_filter_initialized_ = false;
-		double filtered_offset_cm_ = 0.0;
-
-		bool ball_config_error_reported_ = false;
-		bool ball_resolution_reported_ = false;
-
-		// ── 轨道锁定 ──
 		TrackResult locked_track_;
 		int track_stable_count_ = 0;
 		bool track_locked_ = false;
 
-		// ── 透视展开 ──
 		cv::Mat warp_matrix_;
 		bool warp_locked_ = false;
-		int warp_direction_ = 1; // +1 或 -1，锁定后固定左右方向
+		int warp_direction_ = 1;
 		cv::Mat debug_warped_pipe_;
 
-		// ── 调试中间图像 ──
+		std::array<cv::Point2f, 4> locked_pipe_points_{};
+		bool locked_pipe_points_valid_ = false;
+		cv::Mat inverse_warp_matrix_;
+
 		cv::Mat debug_track_mask_;
 		cv::Mat debug_ball_binary_;
+		std::vector<BallCandidate> debug_ball_candidates_;
+
+		// ── alpha-beta 跟踪器 ──
+		bool tracker_initialized_ = false;
+		double tracked_position_ratio_ = 0.0;
+		double tracked_velocity_ratio_per_s_ = 0.0;
+		double predicted_position_ratio_ = 0.0;
+		int tracker_lost_frames_ = 0;
+		int reacquire_confirm_count_ = 0;
+		double reacquire_candidate_ratio_ = 0.0;
+		std::chrono::steady_clock::time_point tracker_last_time_;
 
 		std::chrono::steady_clock::time_point
 		    last_ball_lost_log_time_{};
+
+		std::chrono::steady_clock::time_point
+		    last_corner_order_error_time_{};
+		std::chrono::steady_clock::time_point
+		    last_warp_update_error_time_{};
+		std::chrono::steady_clock::time_point
+		    last_pipe_lost_warn_time_{};
+		std::chrono::steady_clock::time_point
+		    last_pipe_recovered_info_time_{};
+
+		std::string last_ball_error_code_;
+		std::chrono::steady_clock::time_point
+		    last_ball_error_time_{};
+		int ball_lost_frames_on_recover_ = 0;
 	};
 
 } // namespace etest::vision

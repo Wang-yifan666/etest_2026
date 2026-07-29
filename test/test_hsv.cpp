@@ -58,7 +58,7 @@ int main()
 		cv::resize(frame, frame, cv::Size(640, 360));
 
 		// 按当前视频调整
-		cv::Rect roi(25, 143, 586, 72);
+		cv::Rect roi(10, 183, 586, 72);
 		roi &= cv::Rect(0, 0, frame.cols, frame.rows);
 
 		if(roi.width <= 0 || roi.height <= 0)

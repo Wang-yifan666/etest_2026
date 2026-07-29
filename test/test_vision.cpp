@@ -8,7 +8,9 @@
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 
+#include <array>
 #include <cassert>
+#include <cmath>
 #include <iostream>
 
 namespace
@@ -89,7 +91,6 @@ namespace
 			auto r = vp.process(img, etest::vision::VisionMode::Ball);
 			assert(!r.valid);
 		}
-		// 不崩溃即为通过
 		std::cout
 		    << "[PASS] test_search_roi_out_of_bounds (no crash)\n";
 	}
@@ -120,14 +121,12 @@ namespace
 
 		etest::vision::VisionProcessor vp(cfg);
 
-		// 输入 30 帧含棕色管道和钢球的图，验证不崩溃
 		for(int i = 0; i < 30; ++i)
 		{
 			cv::Mat img = makeWhiteBg();
 			drawBrownRect(img, 60, 230, 520, 90);
 			drawDarkCircle(img, cv::Point(320, 275), 14);
 			auto r = vp.process(img, etest::vision::VisionMode::Ball);
-			// 不崩溃即 OK
 			(void)r;
 		}
 		std::cout
@@ -161,7 +160,6 @@ namespace
 
 		etest::vision::VisionProcessor vp(cfg);
 
-		// 连续含球帧
 		for(int i = 0; i < 15; ++i)
 		{
 			cv::Mat img = makeWhiteBg();
@@ -170,16 +168,13 @@ namespace
 			vp.process(img, etest::vision::VisionMode::Ball);
 		}
 
-		// 连续无球帧（管道还在但没球）
 		for(int i = 0; i < 10; ++i)
 		{
 			cv::Mat img = makeWhiteBg();
 			drawBrownRect(img, 60, 230, 520, 90);
-			// 无钢球
 			vp.process(img, etest::vision::VisionMode::Ball);
 		}
 
-		// 再喂含球帧
 		for(int i = 0; i < 10; ++i)
 		{
 			cv::Mat img = makeWhiteBg();
@@ -217,7 +212,6 @@ namespace
 
 		etest::vision::VisionProcessor vp(cfg);
 
-		// 含管道帧
 		for(int i = 0; i < 10; ++i)
 		{
 			cv::Mat img = makeWhiteBg();
@@ -225,7 +219,6 @@ namespace
 			vp.process(img, etest::vision::VisionMode::Ball);
 		}
 
-		// 无管道帧（超过丢失阈值）
 		bool unlocked = false;
 		for(int i = 0; i < cfg.ball.pipe_lost_timeout_frames + 2; ++i)
 		{
@@ -235,14 +228,269 @@ namespace
 				unlocked = true;
 		}
 
-		// 最终应该回到 PIPE_NOT_STABLE 或类似状态
 		cv::Mat img = makeWhiteBg();
 		auto last = vp.process(img, etest::vision::VisionMode::Ball);
 		std::cout << "  final state after pipe loss: "
 		          << last.error_code << "\n";
-
 		(void)unlocked;
 		std::cout << "[PASS] test_pipe_lost_resets (non-crash)\n";
+	}
+
+	// ── 四点排序新测试 ──
+
+	void test_orderTrackCorners_no_flip()
+	{
+		etest::VisionConfig cfg;
+		etest::vision::VisionProcessor vp(cfg);
+
+		cv::RotatedRect rect(
+		    cv::Point2f(320, 200), cv::Size2f(400, 80), 0);
+
+		std::array<cv::Point2f, 4> o1;
+		std::array<cv::Point2f, 4> o2;
+		bool r1 = vp.orderTrackCorners(rect, o1);
+		bool r2 = vp.orderTrackCorners(rect, o2);
+		(void)r1;
+		(void)r2;
+
+		assert(r1);
+		assert(r2);
+
+		double left_x_1 = o1[0].x + o1[3].x;
+		double right_x_1 = o1[1].x + o1[2].x;
+		double left_x_2 = o2[0].x + o2[3].x;
+		double right_x_2 = o2[1].x + o2[2].x;
+		(void)left_x_1;
+		(void)right_x_1;
+		(void)left_x_2;
+		(void)right_x_2;
+
+		assert(left_x_1 < right_x_1);
+		assert(left_x_2 < right_x_2);
+
+		for(int i = 0; i < 4; ++i)
+		{
+			assert(std::abs(o1[i].x - o2[i].x) < 0.01);
+			assert(std::abs(o1[i].y - o2[i].y) < 0.01);
+		}
+
+		std::cout << "[PASS] test_orderTrackCorners_no_flip\n";
+	}
+
+	void test_orderTrackCorners_degenerate()
+	{
+		etest::VisionConfig cfg;
+		etest::vision::VisionProcessor vp(cfg);
+
+		cv::RotatedRect rect(
+		    cv::Point2f(320, 200), cv::Size2f(1, 1), 0);
+
+		std::array<cv::Point2f, 4> o;
+		bool r = vp.orderTrackCorners(rect, o);
+		(void)r;
+		assert(!r);
+
+		std::cout
+		    << "[PASS] test_orderTrackCorners_degenerate\n";
+	}
+
+	void test_smooth_points_between()
+	{
+		std::array<cv::Point2f, 4> old_pts = {
+		    cv::Point2f(0, 0), cv::Point2f(100, 0),
+		    cv::Point2f(100, 50), cv::Point2f(0, 50)};
+		std::array<cv::Point2f, 4> det_pts = {
+		    cv::Point2f(10, 0), cv::Point2f(110, 0),
+		    cv::Point2f(110, 50), cv::Point2f(10, 50)};
+
+		double alpha = 0.5;
+		for(int i = 0; i < 4; ++i)
+		{
+			float new_x =
+			    static_cast<float>(alpha * det_pts[i].x
+			                       + (1.0 - alpha)
+			                           * old_pts[i].x);
+			float new_y =
+			    static_cast<float>(alpha * det_pts[i].y
+			                       + (1.0 - alpha)
+			                           * old_pts[i].y);
+			(void)new_x;
+			(void)new_y;
+
+			assert(std::abs(new_x - (old_pts[i].x + det_pts[i].x)
+			                       / 2.0F)
+			       < 0.001F);
+			assert(std::abs(new_y - (old_pts[i].y + det_pts[i].y)
+			                       / 2.0F)
+			       < 0.001F);
+		}
+
+		std::cout << "[PASS] test_smooth_points_between\n";
+	}
+
+	void test_warp_roundtrip()
+	{
+		cv::Point2f src_pts[4] = {cv::Point2f(0, 0),
+		                          cv::Point2f(499, 0),
+		                          cv::Point2f(499, 119),
+		                          cv::Point2f(0, 119)};
+		cv::Point2f dst_pts[4] = {cv::Point2f(50, 30),
+		                          cv::Point2f(450, 25),
+		                          cv::Point2f(455, 100),
+		                          cv::Point2f(45, 105)};
+
+		cv::Mat warp = cv::getPerspectiveTransform(
+		    src_pts, dst_pts);
+		cv::Mat inv = cv::getPerspectiveTransform(
+		    dst_pts, src_pts);
+
+		for(const auto& pt: src_pts)
+		{
+			std::vector<cv::Point2f> v_in = {pt};
+			std::vector<cv::Point2f> v_mid;
+			std::vector<cv::Point2f> v_out;
+			cv::perspectiveTransform(v_in, v_mid, warp);
+			cv::perspectiveTransform(v_mid, v_out, inv);
+
+			double err = cv::norm(v_out[0] - pt);
+			(void)err;
+			assert(err < 1.0);
+		}
+
+		std::cout << "[PASS] test_warp_roundtrip\n";
+	}
+
+	// ── HoughCircles 新测试 ──
+
+	cv::Mat makeGrayRoi(int w, int h)
+	{
+		// 创建 BGR 格式的暗底 roi 用于 Hough 检测
+		return cv::Mat(h, w, CV_8UC3, cv::Scalar(80, 80, 80));
+	}
+
+	void test_hough_empty_no_exception()
+	{
+		etest::vision::VisionProcessor vp;
+
+		// 空图调用 detectBallCandidates 不抛异常
+		cv::Mat empty;
+		auto c = vp.detectBallCandidates(empty);
+		assert(c.empty());
+
+		// 纯色图不抛异常
+		cv::Mat plain = makeGrayRoi(200, 100);
+		auto c2 = vp.detectBallCandidates(plain);
+		(void)c2;
+
+		std::cout << "[PASS] test_hough_empty_no_exception\n";
+	}
+
+	void test_hough_dark_circle_candidate()
+	{
+		etest::VisionConfig cfg;
+		// 放宽 Hough 参数以便检测
+		cfg.ball.hough_param1 = 50.0;
+		cfg.ball.hough_param2 = 10.0;
+		cfg.ball.ball_min_radius = 10;
+		cfg.ball.ball_max_radius = 30;
+		cfg.ball.ball_min_quality = 0.10;
+		etest::vision::VisionProcessor vp(cfg);
+
+		cv::Mat roi = makeGrayRoi(300, 100);
+		// 画一个暗圆（钢球）
+		cv::circle(roi, cv::Point(150, 50), 18,
+		           cv::Scalar(25, 25, 25), -1);
+
+		auto c = vp.detectBallCandidates(roi);
+		assert(!c.empty());
+
+		std::cout << "[PASS] test_hough_dark_circle_candidate ("
+		          << c.size() << " candidates)\n";
+	}
+
+	void test_hough_bright_circle_rejected()
+	{
+		etest::VisionConfig cfg;
+		cfg.ball.hough_param1 = 50.0;
+		cfg.ball.hough_param2 = 10.0;
+		cfg.ball.ball_min_radius = 10;
+		cfg.ball.ball_max_radius = 30;
+		cfg.ball.ball_max_inner_gray = 125.0;
+		cfg.ball.ball_min_quality = 0.10;
+		etest::vision::VisionProcessor vp(cfg);
+
+		cv::Mat roi = makeGrayRoi(300, 100);
+		// 画一个亮圆（不是钢球）
+		cv::circle(roi, cv::Point(150, 50), 18,
+		           cv::Scalar(200, 200, 200), -1);
+
+		auto c = vp.detectBallCandidates(roi);
+		// 所有候选应被门限拒绝
+		bool any_passed = false;
+		for(const auto& bc: c)
+			if(bc.passed)
+				any_passed = true;
+		(void)any_passed;
+		assert(!any_passed);
+
+		std::cout
+		    << "[PASS] test_hough_bright_circle_rejected\n";
+	}
+
+	void test_hough_radius_out_of_range()
+	{
+		etest::VisionConfig cfg;
+		cfg.ball.hough_param1 = 50.0;
+		cfg.ball.hough_param2 = 10.0;
+		cfg.ball.ball_min_radius = 10;
+		cfg.ball.ball_max_radius = 30;
+		cfg.ball.ball_min_quality = 0.10;
+		etest::vision::VisionProcessor vp(cfg);
+
+		cv::Mat roi = makeGrayRoi(300, 120);
+		// 画一个过大半径的圆（60px，超出 max_radius=30）
+		cv::circle(roi, cv::Point(150, 60), 60,
+		           cv::Scalar(25, 25, 25), -1);
+
+		auto c = vp.detectBallCandidates(roi);
+		// HoughCircles 不会返回这个圆
+		bool has_large = false;
+		for(const auto& bc: c)
+			if(bc.radius > 30.0F)
+				has_large = true;
+		(void)has_large;
+		assert(!has_large);
+
+		std::cout
+		    << "[PASS] test_hough_radius_out_of_range\n";
+	}
+
+	void test_hough_edge_y_rejected()
+	{
+		etest::VisionConfig cfg;
+		cfg.ball.hough_param1 = 50.0;
+		cfg.ball.hough_param2 = 10.0;
+		cfg.ball.ball_min_radius = 10;
+		cfg.ball.ball_max_radius = 30;
+		cfg.ball.ball_min_center_y_ratio = 0.20;
+		cfg.ball.ball_max_center_y_ratio = 0.80;
+		cfg.ball.ball_min_quality = 0.10;
+		etest::vision::VisionProcessor vp(cfg);
+
+		cv::Mat roi = makeGrayRoi(300, 100);
+		// 圆靠近 top（y=5，比例=0.05 < min_ratio=0.20）
+		cv::circle(roi, cv::Point(150, 5), 15,
+		           cv::Scalar(25, 25, 25), -1);
+
+		auto c = vp.detectBallCandidates(roi);
+		bool any_passed = false;
+		for(const auto& bc: c)
+			if(bc.passed)
+				any_passed = true;
+		(void)any_passed;
+		assert(!any_passed);
+
+		std::cout << "[PASS] test_hough_edge_y_rejected\n";
 	}
 
 } // namespace
@@ -257,6 +505,15 @@ int main()
 	test_synthetic_pipe_non_crash();
 	test_ball_lost_reacquire();
 	test_pipe_lost_resets();
+	test_orderTrackCorners_no_flip();
+	test_orderTrackCorners_degenerate();
+	test_smooth_points_between();
+	test_warp_roundtrip();
+	test_hough_empty_no_exception();
+	test_hough_dark_circle_candidate();
+	test_hough_bright_circle_rejected();
+	test_hough_radius_out_of_range();
+	test_hough_edge_y_rejected();
 
 	std::cout << "\nall vision tests passed\n";
 	return 0;

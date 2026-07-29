@@ -174,6 +174,10 @@ namespace etest
 		double pipe_min_fill_ratio = 0.30;
 		double pipe_horizontal_angle_max = 25.0;
 
+		// ── 管道几何平滑 ──
+		double pipe_geometry_alpha = 0.25;
+		bool pipe_update_each_frame = true;
+
 		// ── 管道锁定 ──
 		int pipe_stable_frames = 3;
 		int pipe_lost_timeout_frames = 30;
@@ -214,7 +218,37 @@ namespace etest
 		// 到管道中心线最大距离
 		double ball_max_centerline_distance_px = 35.0;
 
-		// 重捕获：丢球超过此帧数后放弃旧参考点，进行全局搜索
+		// ── HoughCircles 参数 ──
+		double hough_dp = 1.2;
+		double hough_min_distance = 30.0;
+		double hough_param1 = 80.0;
+		double hough_param2 = 14.0;
+
+		int ball_min_radius = 12;
+		int ball_max_radius = 27;
+		double ball_expected_radius = 21.0;
+
+		double ball_min_center_y_ratio = 0.20;
+		double ball_max_center_y_ratio = 0.80;
+		double ball_expected_center_y_ratio = 0.50;
+
+		double ball_max_inner_gray = 125.0;
+		double ball_min_ring_contrast = -5.0;
+		double ball_min_quality = 0.20;
+
+		// ── alpha-beta 跟踪器 ──
+		double tracker_alpha = 0.65;
+		double tracker_beta = 0.08;
+		double tracker_gate_ratio = 0.055;
+		double tracker_gate_growth_per_lost_frame = 0.25;
+		double tracker_max_gate_ratio = 0.18;
+		double tracker_max_speed_ratio_per_second = 2.0;
+
+		int tracker_max_predict_frames = 3;
+		int tracker_global_reacquire_frames = 15;
+		int reacquire_confirm_frames = 2;
+
+		// 重捕获：丢球超过此帧数后放弃旧参考点，进行全局搜索 (deprecated)
 		int reacquire_after_lost_frames = 5;
 
 		// 零点校准
@@ -265,6 +299,9 @@ namespace etest
 		SourceInfo source_pipe_min_fill_ratio;
 		SourceInfo source_pipe_horizontal_angle_max;
 
+		SourceInfo source_pipe_geometry_alpha;
+		SourceInfo source_pipe_update_each_frame;
+
 		SourceInfo source_pipe_stable_frames;
 		SourceInfo source_pipe_lost_timeout_frames;
 
@@ -285,6 +322,31 @@ namespace etest
 		SourceInfo source_ball_max_aspect;
 		SourceInfo source_ball_min_local_contrast;
 		SourceInfo source_ball_max_centerline_distance_px;
+
+		SourceInfo source_hough_dp;
+		SourceInfo source_hough_min_distance;
+		SourceInfo source_hough_param1;
+		SourceInfo source_hough_param2;
+		SourceInfo source_ball_min_radius;
+		SourceInfo source_ball_max_radius;
+		SourceInfo source_ball_expected_radius;
+		SourceInfo source_ball_min_center_y_ratio;
+		SourceInfo source_ball_max_center_y_ratio;
+		SourceInfo source_ball_expected_center_y_ratio;
+		SourceInfo source_ball_max_inner_gray;
+		SourceInfo source_ball_min_ring_contrast;
+		SourceInfo source_ball_min_quality;
+
+		SourceInfo source_tracker_alpha;
+		SourceInfo source_tracker_beta;
+		SourceInfo source_tracker_gate_ratio;
+		SourceInfo source_tracker_gate_growth_per_lost_frame;
+		SourceInfo source_tracker_max_gate_ratio;
+		SourceInfo source_tracker_max_speed_ratio_per_second;
+		SourceInfo source_tracker_max_predict_frames;
+		SourceInfo source_tracker_global_reacquire_frames;
+		SourceInfo source_reacquire_confirm_frames;
+
 		SourceInfo source_max_axis_distance_px;
 		SourceInfo source_max_jump_px;
 		SourceInfo source_reacquire_after_lost_frames;

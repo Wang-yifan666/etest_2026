@@ -14,23 +14,27 @@ work_width = 640
 work_height = 360
 
 # ── 管道模式：auto = 颜色检测, fixed = 固定四点 ──
-pipe_mode = "fixed"
+pipe_mode = "auto"
 
-# ── 预设管道四点（工作分辨率坐标）──
-pipe_fixed_tl_x = 27.0
-pipe_fixed_tl_y = 176.0
-pipe_fixed_tr_x = 608.0
-pipe_fixed_tr_y = 143.0
-pipe_fixed_br_x = 611.0
-pipe_fixed_br_y = 190.0
-pipe_fixed_bl_x = 25.0
-pipe_fixed_bl_y = 215.0
+# ── 管道几何平滑 ──
+pipe_geometry_alpha = 0.25
+pipe_update_each_frame = true
+
+# ── 预设管道四点（工作分辨率坐标，fixed 模式使用）──
+pipe_fixed_tl_x = 5.0
+pipe_fixed_tl_y = 205.0
+pipe_fixed_tr_x = 545.0
+pipe_fixed_tr_y = 185.0
+pipe_fixed_br_x = 548.0
+pipe_fixed_br_y = 265.0
+pipe_fixed_bl_x = 5.0
+pipe_fixed_bl_y = 275.0
 
 # ── 管道搜索区域（工作分辨率内坐标，auto 模式使用）──
-pipe_search_roi_x = 10
-pipe_search_roi_y = 20
-pipe_search_roi_w = 540
-pipe_search_roi_h = 160
+pipe_search_roi_x = 0
+pipe_search_roi_y = 70
+pipe_search_roi_w = 640
+pipe_search_roi_h = 210
 
 axis_x1 = 80.0
 axis_y1 = 230.0
@@ -39,23 +43,23 @@ axis_y2 = 230.0
 axis_length_cm = 25.0
 
 # ── 棕色管道 HSV 阈值 ──
-brown_h_min = 12
-brown_h_max = 33
-brown_s_min = 43
+brown_h_min = 5
+brown_h_max = 50
+brown_s_min = 25
 brown_s_max = 255
-brown_v_min = 6
-brown_v_max = 255
+brown_v_min = 35
+brown_v_max = 230
 
 # ── 管道形态学 ──
 pipe_close_kernel_w = 31
-pipe_close_kernel_h = 9
+pipe_close_kernel_h = 5
 pipe_open_kernel = 3
 
 # ── 管道几何约束 ──
-pipe_min_area_ratio = 0.05
+pipe_min_area_ratio = 0.03
 pipe_min_aspect_ratio = 3.0
-pipe_min_fill_ratio = 0.30
-pipe_horizontal_angle_max = 25.0
+pipe_min_fill_ratio = 0.20
+pipe_horizontal_angle_max = 30.0
 pipe_min_short_side_px = 8.0
 
 # ── 管道锁定 ──
@@ -73,7 +77,37 @@ pipe_inner_margin_y_ratio = 0.10
 # ── 管道实际长度(mm) ──
 pipe_length_mm = 250.0
 
-# ── 钢球检测参数 ──
+# ── HoughCircles 检测参数 ──
+hough_dp = 1.2
+hough_min_distance = 30.0
+hough_param1 = 80.0
+hough_param2 = 14.0
+
+ball_min_radius = 12
+ball_max_radius = 27
+ball_expected_radius = 21.0
+
+ball_min_center_y_ratio = 0.20
+ball_max_center_y_ratio = 0.80
+ball_expected_center_y_ratio = 0.50
+
+ball_max_inner_gray = 125.0
+ball_min_ring_contrast = -5.0
+ball_min_quality = 0.20
+
+# ── alpha-beta 跟踪器 ──
+tracker_alpha = 0.65
+tracker_beta = 0.08
+tracker_gate_ratio = 0.055
+tracker_gate_growth_per_lost_frame = 0.25
+tracker_max_gate_ratio = 0.18
+tracker_max_speed_ratio_per_second = 2.0
+
+tracker_max_predict_frames = 3
+tracker_global_reacquire_frames = 15
+reacquire_confirm_frames = 2
+
+# ── 钢球检测参数（保留旧字段兼容）──
 bg_kernel = 31
 threshold = 18
 morph_kernel = 3

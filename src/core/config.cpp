@@ -689,6 +689,9 @@ namespace
 		    "vision.ball.pipe_min_fill_ratio",
 		    "vision.ball.pipe_horizontal_angle_max",
 
+		    "vision.ball.pipe_geometry_alpha",
+		    "vision.ball.pipe_update_each_frame",
+
 		    "vision.ball.pipe_stable_frames",
 		    "vision.ball.pipe_lost_timeout_frames",
 
@@ -709,6 +712,31 @@ namespace
 		    "vision.ball.ball_max_aspect",
 		    "vision.ball.ball_min_local_contrast",
 		    "vision.ball.ball_max_centerline_distance_px",
+
+		    "vision.ball.hough_dp",
+		    "vision.ball.hough_min_distance",
+		    "vision.ball.hough_param1",
+		    "vision.ball.hough_param2",
+		    "vision.ball.ball_min_radius",
+		    "vision.ball.ball_max_radius",
+		    "vision.ball.ball_expected_radius",
+		    "vision.ball.ball_min_center_y_ratio",
+		    "vision.ball.ball_max_center_y_ratio",
+		    "vision.ball.ball_expected_center_y_ratio",
+		    "vision.ball.ball_max_inner_gray",
+		    "vision.ball.ball_min_ring_contrast",
+		    "vision.ball.ball_min_quality",
+
+		    "vision.ball.tracker_alpha",
+		    "vision.ball.tracker_beta",
+		    "vision.ball.tracker_gate_ratio",
+		    "vision.ball.tracker_gate_growth_per_lost_frame",
+		    "vision.ball.tracker_max_gate_ratio",
+		    "vision.ball.tracker_max_speed_ratio_per_second",
+		    "vision.ball.tracker_max_predict_frames",
+		    "vision.ball.tracker_global_reacquire_frames",
+		    "vision.ball.reacquire_confirm_frames",
+
 		    "vision.ball.max_axis_distance_px",
 		    "vision.ball.max_jump_px",
 		    "vision.ball.reacquire_after_lost_frames",
@@ -1199,6 +1227,17 @@ namespace
 			    ball.pipe_horizontal_angle_max, 0.0, 90.0, result,
 			    &ball.source_pipe_horizontal_angle_max);
 
+			// ── 管道几何平滑 ──
+			ball.pipe_geometry_alpha = getDouble(
+			    raw_config, "vision.ball.pipe_geometry_alpha",
+			    ball.pipe_geometry_alpha, 0.01, 1.0, result,
+			    &ball.source_pipe_geometry_alpha);
+
+			ball.pipe_update_each_frame = getBool(
+			    raw_config, "vision.ball.pipe_update_each_frame",
+			    ball.pipe_update_each_frame, result,
+			    &ball.source_pipe_update_each_frame);
+
 			// ── 管道锁定 ──
 			ball.pipe_stable_frames =
 			    getInt(raw_config, "vision.ball.pipe_stable_frames",
@@ -1258,6 +1297,107 @@ namespace
 			    "vision.ball.ball_max_centerline_distance_px",
 			    ball.ball_max_centerline_distance_px, 0.1, 500.0,
 			    result, &ball.source_ball_max_centerline_distance_px);
+
+			// ── HoughCircles ──
+			ball.hough_dp = getDouble(
+			    raw_config, "vision.ball.hough_dp", ball.hough_dp,
+			    1.0, 2.0, result, &ball.source_hough_dp);
+			ball.hough_min_distance = getDouble(
+			    raw_config, "vision.ball.hough_min_distance",
+			    ball.hough_min_distance, 5.0, 500.0, result,
+			    &ball.source_hough_min_distance);
+			ball.hough_param1 = getDouble(
+			    raw_config, "vision.ball.hough_param1",
+			    ball.hough_param1, 10.0, 255.0, result,
+			    &ball.source_hough_param1);
+			ball.hough_param2 = getDouble(
+			    raw_config, "vision.ball.hough_param2",
+			    ball.hough_param2, 1.0, 255.0, result,
+			    &ball.source_hough_param2);
+
+			ball.ball_min_radius = getInt(
+			    raw_config, "vision.ball.ball_min_radius",
+			    ball.ball_min_radius, 1, 500, result,
+			    &ball.source_ball_min_radius);
+			ball.ball_max_radius = getInt(
+			    raw_config, "vision.ball.ball_max_radius",
+			    ball.ball_max_radius,
+			    ball.ball_min_radius + 1, 500, result,
+			    &ball.source_ball_max_radius);
+			ball.ball_expected_radius = getDouble(
+			    raw_config, "vision.ball.ball_expected_radius",
+			    ball.ball_expected_radius, 1.0, 500.0, result,
+			    &ball.source_ball_expected_radius);
+
+			ball.ball_min_center_y_ratio = getDouble(
+			    raw_config, "vision.ball.ball_min_center_y_ratio",
+			    ball.ball_min_center_y_ratio, 0.0, 1.0, result,
+			    &ball.source_ball_min_center_y_ratio);
+			ball.ball_max_center_y_ratio = getDouble(
+			    raw_config, "vision.ball.ball_max_center_y_ratio",
+			    ball.ball_max_center_y_ratio, 0.0, 1.0, result,
+			    &ball.source_ball_max_center_y_ratio);
+			ball.ball_expected_center_y_ratio = getDouble(
+			    raw_config, "vision.ball.ball_expected_center_y_ratio",
+			    ball.ball_expected_center_y_ratio, 0.0, 1.0, result,
+			    &ball.source_ball_expected_center_y_ratio);
+
+			ball.ball_max_inner_gray = getDouble(
+			    raw_config, "vision.ball.ball_max_inner_gray",
+			    ball.ball_max_inner_gray, 0.0, 255.0, result,
+			    &ball.source_ball_max_inner_gray);
+			ball.ball_min_ring_contrast = getDouble(
+			    raw_config, "vision.ball.ball_min_ring_contrast",
+			    ball.ball_min_ring_contrast, -255.0, 255.0, result,
+			    &ball.source_ball_min_ring_contrast);
+			ball.ball_min_quality = getDouble(
+			    raw_config, "vision.ball.ball_min_quality",
+			    ball.ball_min_quality, 0.0, 1.0, result,
+			    &ball.source_ball_min_quality);
+
+			// ── alpha-beta 跟踪器 ──
+			ball.tracker_alpha = getDouble(
+			    raw_config, "vision.ball.tracker_alpha",
+			    ball.tracker_alpha, 0.01, 1.0, result,
+			    &ball.source_tracker_alpha);
+			ball.tracker_beta = getDouble(
+			    raw_config, "vision.ball.tracker_beta",
+			    ball.tracker_beta, 0.001, 1.0, result,
+			    &ball.source_tracker_beta);
+			ball.tracker_gate_ratio = getDouble(
+			    raw_config, "vision.ball.tracker_gate_ratio",
+			    ball.tracker_gate_ratio, 0.01, 1.0, result,
+			    &ball.source_tracker_gate_ratio);
+			ball.tracker_gate_growth_per_lost_frame = getDouble(
+			    raw_config,
+			    "vision.ball.tracker_gate_growth_per_lost_frame",
+			    ball.tracker_gate_growth_per_lost_frame, 0.0, 1.0,
+			    result,
+			    &ball.source_tracker_gate_growth_per_lost_frame);
+			ball.tracker_max_gate_ratio = getDouble(
+			    raw_config, "vision.ball.tracker_max_gate_ratio",
+			    ball.tracker_max_gate_ratio, 0.01, 1.0, result,
+			    &ball.source_tracker_max_gate_ratio);
+			ball.tracker_max_speed_ratio_per_second = getDouble(
+			    raw_config,
+			    "vision.ball.tracker_max_speed_ratio_per_second",
+			    ball.tracker_max_speed_ratio_per_second, 0.01, 10.0,
+			    result,
+			    &ball.source_tracker_max_speed_ratio_per_second);
+			ball.tracker_max_predict_frames = getInt(
+			    raw_config,
+			    "vision.ball.tracker_max_predict_frames",
+			    ball.tracker_max_predict_frames, 1, 120, result,
+			    &ball.source_tracker_max_predict_frames);
+			ball.tracker_global_reacquire_frames = getInt(
+			    raw_config,
+			    "vision.ball.tracker_global_reacquire_frames",
+			    ball.tracker_global_reacquire_frames, 1, 600, result,
+			    &ball.source_tracker_global_reacquire_frames);
+			ball.reacquire_confirm_frames = getInt(
+			    raw_config, "vision.ball.reacquire_confirm_frames",
+			    ball.reacquire_confirm_frames, 1, 10, result,
+			    &ball.source_reacquire_confirm_frames);
 		}
 
 		// ---- [uart] ----
@@ -1862,6 +2002,8 @@ namespace etest
 		    + ", pipe_min_fill=" + std::to_string(pipe_min_fill_ratio)
 		    + ", pipe_h_angle_max="
 		    + std::to_string(pipe_horizontal_angle_max)
+		    + ", pipe_geom_alpha=" + std::to_string(pipe_geometry_alpha)
+		    + ", pipe_update_each=" + std::to_string(pipe_update_each_frame)
 		    + ", pipe_stable=" + std::to_string(pipe_stable_frames)
 		    + ", pipe_lost_timeout="
 		    + std::to_string(pipe_lost_timeout_frames)
