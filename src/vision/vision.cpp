@@ -215,8 +215,8 @@ namespace etest::vision
 
 			// 1) 限定搜索区域
 			cv::Rect search_roi(
-			    ball.track_search_roi_x, ball.track_search_roi_y,
-			    ball.track_search_roi_w, ball.track_search_roi_h);
+			    ball.pipe_search_roi_x, ball.pipe_search_roi_y,
+			    ball.pipe_search_roi_w, ball.pipe_search_roi_h);
 			search_roi &= cv::Rect(0, 0, frame.cols, frame.rows);
 
 			if(search_roi.empty() || search_roi.area() < 100)
@@ -225,6 +225,9 @@ namespace etest::vision
 				    cv::Mat::zeros(frame.size(), CV_8UC1);
 				return result;
 			}
+
+			const double roi_area =
+			    static_cast<double>(search_roi.area());
 
 			const cv::Mat search_image = frame(search_roi);
 
@@ -259,22 +262,29 @@ namespace etest::vision
 			debug_track_mask_ = cv::Mat::zeros(frame.size(), CV_8UC1);
 			brown_mask.copyTo(debug_track_mask_(search_roi));
 
-			// 5) 轮廓筛选：面积比例 + 长宽比 + 横向角度 + 填充率
+			// 5) 轮廓筛选
 			std::vector<std::vector<cv::Point>> contours;
 			cv::findContours(brown_mask, contours, cv::RETR_EXTERNAL,
 			                 cv::CHAIN_APPROX_SIMPLE);
 
-			const double image_area =
-			    static_cast<double>(frame.cols) * frame.rows;
+			const int total_contours =
+			    static_cast<int>(contours.size());
+			int rej_area = 0, rej_aspect = 0, rej_angle = 0;
+			int rej_fill = 0, rej_shortside = 0;
 
 			double best_score = -1.0;
 			cv::RotatedRect best_rect;
+			double best_area = 0, best_aspect = 0;
+			double best_angle = 0, best_fill = 0, best_short = 0;
 
 			for(const auto& contour: contours)
 			{
 				const double area = cv::contourArea(contour);
-				if(area < image_area * ball.pipe_min_area_ratio)
+				if(area < roi_area * ball.pipe_min_area_ratio)
+				{
+					++rej_area;
 					continue;
+				}
 
 				const cv::RotatedRect rect = cv::minAreaRect(contour);
 
@@ -283,12 +293,18 @@ namespace etest::vision
 				const double short_side =
 				    std::min(rect.size.width, rect.size.height);
 
-				if(short_side < 5.0)
+				if(short_side < ball.pipe_min_short_side_px)
+				{
+					++rej_shortside;
 					continue;
+				}
 
 				const double aspect = long_side / short_side;
 				if(aspect < ball.pipe_min_aspect_ratio)
+				{
+					++rej_aspect;
 					continue;
+				}
 
 				// 横向角度过滤
 				cv::Point2f pts[4];
@@ -309,7 +325,10 @@ namespace etest::vision
 
 				if(horizontal_deviation
 				   > ball.pipe_horizontal_angle_max)
+				{
+					++rej_angle;
 					continue;
+				}
 
 				// 矩形填充率
 				const double rect_area =
@@ -318,13 +337,10 @@ namespace etest::vision
 				    (rect_area > 0.0) ? area / rect_area : 0.0;
 
 				if(fill_ratio < ball.pipe_min_fill_ratio)
+				{
+					++rej_fill;
 					continue;
-
-				// 矩形尺寸必须足以容纳钢球
-				const double ball_radius_px =
-				    std::sqrt(ball.max_area / CV_PI) * 2.0;
-				if(short_side < ball_radius_px)
-					continue;
+				}
 
 				// 综合评分：面积 × 长宽比 × 填充率
 				const double score =
@@ -334,6 +350,47 @@ namespace etest::vision
 				{
 					best_score = score;
 					best_rect = rect;
+					best_area = area;
+					best_aspect = aspect;
+					best_angle = angle_deg;
+					best_fill = fill_ratio;
+					best_short = short_side;
+				}
+			}
+
+			// ── 节流调试日志（每秒一次）──
+			{
+				static auto last_log_time =
+				    std::chrono::steady_clock::now();
+				const auto now = std::chrono::steady_clock::now();
+				const auto ms = std::chrono::duration_cast<
+				    std::chrono::milliseconds>(now - last_log_time);
+
+				if(ms.count() >= 1000)
+				{
+					const int non_zero =
+					    cv::countNonZero(brown_mask);
+					ETEST_LOG_INFO("PIPE_DEBUG",
+					               "roi="
+					                   + std::to_string(search_roi.x)
+					                   + "," + std::to_string(search_roi.y)
+					                   + " " + std::to_string(search_roi.width)
+					                   + "x" + std::to_string(search_roi.height)
+					                   + " mask_nz=" + std::to_string(non_zero)
+					                   + " contours=" + std::to_string(total_contours)
+					                   + " rej(area=" + std::to_string(rej_area)
+					                   + " aspect=" + std::to_string(rej_aspect)
+					                   + " angle=" + std::to_string(rej_angle)
+					                   + " fill=" + std::to_string(rej_fill)
+					                   + " short=" + std::to_string(rej_shortside)
+					                   + ")"
+					                   + " best(area=" + std::to_string(best_area)
+					                   + " aspect=" + std::to_string(best_aspect)
+					                   + " angle=" + std::to_string(best_angle)
+					                   + " fill=" + std::to_string(best_fill)
+					                   + " short=" + std::to_string(best_short)
+					                   + ") stable=" + std::to_string(track_stable_count_));
+					last_log_time = now;
 				}
 			}
 
@@ -346,20 +403,20 @@ namespace etest::vision
 
 			result.valid = true;
 			result.rect = best_rect;
-			result.bounding_roi =
-			    cv::Rect(search_roi.x + best_rect.boundingRect().x
-			                 - search_roi.x,
-			             search_roi.y + best_rect.boundingRect().y
-			                 - search_roi.y,
-			             best_rect.boundingRect().width,
-			             best_rect.boundingRect().height);
+			result.bounding_roi = cv::Rect(
+			    static_cast<int>(best_rect.center.x
+			                     - best_rect.size.width / 2),
+			    static_cast<int>(best_rect.center.y
+			                     - best_rect.size.height / 2),
+			    static_cast<int>(best_rect.size.width),
+			    static_cast<int>(best_rect.size.height));
 			result.bounding_roi &=
 			    cv::Rect(0, 0, frame.cols, frame.rows);
 
-			result.confidence =
-			    std::clamp(best_score / (image_area * 20.0), 0.0, 1.0);
+			result.confidence = std::clamp(
+			    best_score / (roi_area * 20.0), 0.0, 1.0);
 
-			// 提取轴线（四点→短边中点连线）
+			// 提取轴线
 			cv::Point2f points[4];
 			best_rect.points(points);
 
@@ -404,6 +461,7 @@ namespace etest::vision
 		if(!a.valid || !b.valid)
 			return false;
 
+		const auto& ball = config_.ball;
 		const double center_distance =
 		    cv::norm(a.rect.center - b.rect.center);
 
@@ -412,8 +470,10 @@ namespace etest::vision
 		const double length_b =
 		    std::max(b.rect.size.width, b.rect.size.height);
 
-		return center_distance < 10.0
-		    && std::abs(length_a - length_b) < 20.0;
+		return center_distance
+		    < ball.pipe_similarity_center_max_px
+		    && std::abs(length_a - length_b)
+		        < ball.pipe_similarity_length_max_px;
 	}
 
 	cv::Rect VisionProcessor::makeInnerRoi(

@@ -129,11 +129,11 @@ namespace etest
 		int work_width = 640;
 		int work_height = 480;
 
-		// ROI 区域（整幅图像坐标）
-		int roi_x = 60;
-		int roi_y = 180;
-		int roi_w = 520;
-		int roi_h = 100;
+		// ── 管道搜索区域（工作分辨率内坐标）──
+		int pipe_search_roi_x = 0;
+		int pipe_search_roi_y = 220;
+		int pipe_search_roi_w = 640;
+		int pipe_search_roi_h = 220;
 
 		// 摆杆中心线两端（整幅图像坐标），P1→P2 为正方向
 		double axis_x1 = 80.0;
@@ -162,8 +162,13 @@ namespace etest
 		double pipe_horizontal_angle_max = 25.0;
 
 		// ── 管道锁定 ──
-		int pipe_stable_frames = 8;
+		int pipe_stable_frames = 3;
 		int pipe_lost_timeout_frames = 30;
+		double pipe_similarity_center_max_px = 25.0;
+		double pipe_similarity_length_max_px = 40.0;
+
+		// ── 管道短边约束 ──
+		double pipe_min_short_side_px = 8.0;
 
 		// ── 透视展开 ──
 		int pipe_warp_width = 500;
@@ -209,30 +214,13 @@ namespace etest
 		// 位置低通滤波，越小越平滑但延迟越大
 		double filter_alpha = 0.35;
 
-		// 白色轨道检测参数（保留兼容，待迁移后移除）
-		int white_s_max = 65;
-		int white_v_min = 150;
-		double track_min_area_ratio = 0.05;
-		double track_min_aspect_ratio = 4.0;
-		int track_stable_frames = 10;
-		int track_lost_timeout_frames = 30;
-
-		// 轨道搜索区域（整幅图像坐标，基于 640×480 工作分辨率）
-		int track_search_roi_x = 0;
-		int track_search_roi_y = 220;
-		int track_search_roi_w = 640;
-		int track_search_roi_h = 220;
-
-		// 轨道横向角度限制（度），用于排除竖直手臂
-		double track_horizontal_angle_max = 20.0;
-
 		// ── SourceInfo ──
 		SourceInfo source_work_width;
 		SourceInfo source_work_height;
-		SourceInfo source_roi_x;
-		SourceInfo source_roi_y;
-		SourceInfo source_roi_w;
-		SourceInfo source_roi_h;
+		SourceInfo source_pipe_search_roi_x;
+		SourceInfo source_pipe_search_roi_y;
+		SourceInfo source_pipe_search_roi_w;
+		SourceInfo source_pipe_search_roi_h;
 		SourceInfo source_axis_x1;
 		SourceInfo source_axis_y1;
 		SourceInfo source_axis_x2;
@@ -283,18 +271,6 @@ namespace etest
 		SourceInfo source_zero_samples;
 		SourceInfo source_zero_range_px;
 		SourceInfo source_filter_alpha;
-
-		SourceInfo source_white_s_max;
-		SourceInfo source_white_v_min;
-		SourceInfo source_track_min_area_ratio;
-		SourceInfo source_track_min_aspect_ratio;
-		SourceInfo source_track_stable_frames;
-		SourceInfo source_track_lost_timeout_frames;
-		SourceInfo source_track_search_roi_x;
-		SourceInfo source_track_search_roi_y;
-		SourceInfo source_track_search_roi_w;
-		SourceInfo source_track_search_roi_h;
-		SourceInfo source_track_horizontal_angle_max;
 
 		std::string to_string() const;
 	};

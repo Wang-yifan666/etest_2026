@@ -653,10 +653,10 @@ namespace
 		    "vision.ball.work_width",
 		    "vision.ball.work_height",
 
-		    "vision.ball.roi_x",
-		    "vision.ball.roi_y",
-		    "vision.ball.roi_w",
-		    "vision.ball.roi_h",
+		    "vision.ball.pipe_search_roi_x",
+		    "vision.ball.pipe_search_roi_y",
+		    "vision.ball.pipe_search_roi_w",
+		    "vision.ball.pipe_search_roi_h",
 		    "vision.ball.axis_x1",
 		    "vision.ball.axis_y1",
 		    "vision.ball.axis_x2",
@@ -707,17 +707,6 @@ namespace
 		    "vision.ball.zero_samples",
 		    "vision.ball.zero_range_px",
 		    "vision.ball.filter_alpha",
-		    "vision.ball.white_s_max",
-		    "vision.ball.white_v_min",
-		    "vision.ball.track_min_area_ratio",
-		    "vision.ball.track_min_aspect_ratio",
-		    "vision.ball.track_stable_frames",
-		    "vision.ball.track_lost_timeout_frames",
-		    "vision.ball.track_search_roi_x",
-		    "vision.ball.track_search_roi_y",
-		    "vision.ball.track_search_roi_w",
-		    "vision.ball.track_search_roi_h",
-		    "vision.ball.track_horizontal_angle_max",
 
 		    "uart.device",
 		    "uart.baudrate",
@@ -933,21 +922,25 @@ namespace
 		{
 			auto& ball = config.vision.ball;
 
-			ball.roi_x =
-			    getInt(raw_config, "vision.ball.roi_x", ball.roi_x, 0,
-			           4096, result, &ball.source_roi_x);
+			ball.pipe_search_roi_x =
+			    getInt(raw_config, "vision.ball.pipe_search_roi_x",
+			           ball.pipe_search_roi_x, 0, 4096, result,
+			           &ball.source_pipe_search_roi_x);
 
-			ball.roi_y =
-			    getInt(raw_config, "vision.ball.roi_y", ball.roi_y, 0,
-			           2160, result, &ball.source_roi_y);
+			ball.pipe_search_roi_y =
+			    getInt(raw_config, "vision.ball.pipe_search_roi_y",
+			           ball.pipe_search_roi_y, 0, 2160, result,
+			           &ball.source_pipe_search_roi_y);
 
-			ball.roi_w =
-			    getInt(raw_config, "vision.ball.roi_w", ball.roi_w, 1,
-			           4096, result, &ball.source_roi_w);
+			ball.pipe_search_roi_w =
+			    getInt(raw_config, "vision.ball.pipe_search_roi_w",
+			           ball.pipe_search_roi_w, 1, 4096, result,
+			           &ball.source_pipe_search_roi_w);
 
-			ball.roi_h =
-			    getInt(raw_config, "vision.ball.roi_h", ball.roi_h, 1,
-			           2160, result, &ball.source_roi_h);
+			ball.pipe_search_roi_h =
+			    getInt(raw_config, "vision.ball.pipe_search_roi_h",
+			           ball.pipe_search_roi_h, 1, 2160, result,
+			           &ball.source_pipe_search_roi_h);
 
 			ball.axis_x1 = getDouble(raw_config, "vision.ball.axis_x1",
 			                         ball.axis_x1, 0.0, 4096.0, result,
@@ -1080,59 +1073,6 @@ namespace
 			    getDouble(raw_config, "vision.ball.filter_alpha",
 			              ball.filter_alpha, 0.01, 1.0, result,
 			              &ball.source_filter_alpha);
-
-			ball.white_s_max = getInt(
-			    raw_config, "vision.ball.white_s_max", ball.white_s_max,
-			    0, 255, result, &ball.source_white_s_max);
-
-			ball.white_v_min = getInt(
-			    raw_config, "vision.ball.white_v_min", ball.white_v_min,
-			    0, 255, result, &ball.source_white_v_min);
-
-			ball.track_min_area_ratio = getDouble(
-			    raw_config, "vision.ball.track_min_area_ratio",
-			    ball.track_min_area_ratio, 0.001, 1.0, result,
-			    &ball.source_track_min_area_ratio);
-
-			ball.track_min_aspect_ratio = getDouble(
-			    raw_config, "vision.ball.track_min_aspect_ratio",
-			    ball.track_min_aspect_ratio, 1.0, 50.0, result,
-			    &ball.source_track_min_aspect_ratio);
-
-			ball.track_stable_frames =
-			    getInt(raw_config, "vision.ball.track_stable_frames",
-			           ball.track_stable_frames, 3, 120, result,
-			           &ball.source_track_stable_frames);
-
-			ball.track_lost_timeout_frames = getInt(
-			    raw_config, "vision.ball.track_lost_timeout_frames",
-			    ball.track_lost_timeout_frames, 5, 600, result,
-			    &ball.source_track_lost_timeout_frames);
-
-			ball.track_search_roi_x =
-			    getInt(raw_config, "vision.ball.track_search_roi_x",
-			           ball.track_search_roi_x, 0, 4096, result,
-			           &ball.source_track_search_roi_x);
-
-			ball.track_search_roi_y =
-			    getInt(raw_config, "vision.ball.track_search_roi_y",
-			           ball.track_search_roi_y, 0, 2160, result,
-			           &ball.source_track_search_roi_y);
-
-			ball.track_search_roi_w =
-			    getInt(raw_config, "vision.ball.track_search_roi_w",
-			           ball.track_search_roi_w, 1, 4096, result,
-			           &ball.source_track_search_roi_w);
-
-			ball.track_search_roi_h =
-			    getInt(raw_config, "vision.ball.track_search_roi_h",
-			           ball.track_search_roi_h, 1, 2160, result,
-			           &ball.source_track_search_roi_h);
-
-			ball.track_horizontal_angle_max = getDouble(
-			    raw_config, "vision.ball.track_horizontal_angle_max",
-			    ball.track_horizontal_angle_max, 0.0, 90.0, result,
-			    &ball.source_track_horizontal_angle_max);
 
 			// ── 工作分辨率 ──
 			ball.work_width = getInt(
@@ -1844,10 +1784,12 @@ namespace etest
 	std::string BallConfig::to_string() const
 	{
 		return "work=" + std::to_string(work_width) + "x"
-		    + std::to_string(work_height) + ", roi="
-		    + std::to_string(roi_x) + "," + std::to_string(roi_y) + ","
-		    + std::to_string(roi_w) + "x" + std::to_string(roi_h)
-		    + ", axis=(" + std::to_string(axis_x1) + ","
+		    + std::to_string(work_height) + ", pipe_roi="
+		    + std::to_string(pipe_search_roi_x) + ","
+		    + std::to_string(pipe_search_roi_y) + ","
+		    + std::to_string(pipe_search_roi_w) + "x"
+		    + std::to_string(pipe_search_roi_h) + ", axis=("
+		    + std::to_string(axis_x1) + ","
 		    + std::to_string(axis_y1) + ")->(" + std::to_string(axis_x2)
 		    + "," + std::to_string(axis_y2)
 		    + "), axis_cm=" + std::to_string(axis_length_cm)

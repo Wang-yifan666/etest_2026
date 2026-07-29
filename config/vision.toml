@@ -28,10 +28,10 @@ axis_length_cm = 25.0
 # ── 棕色管道 HSV 阈值 ──
 brown_h_min = 5
 brown_h_max = 30
-brown_s_min = 60
+brown_s_min = 30
 brown_s_max = 255
 brown_v_min = 30
-brown_v_max = 230
+brown_v_max = 255
 
 # ── 管道形态学 ──
 pipe_close_kernel_w = 31
