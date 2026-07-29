@@ -725,6 +725,7 @@ namespace
 		    "vision.ball.ball_expected_center_y_ratio",
 		    "vision.ball.ball_max_inner_gray",
 		    "vision.ball.ball_min_ring_contrast",
+		    "vision.ball.ball_good_ring_contrast",
 		    "vision.ball.ball_min_quality",
 
 		    "vision.ball.tracker_alpha",
@@ -736,6 +737,9 @@ namespace
 		    "vision.ball.tracker_max_predict_frames",
 		    "vision.ball.tracker_global_reacquire_frames",
 		    "vision.ball.reacquire_confirm_frames",
+		    "vision.ball.acquire_confirm_frames",
+
+		    "vision.ball.zero_position_ratio",
 
 		    "vision.ball.max_axis_distance_px",
 		    "vision.ball.max_jump_px",
@@ -745,6 +749,7 @@ namespace
 		    "vision.ball.zero_samples",
 		    "vision.ball.zero_range_px",
 		    "vision.ball.filter_alpha",
+		    "vision.ball.video_output",
 
 		    "uart.device",
 		    "uart.baudrate",
@@ -1350,6 +1355,10 @@ namespace
 			    raw_config, "vision.ball.ball_min_ring_contrast",
 			    ball.ball_min_ring_contrast, -255.0, 255.0, result,
 			    &ball.source_ball_min_ring_contrast);
+			ball.ball_good_ring_contrast = getDouble(
+			    raw_config, "vision.ball.ball_good_ring_contrast",
+			    ball.ball_good_ring_contrast, 0.1, 255.0, result,
+			    &ball.source_ball_good_ring_contrast);
 			ball.ball_min_quality = getDouble(
 			    raw_config, "vision.ball.ball_min_quality",
 			    ball.ball_min_quality, 0.0, 1.0, result,
@@ -1398,6 +1407,21 @@ namespace
 			    raw_config, "vision.ball.reacquire_confirm_frames",
 			    ball.reacquire_confirm_frames, 1, 10, result,
 			    &ball.source_reacquire_confirm_frames);
+
+			ball.acquire_confirm_frames = getInt(
+			    raw_config, "vision.ball.acquire_confirm_frames",
+			    ball.acquire_confirm_frames, 1, 10, result,
+			    &ball.source_acquire_confirm_frames);
+
+			ball.zero_position_ratio = getDouble(
+			    raw_config, "vision.ball.zero_position_ratio",
+			    ball.zero_position_ratio, 0.0, 1.0, result,
+			    &ball.source_zero_position_ratio);
+
+			ball.video_output = getString(
+			    raw_config, "vision.ball.video_output",
+			    ball.video_output, true, result,
+			    &ball.source_video_output);
 		}
 
 		// ---- [uart] ----

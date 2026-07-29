@@ -101,13 +101,15 @@ int main(int argc, char** argv)
 	std::string video_path = argv[1];
 	std::string config_path = argv[2];
 	std::string output_path;
+	bool save_video = false;
 	for(int i = 3; i < argc; ++i)
 	{
 		std::string arg = argv[i];
 		if(arg == "--output" && i + 1 < argc)
 			output_path = argv[++i];
+		else if(arg == "--save-video")
+			save_video = true;
 	}
-
 	// 加载配置
 	auto load_result = etest::ConfigLoader::load(config_path);
 	if(!load_result.file_loaded)
@@ -118,6 +120,25 @@ int main(int argc, char** argv)
 	}
 	etest::VisionConfig vision_cfg;
 	vision_cfg.ball = load_result.config.vision.ball;
+
+	// 配置中的 video_output 优先（CLI --output 覆盖，--save-video 次之）
+	if(output_path.empty() && !vision_cfg.ball.video_output.empty())
+		output_path = vision_cfg.ball.video_output;
+	// --save-video 自动生成输出路径
+	if(save_video && output_path.empty())
+	{
+		auto slash = video_path.rfind('/');
+		auto dot = video_path.rfind('.');
+		std::string stem;
+		if(slash != std::string::npos && dot != std::string::npos
+		   && dot > slash)
+			stem = video_path.substr(slash + 1, dot - slash - 1);
+		else if(dot != std::string::npos)
+			stem = video_path.substr(0, dot);
+		else
+			stem = "output";
+		output_path = stem + "_debug.mp4";
+	}
 
 	// 打开视频
 	cv::VideoCapture cap(video_path);
@@ -137,17 +158,24 @@ int main(int argc, char** argv)
 	// 创建视觉处理器
 	etest::vision::VisionProcessor vp(vision_cfg);
 
-	// 可选输出视频
+	// 确保输出路径有 .mp4 扩展名
+	if(!output_path.empty())
+	{
+		auto ext = output_path.rfind('.');
+		if(ext == std::string::npos
+		   || (output_path.size() - ext > 5))
+		{
+			output_path += ".mp4";
+		}
+	}
+
+	// 可选输出视频（尺寸 = 原始视频尺寸，drawDebugInfo 原地替换）
 	cv::VideoWriter writer;
 	if(!output_path.empty())
 	{
-		int out_w = vision_cfg.ball.work_width
-		    + std::max(vision_cfg.ball.work_width / 2,
-		               vision_cfg.ball.pipe_warp_width / 2);
-		int out_h = vision_cfg.ball.work_height;
 		writer.open(output_path,
 		            cv::VideoWriter::fourcc('M', 'J', 'P', 'G'),
-		            vid_fps, cv::Size(out_w, out_h));
+		            vid_fps, cv::Size(vid_w, vid_h));
 		if(!writer.isOpened())
 		{
 			std::cerr << "warning: cannot open output video: "

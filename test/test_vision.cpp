@@ -243,38 +243,40 @@ namespace
 		etest::VisionConfig cfg;
 		etest::vision::VisionProcessor vp(cfg);
 
-		cv::RotatedRect rect(
-		    cv::Point2f(320, 200), cv::Size2f(400, 80), 0);
+		std::array<double, 3> angles = {0.0, 15.0, -15.0};
 
-		std::array<cv::Point2f, 4> o1;
-		std::array<cv::Point2f, 4> o2;
-		bool r1 = vp.orderTrackCorners(rect, o1);
-		bool r2 = vp.orderTrackCorners(rect, o2);
-		(void)r1;
-		(void)r2;
-
-		assert(r1);
-		assert(r2);
-
-		double left_x_1 = o1[0].x + o1[3].x;
-		double right_x_1 = o1[1].x + o1[2].x;
-		double left_x_2 = o2[0].x + o2[3].x;
-		double right_x_2 = o2[1].x + o2[2].x;
-		(void)left_x_1;
-		(void)right_x_1;
-		(void)left_x_2;
-		(void)right_x_2;
-
-		assert(left_x_1 < right_x_1);
-		assert(left_x_2 < right_x_2);
-
-		for(int i = 0; i < 4; ++i)
+		for(double ang: angles)
 		{
-			assert(std::abs(o1[i].x - o2[i].x) < 0.01);
-			assert(std::abs(o1[i].y - o2[i].y) < 0.01);
+			cv::RotatedRect rect(
+			    cv::Point2f(320, 200), cv::Size2f(400, 80), static_cast<float>(ang));
+
+			std::array<cv::Point2f, 4> o;
+			bool r = vp.orderTrackCorners(rect, o);
+			if(!r)
+			{
+				std::cout << "  orderTrackCorners returned false for angle=" << ang << "\n";
+				assert(false);
+			}
+
+			double top_len = cv::norm(o[1] - o[0]);
+			double left_len = cv::norm(o[3] - o[0]);
+
+			// 3a-1: 上边远长于左边（至少3倍）
+			assert(top_len > left_len * 3.0);
+
+			// 3a-2: TL.y < BL.y
+			assert(o[0].y < o[3].y);
+
+			// 3a-3: TR.y < BR.y
+			assert(o[1].y < o[2].y);
+
+			// 3a-4: 左侧x总和 < 右侧x总和
+			double left_sum = o[0].x + o[3].x;
+			double right_sum = o[1].x + o[2].x;
+			assert(left_sum < right_sum);
 		}
 
-		std::cout << "[PASS] test_orderTrackCorners_no_flip\n";
+		std::cout << "[PASS] test_orderTrackCorners_no_flip (multi-angle)\n";
 	}
 
 	void test_orderTrackCorners_degenerate()
@@ -292,6 +294,58 @@ namespace
 
 		std::cout
 		    << "[PASS] test_orderTrackCorners_degenerate\n";
+	}
+
+	void test_perspective_direction()
+	{
+		etest::VisionConfig cfg;
+		cfg.ball.pipe_warp_width = 500;
+		cfg.ball.pipe_warp_height = 120;
+		etest::vision::VisionProcessor vp(cfg);
+
+		// 模拟横向管道 (TL, TR, BR, BL)，构造一个略微倾斜的矩形
+		std::array<cv::Point2f, 4> pts = {
+			cv::Point2f(100.0F, 200.0F),   // TL
+			cv::Point2f(520.0F, 210.0F),   // TR
+			cv::Point2f(510.0F, 250.0F),   // BR
+			cv::Point2f(90.0F, 240.0F)     // BL
+		};
+
+		// 计算透视变换矩阵（模拟 updateWarpMatrices 的行为）
+		int ww = cfg.ball.pipe_warp_width;
+		int wh = cfg.ball.pipe_warp_height;
+		const cv::Point2f dst[4] = {
+			{0.0F, 0.0F},
+			{static_cast<float>(ww - 1), 0.0F},
+			{static_cast<float>(ww - 1), static_cast<float>(wh - 1)},
+			{0.0F, static_cast<float>(wh - 1)}
+		};
+		cv::Mat M = cv::getPerspectiveTransform(pts.data(), dst);
+		assert(!M.empty());
+
+		// 左端中心 = (TL + BL) / 2
+		cv::Point2f left_center = (pts[0] + pts[3]) * 0.5F;
+		// 右端中心 = (TR + BR) / 2
+		cv::Point2f right_center = (pts[1] + pts[2]) * 0.5F;
+
+		std::vector<cv::Point2f> in = {left_center, right_center};
+		std::vector<cv::Point2f> out;
+		cv::perspectiveTransform(in, out, M);
+
+		// 3b-1: 左端 x≈0, y≈warp_height/2
+		assert(std::abs(out[0].x - 0.0F) < 2.0F);
+		assert(std::abs(out[0].y - wh / 2.0F) < 2.0F);
+
+		// 3b-2: 右端 x≈warp_width-1, y≈warp_height/2
+		assert(std::abs(out[1].x - (ww - 1.0F)) < 2.0F);
+		assert(std::abs(out[1].y - wh / 2.0F) < 2.0F);
+
+		// 3b-3: 映射后 dx >> dy
+		float dx = std::abs(out[1].x - out[0].x);
+		float dy = std::abs(out[1].y - out[0].y);
+		assert(dx > dy * 2.0F);
+
+		std::cout << "[PASS] test_perspective_direction\n";
 	}
 
 	void test_smooth_points_between()
@@ -507,6 +561,7 @@ int main()
 	test_pipe_lost_resets();
 	test_orderTrackCorners_no_flip();
 	test_orderTrackCorners_degenerate();
+	test_perspective_direction();
 	test_smooth_points_between();
 	test_warp_roundtrip();
 	test_hough_empty_no_exception();

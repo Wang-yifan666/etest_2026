@@ -46,7 +46,6 @@ namespace etest::vision
 		std::int64_t timestamp_ms = 0;
 		std::string target_type;
 		std::string error_code;
-
 		int offset_mm = 0;
 		bool calibrated = false;
 	};
@@ -55,14 +54,8 @@ namespace etest::vision
 	{
 		std::string class_name;
 		float confidence = 0.0F;
-		int x1 = 0;
-		int y1 = 0;
-		int x2 = 0;
-		int y2 = 0;
-		int x3 = 0;
-		int y3 = 0;
-		int x4 = 0;
-		int y4 = 0;
+		int x1 = 0, y1 = 0, x2 = 0, y2 = 0, x3 = 0, y3 = 0, x4 = 0,
+		    y4 = 0;
 	};
 
 	struct TrackResult
@@ -75,23 +68,24 @@ namespace etest::vision
 		double confidence = 0.0;
 	};
 
+	// reject_code: 0=PASSED, 1=BORDER, 2=CENTER_Y, 3=RADIUS, 4=TOO_BRIGHT,
+	// 5=LOW_CONTRAST, 6=LOW_QUALITY, 7=MASK_TOO_SMALL
 	struct BallCandidate
 	{
 		cv::Point2f center;
 		float radius = 0.0F;
-
 		double normalized_x = 0.0;
 		double mean_inner_gray = 255.0;
 		double mean_ring_gray = 255.0;
 		double ring_contrast = 0.0;
-
 		double radius_score = 0.0;
 		double center_score = 0.0;
 		double darkness_score = 0.0;
 		double contrast_score = 0.0;
 		double quality = 0.0;
-
 		bool passed = false;
+		int reject_code = 0;
+		bool association_rejected = false;
 	};
 
 	class VisionProcessor
@@ -128,6 +122,10 @@ namespace etest::vision
 		void drawBallDebugInfo(cv::Mat& frame,
 		                       const VisionResult& result) noexcept;
 
+		static void resizeLetterbox(const cv::Mat& source,
+		                            cv::Mat& destination,
+		                            cv::Scalar bg = cv::Scalar(0, 0, 0));
+
 	public:
 		bool orderTrackCorners(
 		    const cv::RotatedRect& rect,
@@ -139,9 +137,8 @@ namespace etest::vision
 		    const cv::Mat& warped_roi) noexcept;
 
 	private:
-		static cv::Rect makeInnerRoi(
-		    const cv::Rect& track_roi,
-		    const cv::Size& work_size) noexcept;
+		static cv::Rect makeInnerRoi(const cv::Rect& track_roi,
+		                             const cv::Size& work_size) noexcept;
 
 		VisionConfig config_;
 		bool empty_frame_reported_ = false;
@@ -181,7 +178,7 @@ namespace etest::vision
 		cv::Mat debug_ball_binary_;
 		std::vector<BallCandidate> debug_ball_candidates_;
 
-		// ── alpha-beta 跟踪器 ──
+		// alpha-beta tracker
 		bool tracker_initialized_ = false;
 		double tracked_position_ratio_ = 0.0;
 		double tracked_velocity_ratio_per_s_ = 0.0;
@@ -189,11 +186,11 @@ namespace etest::vision
 		int tracker_lost_frames_ = 0;
 		int reacquire_confirm_count_ = 0;
 		double reacquire_candidate_ratio_ = 0.0;
+		int acquire_confirm_count_ = 0;
+		double acquire_candidate_ratio_ = 0.0;
 		std::chrono::steady_clock::time_point tracker_last_time_;
 
-		std::chrono::steady_clock::time_point
-		    last_ball_lost_log_time_{};
-
+		std::chrono::steady_clock::time_point last_ball_lost_log_time_{};
 		std::chrono::steady_clock::time_point
 		    last_corner_order_error_time_{};
 		std::chrono::steady_clock::time_point
@@ -204,8 +201,7 @@ namespace etest::vision
 		    last_pipe_recovered_info_time_{};
 
 		std::string last_ball_error_code_;
-		std::chrono::steady_clock::time_point
-		    last_ball_error_time_{};
+		std::chrono::steady_clock::time_point last_ball_error_time_{};
 		int ball_lost_frames_on_recover_ = 0;
 	};
 

@@ -189,7 +189,7 @@ namespace etest
 
 		// ── 透视展开 ──
 		int pipe_warp_width = 500;
-		int pipe_warp_height = 120;
+		int pipe_warp_height = 80;
 		double pipe_inner_margin_x_ratio = 0.03;
 		double pipe_inner_margin_y_ratio = 0.10;
 
@@ -224,17 +224,18 @@ namespace etest
 		double hough_param1 = 80.0;
 		double hough_param2 = 14.0;
 
-		int ball_min_radius = 12;
-		int ball_max_radius = 27;
-		double ball_expected_radius = 21.0;
+		int ball_min_radius = 7;
+		int ball_max_radius = 17;
+		double ball_expected_radius = 11.0;
 
-		double ball_min_center_y_ratio = 0.20;
-		double ball_max_center_y_ratio = 0.80;
+		double ball_min_center_y_ratio = 0.25;
+		double ball_max_center_y_ratio = 0.75;
 		double ball_expected_center_y_ratio = 0.50;
 
-		double ball_max_inner_gray = 125.0;
-		double ball_min_ring_contrast = -5.0;
-		double ball_min_quality = 0.20;
+		double ball_max_inner_gray = 135.0;
+		double ball_min_ring_contrast = 0.0;
+		double ball_good_ring_contrast = 30.0;
+		double ball_min_quality = 0.45;
 
 		// ── alpha-beta 跟踪器 ──
 		double tracker_alpha = 0.65;
@@ -247,19 +248,24 @@ namespace etest
 		int tracker_max_predict_frames = 3;
 		int tracker_global_reacquire_frames = 15;
 		int reacquire_confirm_frames = 2;
+		int acquire_confirm_frames = 3;
 
 		// 重捕获：丢球超过此帧数后放弃旧参考点，进行全局搜索 (deprecated)
 		int reacquire_after_lost_frames = 5;
 
 		// 零点校准
-		std::string zero_mode = "startup"; // "startup" | "fixed"
+		std::string zero_mode = "startup"; // "startup" | "fixed" | "ratio"
 		double zero_position_px =
 		    240.5; // 轴线投影距离(px), 非图像x坐标
+		double zero_position_ratio = 0.5;
 		int zero_samples = 40;
 		double zero_range_px = 4.0;
 
 		// 位置低通滤波，越小越平滑但延迟越大
 		double filter_alpha = 0.35;
+
+		// ── 测试用视频输出路径（空字符串=不保存）──
+		std::string video_output = "";
 
 		// ── SourceInfo ──
 		SourceInfo source_work_width;
@@ -335,6 +341,7 @@ namespace etest
 		SourceInfo source_ball_expected_center_y_ratio;
 		SourceInfo source_ball_max_inner_gray;
 		SourceInfo source_ball_min_ring_contrast;
+		SourceInfo source_ball_good_ring_contrast;
 		SourceInfo source_ball_min_quality;
 
 		SourceInfo source_tracker_alpha;
@@ -346,7 +353,9 @@ namespace etest
 		SourceInfo source_tracker_max_predict_frames;
 		SourceInfo source_tracker_global_reacquire_frames;
 		SourceInfo source_reacquire_confirm_frames;
+		SourceInfo source_acquire_confirm_frames;
 
+		SourceInfo source_zero_position_ratio;
 		SourceInfo source_max_axis_distance_px;
 		SourceInfo source_max_jump_px;
 		SourceInfo source_reacquire_after_lost_frames;
@@ -355,6 +364,7 @@ namespace etest
 		SourceInfo source_zero_samples;
 		SourceInfo source_zero_range_px;
 		SourceInfo source_filter_alpha;
+		SourceInfo source_video_output;
 
 		std::string to_string() const;
 	};
