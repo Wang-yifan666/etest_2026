@@ -671,8 +671,14 @@ namespace
 		    "vision.ball.zero_mode",
 		    "vision.ball.zero_position_px",
 		    "vision.ball.zero_samples",
-		    "vision.ball.zero_std_px",
+		    "vision.ball.zero_range_px",
 		    "vision.ball.filter_alpha",
+		    "vision.ball.white_s_max",
+		    "vision.ball.white_v_min",
+		    "vision.ball.track_min_area_ratio",
+		    "vision.ball.track_min_aspect_ratio",
+		    "vision.ball.track_stable_frames",
+		    "vision.ball.track_lost_timeout_frames",
 
 		    "uart.device",
 		    "uart.baudrate",
@@ -1032,15 +1038,51 @@ namespace
 			           ball.zero_samples, 2, 500, result,
 			           &ball.source_zero_samples);
 
-			ball.zero_std_px =
-			    getDouble(raw_config, "vision.ball.zero_std_px",
-			              ball.zero_std_px, 0.01, 100.0, result,
-			              &ball.source_zero_std_px);
+			ball.zero_range_px =
+			    getDouble(raw_config, "vision.ball.zero_range_px",
+			              ball.zero_range_px, 0.01, 100.0, result,
+			              &ball.source_zero_range_px);
 
 			ball.filter_alpha =
 			    getDouble(raw_config, "vision.ball.filter_alpha",
 			              ball.filter_alpha, 0.01, 1.0, result,
 			              &ball.source_filter_alpha);
+
+			ball.white_s_max =
+			    getInt(raw_config, "vision.ball.white_s_max",
+			           ball.white_s_max, 0, 255, result,
+			           &ball.source_white_s_max);
+
+			ball.white_v_min =
+			    getInt(raw_config, "vision.ball.white_v_min",
+			           ball.white_v_min, 0, 255, result,
+			           &ball.source_white_v_min);
+
+			ball.track_min_area_ratio =
+			    getDouble(raw_config,
+			              "vision.ball.track_min_area_ratio",
+			              ball.track_min_area_ratio, 0.001, 1.0,
+			              result,
+			              &ball.source_track_min_area_ratio);
+
+			ball.track_min_aspect_ratio =
+			    getDouble(raw_config,
+			              "vision.ball.track_min_aspect_ratio",
+			              ball.track_min_aspect_ratio, 1.0, 50.0,
+			              result,
+			              &ball.source_track_min_aspect_ratio);
+
+			ball.track_stable_frames =
+			    getInt(raw_config, "vision.ball.track_stable_frames",
+			           ball.track_stable_frames, 3, 120, result,
+			           &ball.source_track_stable_frames);
+
+			ball.track_lost_timeout_frames =
+			    getInt(raw_config,
+			           "vision.ball.track_lost_timeout_frames",
+			           ball.track_lost_timeout_frames, 5, 600,
+			           result,
+			           &ball.source_track_lost_timeout_frames);
 		}
 
 		// ---- [uart] ----
@@ -1636,7 +1678,7 @@ namespace etest
 		    + ", zero_mode=" + zero_mode
 		    + ", zero_px=" + std::to_string(zero_position_px)
 		    + ", zero_samples=" + std::to_string(zero_samples)
-		    + ", zero_std=" + std::to_string(zero_std_px)
+		    + ", zero_range=" + std::to_string(zero_range_px)
 		    + ", filter_alpha=" + std::to_string(filter_alpha);
 	}
 

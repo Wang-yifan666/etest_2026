@@ -157,10 +157,25 @@ namespace etest
 		std::string zero_mode = "startup"; // "startup" | "fixed"
 		double zero_position_px = 240.5;   // 轴线投影距离(px), 非图像x坐标
 		int zero_samples = 40;
-		double zero_std_px = 1.5;
+		double zero_range_px = 4.0;
 
 		// 位置低通滤波，越小越平滑但延迟越大
 		double filter_alpha = 0.35;
+
+		// 白色轨道检测参数
+		int white_s_max = 65;
+		int white_v_min = 150;
+		double track_min_area_ratio = 0.05;
+		double track_min_aspect_ratio = 4.0;
+		int track_stable_frames = 10;
+		int track_lost_timeout_frames = 30;
+
+		SourceInfo source_white_s_max;
+		SourceInfo source_white_v_min;
+		SourceInfo source_track_min_area_ratio;
+		SourceInfo source_track_min_aspect_ratio;
+		SourceInfo source_track_stable_frames;
+		SourceInfo source_track_lost_timeout_frames;
 
 		SourceInfo source_roi_x;
 		SourceInfo source_roi_y;
@@ -183,7 +198,7 @@ namespace etest
 		SourceInfo source_zero_mode;
 		SourceInfo source_zero_position_px;
 		SourceInfo source_zero_samples;
-		SourceInfo source_zero_std_px;
+		SourceInfo source_zero_range_px;
 		SourceInfo source_filter_alpha;
 
 		std::string to_string() const;
