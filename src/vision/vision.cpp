@@ -194,10 +194,10 @@ namespace etest::vision
 	}
 
 	// ────────────────────────────────────────────────────────────
-	// 白色轨道检测（搜索区域 + 横向形态学 + 角度过滤）
+	// 棕色管道检测（搜索区域 + 横向形态学 + 角度过滤 + 填充率）
 	// ────────────────────────────────────────────────────────────
 
-	TrackResult VisionProcessor::detectWhiteTrack(
+	TrackResult VisionProcessor::detectBrownPipe(
 	    const cv::Mat& frame) noexcept
 	{
 		TrackResult result;
@@ -206,14 +206,14 @@ namespace etest::vision
 		{
 			if(frame.empty())
 			{
-				ETEST_LOG_ERROR(
-				    "TRACK", "detectWhiteTrack received empty frame");
+				ETEST_LOG_ERROR("PIPE",
+				                "detectBrownPipe received empty frame");
 				return result;
 			}
 
 			const auto& ball = config_.ball;
 
-			// 1) 限定搜索区域，排除衣服/桌面
+			// 1) 限定搜索区域
 			cv::Rect search_roi(
 			    ball.track_search_roi_x, ball.track_search_roi_y,
 			    ball.track_search_roi_w, ball.track_search_roi_h);
@@ -228,34 +228,40 @@ namespace etest::vision
 
 			const cv::Mat search_image = frame(search_roi);
 
-			// 2) HSV 白色阈值（收紧）
+			// 2) HSV 棕色阈值
 			cv::Mat hsv;
 			cv::cvtColor(search_image, hsv, cv::COLOR_BGR2HSV);
 
-			cv::Mat white_mask;
-			cv::inRange(hsv, cv::Scalar(0, 0, ball.white_v_min),
-			            cv::Scalar(180, ball.white_s_max, 255),
-			            white_mask);
+			cv::Mat brown_mask;
+			cv::inRange(hsv,
+			            cv::Scalar(ball.brown_h_min, ball.brown_s_min,
+			                       ball.brown_v_min),
+			            cv::Scalar(ball.brown_h_max, ball.brown_s_max,
+			                       ball.brown_v_max),
+			            brown_mask);
 
-			// 3) 横向形态学开运算：分离竖直手臂
-			const cv::Mat horizontal_kernel = cv::getStructuringElement(
-			    cv::MORPH_RECT, cv::Size(31, 3));
-			cv::morphologyEx(white_mask, white_mask, cv::MORPH_OPEN,
-			                 horizontal_kernel);
-
-			// 4) 横向闭运算：连接轨道碎片
+			// 3) 矩形闭运算连接管道区域
 			const cv::Mat close_kernel = cv::getStructuringElement(
-			    cv::MORPH_RECT, cv::Size(21, 7));
-			cv::morphologyEx(white_mask, white_mask, cv::MORPH_CLOSE,
+			    cv::MORPH_RECT,
+			    cv::Size(ball.pipe_close_kernel_w,
+			             ball.pipe_close_kernel_h));
+			cv::morphologyEx(brown_mask, brown_mask, cv::MORPH_CLOSE,
 			                 close_kernel);
+
+			// 4) 小尺度开运算去除噪点
+			const cv::Mat open_kernel = cv::getStructuringElement(
+			    cv::MORPH_ELLIPSE,
+			    cv::Size(ball.pipe_open_kernel, ball.pipe_open_kernel));
+			cv::morphologyEx(brown_mask, brown_mask, cv::MORPH_OPEN,
+			                 open_kernel);
 
 			// 将局部 mask 放回全图坐标供调试显示
 			debug_track_mask_ = cv::Mat::zeros(frame.size(), CV_8UC1);
-			white_mask.copyTo(debug_track_mask_(search_roi));
+			brown_mask.copyTo(debug_track_mask_(search_roi));
 
-			// 5) 轮廓筛选：面积 + 长宽比 + 横向角度
+			// 5) 轮廓筛选：面积比例 + 长宽比 + 横向角度 + 填充率
 			std::vector<std::vector<cv::Point>> contours;
-			cv::findContours(white_mask, contours, cv::RETR_EXTERNAL,
+			cv::findContours(brown_mask, contours, cv::RETR_EXTERNAL,
 			                 cv::CHAIN_APPROX_SIMPLE);
 
 			const double image_area =
@@ -267,7 +273,7 @@ namespace etest::vision
 			for(const auto& contour: contours)
 			{
 				const double area = cv::contourArea(contour);
-				if(area < image_area * ball.track_min_area_ratio)
+				if(area < image_area * ball.pipe_min_area_ratio)
 					continue;
 
 				const cv::RotatedRect rect = cv::minAreaRect(contour);
@@ -281,7 +287,7 @@ namespace etest::vision
 					continue;
 
 				const double aspect = long_side / short_side;
-				if(aspect < ball.track_min_aspect_ratio)
+				if(aspect < ball.pipe_min_aspect_ratio)
 					continue;
 
 				// 横向角度过滤
@@ -302,10 +308,27 @@ namespace etest::vision
 				             std::abs(180.0 - std::abs(angle_deg)));
 
 				if(horizontal_deviation
-				   > ball.track_horizontal_angle_max)
+				   > ball.pipe_horizontal_angle_max)
 					continue;
 
-				const double score = area * std::min(aspect, 15.0);
+				// 矩形填充率
+				const double rect_area =
+				    rect.size.width * rect.size.height;
+				const double fill_ratio =
+				    (rect_area > 0.0) ? area / rect_area : 0.0;
+
+				if(fill_ratio < ball.pipe_min_fill_ratio)
+					continue;
+
+				// 矩形尺寸必须足以容纳钢球
+				const double ball_radius_px =
+				    std::sqrt(ball.max_area / CV_PI) * 2.0;
+				if(short_side < ball_radius_px)
+					continue;
+
+				// 综合评分：面积 × 长宽比 × 填充率
+				const double score =
+				    area * std::min(aspect, 20.0) * fill_ratio;
 
 				if(score > best_score)
 				{
@@ -317,70 +340,59 @@ namespace etest::vision
 			if(best_score < 0.0)
 				return result;
 
-			// 6) 提取轴线（局部坐标 → 全图坐标）
+			// 6) 坐标加回全图
+			best_rect.center.x += search_roi.x;
+			best_rect.center.y += search_roi.y;
+
+			result.valid = true;
+			result.rect = best_rect;
+			result.bounding_roi =
+			    cv::Rect(search_roi.x + best_rect.boundingRect().x
+			                 - search_roi.x,
+			             search_roi.y + best_rect.boundingRect().y
+			                 - search_roi.y,
+			             best_rect.boundingRect().width,
+			             best_rect.boundingRect().height);
+			result.bounding_roi &=
+			    cv::Rect(0, 0, frame.cols, frame.rows);
+
+			result.confidence =
+			    std::clamp(best_score / (image_area * 20.0), 0.0, 1.0);
+
+			// 提取轴线（四点→短边中点连线）
 			cv::Point2f points[4];
 			best_rect.points(points);
-
-			for(auto& p: points)
-			{
-				p.x += search_roi.x;
-				p.y += search_roi.y;
-			}
 
 			const double edge01 = cv::norm(points[1] - points[0]);
 			const double edge12 = cv::norm(points[2] - points[1]);
 
-			cv::Point2f axis_p1, axis_p2;
 			if(edge01 >= edge12)
 			{
-				axis_p1 = (points[0] + points[3]) * 0.5F;
-				axis_p2 = (points[1] + points[2]) * 0.5F;
+				result.axis_p1 = (points[0] + points[3]) * 0.5F;
+				result.axis_p2 = (points[1] + points[2]) * 0.5F;
 			}
 			else
 			{
-				axis_p1 = (points[0] + points[1]) * 0.5F;
-				axis_p2 = (points[2] + points[3]) * 0.5F;
+				result.axis_p1 = (points[0] + points[1]) * 0.5F;
+				result.axis_p2 = (points[2] + points[3]) * 0.5F;
 			}
-
-			cv::Rect roi(search_roi.x + best_rect.boundingRect().x,
-			             search_roi.y + best_rect.boundingRect().y,
-			             best_rect.boundingRect().width,
-			             best_rect.boundingRect().height);
-			roi &= cv::Rect(0, 0, frame.cols, frame.rows);
-
-			if(roi.empty())
-			{
-				ETEST_LOG_ERROR("TRACK", "track ROI empty after clamp");
-				return result;
-			}
-
-			result.valid = true;
-			result.rect = cv::RotatedRect(
-			    cv::Point2f(best_rect.center.x + search_roi.x,
-			                best_rect.center.y + search_roi.y),
-			    best_rect.size, best_rect.angle);
-			result.bounding_roi = roi;
-			result.axis_p1 = axis_p1;
-			result.axis_p2 = axis_p2;
-			result.confidence =
-			    std::clamp(best_score / image_area, 0.0, 1.0);
 
 			return result;
 		}
 		catch(const cv::Exception& error)
 		{
 			ETEST_LOG_ERROR(
-			    "TRACK",
+			    "PIPE",
 			    std::string("OpenCV exception: ") + error.what());
 		}
 		catch(const std::exception& error)
 		{
-			ETEST_LOG_ERROR("TRACK",
+			ETEST_LOG_ERROR("PIPE",
 			                std::string("exception: ") + error.what());
 		}
 		catch(...)
 		{
-			ETEST_LOG_ERROR("TRACK", "unknown exception");
+			ETEST_LOG_ERROR("PIPE", "unknown exception");
 		}
 
 		return result;
@@ -412,16 +424,15 @@ namespace etest::vision
 		const int margin_y =
 		    std::max(1, static_cast<int>(track_roi.height * 0.15));
 
+		// 先确保最小尺寸，再与工作图像求交，避免求交后强制改大导致越界
 		cv::Rect inner(track_roi.x + margin_x, track_roi.y + margin_y,
-		               track_roi.width - margin_x * 2,
-		               track_roi.height - margin_y * 2);
+		               std::max(10, track_roi.width - margin_x * 2),
+		               std::max(10, track_roi.height - margin_y * 2));
 
 		inner &= cv::Rect(0, 0, work_size.width, work_size.height);
 
-		if(inner.width < 10)
-			inner.width = 10;
-		if(inner.height < 10)
-			inner.height = 10;
+		if(inner.width < 10 || inner.height < 10)
+			return cv::Rect();
 
 		return inner;
 	}
@@ -435,9 +446,10 @@ namespace etest::vision
 		VisionResult result;
 		result.target_type = "BALL";
 
-		// 0) 统一工作分辨率 640×480
-		constexpr int kWorkWidth = 640;
-		constexpr int kWorkHeight = 480;
+		// 0) 统一到可配置工作分辨率
+		const auto& ball = config_.ball;
+		const int kWorkWidth = ball.work_width;
+		const int kWorkHeight = ball.work_height;
 
 		cv::Mat work_frame;
 
@@ -464,25 +476,24 @@ namespace etest::vision
 			work_frame = frame;
 		}
 
-		const auto& ball = config_.ball;
-
-		// ── 1) 轨道检测 → 维护锁定状态 ──
+		// ── 1) 管道检测 → 维护锁定状态 ──
 		if(!track_locked_)
 		{
-			const TrackResult track = detectWhiteTrack(work_frame);
+			const TrackResult track = detectBrownPipe(work_frame);
 
 			if(track.valid)
 			{
 				if(isTrackSimilar(track, locked_track_))
 				{
 					++track_stable_count_;
-					if(track_stable_count_ >= ball.track_stable_frames)
+					if(track_stable_count_ >= ball.pipe_stable_frames)
 					{
 						track_locked_ = true;
 						locked_track_ = track;
 						track_lost_frame_count_ = 0;
+						warp_locked_ = false;
 						ETEST_LOG_INFO("VISION",
-						               "track geometry locked");
+						               "pipe geometry locked");
 					}
 				}
 				else
@@ -498,80 +509,168 @@ namespace etest::vision
 		}
 		else
 		{
-			const TrackResult track = detectWhiteTrack(work_frame);
+			const TrackResult track = detectBrownPipe(work_frame);
 
 			if(!track.valid || !isTrackSimilar(track, locked_track_))
 			{
+				if(track_lost_frame_count_ == 0)
+					ETEST_LOG_WARN("VISION", "pipe lost");
 				++track_lost_frame_count_;
+
 				if(track_lost_frame_count_
-				   >= ball.track_lost_timeout_frames)
+				   >= ball.pipe_lost_timeout_frames)
 				{
 					track_locked_ = false;
 					track_stable_count_ = 0;
 					track_lost_frame_count_ = 0;
+					warp_locked_ = false;
 					ball_state_ = BallState::FIND_TRACK;
 					zero_locked_ = false;
 					zero_buffer_.clear();
 					ball_filter_initialized_ = false;
 					ETEST_LOG_WARN(
 					    "VISION",
-					    "track lost; resetting to FIND_TRACK");
+					    "pipe lost timeout; resetting to FIND_TRACK");
 				}
 			}
 			else
 			{
+				if(track_lost_frame_count_ > 0)
+					ETEST_LOG_INFO(
+					    "VISION",
+					    "pipe recovered; locked geometry kept");
 				track_lost_frame_count_ = 0;
-				locked_track_ = track;
 			}
 		}
 
-		// ── 2) 轨道未锁定 → 不能找球 ──
 		if(!track_locked_)
 		{
-			result.x = 0.0;
-			result.y = 0.0;
-			result.error_code = "TRACK_NOT_LOCKED";
+			result.error_code = "PIPE_NOT_STABLE";
 			return result;
 		}
 
-		// ── 3) 动态 ROI 和轴线 ──
-		const cv::Rect ball_roi =
-		    makeInnerRoi(locked_track_.bounding_roi, work_frame.size());
-
-		const cv::Point2f axis_p1 = locked_track_.axis_p1;
-		const cv::Point2f axis_p2 = locked_track_.axis_p2;
-		const cv::Point2f axis_vec = axis_p2 - axis_p1;
-		const double axis_len = cv::norm(axis_vec);
-
-		if(axis_len < 1.0)
+		// ── 2) 透视展开管道 ROI ──
+		if(!warp_locked_)
 		{
-			result.error_code = "INVALID_AXIS";
+			const auto& rect = locked_track_.rect;
+
+			cv::Point2f pts[4];
+			rect.points(pts);
+
+			// 四点排序：左上、右上、右下、左下
+			std::sort(pts, pts + 4,
+			          [](const cv::Point2f& a, const cv::Point2f& b) {
+				          return (a.y < b.y)
+				              || (a.y == b.y && a.x < b.x);
+			          });
+
+			cv::Point2f top_left, top_right;
+			if(pts[0].x <= pts[1].x)
+			{
+				top_left = pts[0];
+				top_right = pts[1];
+			}
+			else
+			{
+				top_left = pts[1];
+				top_right = pts[0];
+			}
+
+			cv::Point2f bottom_left, bottom_right;
+			if(pts[2].x <= pts[3].x)
+			{
+				bottom_left = pts[2];
+				bottom_right = pts[3];
+			}
+			else
+			{
+				bottom_left = pts[3];
+				bottom_right = pts[2];
+			}
+
+			const cv::Point2f src[4] = {top_left, top_right,
+			                            bottom_right, bottom_left};
+
+			// 锁定左右方向
+			const double top_dx = top_right.x - top_left.x;
+			warp_direction_ = (top_dx >= 0.0) ? 1 : -1;
+
+			const int ww = ball.pipe_warp_width;
+			const int wh = ball.pipe_warp_height;
+			const cv::Point2f dst[4] = {
+			    cv::Point2f(0.0F, 0.0F),
+			    cv::Point2f(static_cast<float>(ww - 1), 0.0F),
+			    cv::Point2f(static_cast<float>(ww - 1),
+			                static_cast<float>(wh - 1)),
+			    cv::Point2f(0.0F, static_cast<float>(wh - 1))};
+
+			warp_matrix_ = cv::getPerspectiveTransform(src, dst);
+
+			if(warp_matrix_.empty()
+			   || std::isnan(warp_matrix_.at<double>(0, 0)))
+			{
+				ETEST_LOG_ERROR("VISION",
+				                "perspective transform failed");
+				result.error_code = "PIPE_WARP_FAILED";
+				return result;
+			}
+
+			warp_locked_ = true;
+		}
+
+		// ── 3) 执行透视变换 ──
+		cv::Mat warped;
+		cv::warpPerspective(
+		    work_frame, warped, warp_matrix_,
+		    cv::Size(ball.pipe_warp_width, ball.pipe_warp_height),
+		    cv::INTER_LINEAR);
+		debug_warped_pipe_ = warped.clone();
+
+		// 定义内部有效区域（排除管壁边缘）
+		const int margin_x = static_cast<int>(
+		    ball.pipe_warp_width * ball.pipe_inner_margin_x_ratio);
+		const int margin_y = static_cast<int>(
+		    ball.pipe_warp_height * ball.pipe_inner_margin_y_ratio);
+		cv::Rect inner_roi(
+		    margin_x, margin_y,
+		    std::max(1, ball.pipe_warp_width - 2 * margin_x),
+		    std::max(1, ball.pipe_warp_height - 2 * margin_y));
+		inner_roi &= cv::Rect(0, 0, warped.cols, warped.rows);
+
+		if(inner_roi.empty() || inner_roi.width < 10
+		   || inner_roi.height < 5)
+		{
+			result.error_code = "PIPE_ROI_INVALID";
 			return result;
 		}
 
-		const cv::Point2f axis_unit =
-		    axis_vec / static_cast<float>(axis_len);
+		const cv::Mat roi_img = warped(inner_roi);
 
-		// ── 4) ROI 裁剪 → 灰度 → 局部背景差分 ──
-		const cv::Mat roi_image = work_frame(ball_roi);
-
+		// ── 4) 灰度 + 高斯滤波 ──
 		cv::Mat gray;
-		if(roi_image.channels() == 3)
-			cv::cvtColor(roi_image, gray, cv::COLOR_BGR2GRAY);
+		if(roi_img.channels() == 3)
+			cv::cvtColor(roi_img, gray, cv::COLOR_BGR2GRAY);
 		else
-			gray = roi_image.clone();
+			gray = roi_img.clone();
 
 		cv::GaussianBlur(gray, gray, cv::Size(5, 5), 0.0);
 
-		cv::Mat background;
-		cv::GaussianBlur(gray, background,
-		                 cv::Size(ball.bg_kernel, ball.bg_kernel), 0.0);
+		// ── 5) 黑帽+顶帽：适应球体可能比背景亮或暗 ──
+		const cv::Mat se = cv::getStructuringElement(
+		    cv::MORPH_ELLIPSE,
+		    cv::Size(ball.bg_kernel, ball.bg_kernel));
 
-		cv::Mat diff;
-		cv::absdiff(gray, background, diff);
+		cv::Mat blackhat;
+		cv::morphologyEx(gray, blackhat, cv::MORPH_BLACKHAT, se);
 
+		cv::Mat tophat;
+		cv::morphologyEx(gray, tophat, cv::MORPH_TOPHAT, se);
+
+		cv::Mat combined = cv::max(blackhat, tophat);
+
+		// ── 6) 二值化 ──
 		cv::Mat binary;
-		cv::threshold(diff, binary, ball.threshold, 255,
+		cv::threshold(combined, binary, ball.threshold, 255,
 		              cv::THRESH_BINARY);
 
 		const cv::Mat morph_kernel = cv::getStructuringElement(
@@ -582,10 +681,14 @@ namespace etest::vision
 
 		debug_ball_binary_ = binary.clone();
 
-		// ── 5) 轮廓筛选 ──
+		// ── 7) 轮廓筛选 ──
 		std::vector<std::vector<cv::Point>> contours;
 		cv::findContours(binary, contours, cv::RETR_EXTERNAL,
 		                 cv::CHAIN_APPROX_SIMPLE);
+
+		// 管道中心线（水平展开后中心线 y=warp_height/2）
+		const double centerline_y =
+		    ball.pipe_warp_height * 0.5 - margin_y;
 
 		double best_score = -1e9;
 		double best_circularity = 0.0;
@@ -612,53 +715,69 @@ namespace etest::vision
 			const cv::Rect box = cv::boundingRect(contour);
 			const double aspect = static_cast<double>(box.width)
 			    / std::max(1, box.height);
-			if(aspect < 0.70 || aspect > 1.40)
+			if(aspect < ball.ball_min_aspect
+			   || aspect > ball.ball_max_aspect)
 				continue;
 
 			const cv::Moments moments = cv::moments(contour);
 			if(std::abs(moments.m00) < 1e-6)
 				continue;
 
-			const cv::Point2f center(
-			    static_cast<float>(moments.m10 / moments.m00
-			                       + ball_roi.x),
-			    static_cast<float>(moments.m01 / moments.m00
-			                       + ball_roi.y));
+			const cv::Point2f center_in_roi(
+			    static_cast<float>(moments.m10 / moments.m00),
+			    static_cast<float>(moments.m01 / moments.m00));
 
-			const cv::Point2f from_axis = center - axis_p1;
-			const double projected =
-			    from_axis.x * axis_unit.x + from_axis.y * axis_unit.y;
+			// 局部对比度：轮廓区域 vs 外围环的平均灰度差
+			cv::Mat mask = cv::Mat::zeros(binary.size(), CV_8UC1);
+			cv::drawContours(
+			    mask, std::vector<std::vector<cv::Point>>{contour}, -1,
+			    255, -1);
 
-			if(projected < 0.0 || projected > axis_len)
+			cv::Mat dilated_mask;
+			const cv::Mat dilate_kernel = cv::getStructuringElement(
+			    cv::MORPH_ELLIPSE, cv::Size(11, 11));
+			cv::dilate(mask, dilated_mask, dilate_kernel);
+			cv::Mat outer_ring = dilated_mask - mask;
+
+			const double inner_mean = cv::mean(gray, mask)[0];
+			const double outer_mean = cv::mean(gray, outer_ring)[0];
+			const double local_contrast =
+			    std::abs(inner_mean - outer_mean);
+
+			if(local_contrast < ball.ball_min_local_contrast)
 				continue;
 
-			const cv::Point2f nearest =
-			    axis_p1 + axis_unit * static_cast<float>(projected);
-			const double axis_distance = cv::norm(center - nearest);
-
-			if(axis_distance > ball.max_axis_distance_px)
+			// 到中心线距离
+			const double centerline_distance =
+			    std::abs(center_in_roi.y - centerline_y);
+			if(centerline_distance
+			   > ball.ball_max_centerline_distance_px)
 				continue;
 
+			// 位置跳变检查
 			double jump_distance = 0.0;
 			if(!in_reacquire && has_last_ball_center_)
 			{
-				jump_distance = cv::norm(center - last_ball_center_);
+				jump_distance =
+				    cv::norm(center_in_roi - last_ball_center_);
 				if(jump_distance > ball.max_jump_px)
 					continue;
 			}
 
+			// 评分：圆度 + 对比度 - 中心线距离 - 跳变
 			const double score = circularity * 100.0
-			    - axis_distance * 1.5 - jump_distance * 0.2;
+			    + local_contrast * 2.0 - centerline_distance * 1.5
+			    - jump_distance * 0.2;
 
 			if(score > best_score)
 			{
 				best_score = score;
-				best_center = center;
+				best_center = center_in_roi;
 				best_circularity = circularity;
 			}
 		}
 
-		// ── 6) 无候选 → 状态机处理 ──
+		// ── 8) 无候选 → 状态机处理 ──
 		if(best_score < -1e7)
 		{
 			++ball_lost_frame_count_;
@@ -701,13 +820,11 @@ namespace etest::vision
 			if(!zero_locked_)
 				zero_buffer_.clear();
 
-			result.x = 0.0;
-			result.y = 0.0;
-			result.error_code = "BALL_LOST";
+			result.error_code = "BALL_NOT_FOUND";
 			return result;
 		}
 
-		// ── 7) 检测成功 → 重置丢球计数 ──
+		// ── 9) 检测成功 → 校正 ──
 		ball_lost_frame_count_ = 0;
 
 		if(ball_lost_)
@@ -719,24 +836,25 @@ namespace etest::vision
 		has_last_ball_center_ = true;
 		last_ball_center_ = best_center;
 
-		result.x = best_center.x;
-		result.y = best_center.y;
+		const double axis_position_px = best_center.x + inner_roi.x;
 
-		const cv::Point2f from_start = best_center - axis_p1;
-		const double axis_position_px =
-		    from_start.x * axis_unit.x + from_start.y * axis_unit.y;
+		// 外推 result.x/y 到工作帧坐标（调试用）
+		result.x =
+		    best_center.x + inner_roi.x + locked_track_.bounding_roi.x;
+		result.y =
+		    best_center.y + inner_roi.y + locked_track_.bounding_roi.y;
 
-		// ── 8) 重捕获恢复 → 回到 TRACK_BALL ──
 		if(ball_state_ == BallState::REACQUIRE_BALL)
 		{
 			ball_state_ = BallState::TRACK_BALL;
 			ETEST_LOG_INFO("VISION", "Ball reacquired; resuming TRACK");
 		}
 
-		// ── 9) 零点校准 ──
+		// ── 10) 零点校准 ──
 		if(!zero_locked_)
 		{
-			if(ball_state_ == BallState::FIND_TRACK)
+			if(ball_state_ != BallState::CALIBRATE_ZERO
+			   && ball_state_ != BallState::TRACK_BALL)
 			{
 				ball_state_ = BallState::CALIBRATE_ZERO;
 			}
@@ -758,18 +876,14 @@ namespace etest::vision
 					const double last = zero_buffer_.back();
 					if(std::abs(axis_position_px - last)
 					   > ball.max_jump_px)
-					{
 						zero_buffer_.clear();
-					}
 				}
 
 				zero_buffer_.push_back(axis_position_px);
 
 				while(static_cast<int>(zero_buffer_.size())
 				      > ball.zero_samples)
-				{
 					zero_buffer_.pop_front();
-				}
 
 				if(static_cast<int>(zero_buffer_.size())
 				   >= ball.zero_samples)
@@ -802,21 +916,26 @@ namespace etest::vision
 			return result;
 		}
 
-		// ── 10) 厘米换算 + 低通滤波 ──
-		const double pixels_per_cm = axis_len / ball.axis_length_cm;
-		const double raw_offset_cm =
-		    (axis_position_px - zero_position_px_) / pixels_per_cm;
+		// ── 11) 毫米换算 + 低通滤波 ──
+		const double effective_warp_width = ball.pipe_warp_width
+		    * (1.0 - 2.0 * ball.pipe_inner_margin_x_ratio);
+		const double mm_per_warp_pixel = effective_warp_width > 0.0
+		    ? ball.pipe_length_mm / effective_warp_width
+		    : ball.pipe_length_mm / ball.pipe_warp_width;
+
+		const double raw_offset_mm =
+		    (axis_position_px - zero_position_px_) * mm_per_warp_pixel;
 
 		if(!ball_filter_initialized_)
 		{
-			filtered_offset_cm_ = raw_offset_cm;
+			filtered_offset_cm_ = raw_offset_mm / 10.0;
 			ball_filter_initialized_ = true;
 		}
 		else
 		{
 			const double alpha =
 			    std::clamp(ball.filter_alpha, 0.01, 1.0);
-			filtered_offset_cm_ = alpha * raw_offset_cm
+			filtered_offset_cm_ = alpha * raw_offset_mm / 10.0
 			    + (1.0 - alpha) * filtered_offset_cm_;
 		}
 
@@ -892,10 +1011,8 @@ namespace etest::vision
 		try
 		{
 			const auto& ball = config_.ball;
-
-			// ── 1) 统一到工作分辨率 640×480 ──
-			constexpr int kW = 640;
-			constexpr int kH = 480;
+			const int kW = ball.work_width;
+			const int kH = ball.work_height;
 
 			cv::Mat work_view;
 			if(frame.cols != kW || frame.rows != kH)
@@ -910,24 +1027,33 @@ namespace etest::vision
 
 			const cv::Size work_size(kW, kH);
 
-			// canvas: 2×2 宫格，每个格子 kW×kH/2
-			cv::Mat canvas(cv::Size(kW * 2, kH), work_view.type(),
+			// canvas: 2×2 宫格，使用 display_w = max(kW/2, pipe_warp_width)
+			// 以适应展开管道宽度
+			const int disp_w =
+			    std::max(kW / 2, ball.pipe_warp_width / 2);
+			const int disp_h = kH / 2;
+			cv::Mat canvas(cv::Size(kW + disp_w, kH), work_view.type(),
 			               cv::Scalar(0, 0, 0));
 
-			// ── 左上：完整标注帧（缩放到格子大小）──
+			// ── 左上：完整标注帧（旋转矩形 + 球位置）──
 			cv::Mat top_left = canvas(cv::Rect(0, 0, kW, kH / 2));
 			cv::Mat annotated = work_view.clone();
 
 			if(track_locked_)
 			{
-				const cv::Rect ball_roi =
-				    makeInnerRoi(locked_track_.bounding_roi, work_size);
+				// 绘制锁定的旋转矩形
+				cv::Point2f rpts[4];
+				locked_track_.rect.points(rpts);
+				for(int i = 0; i < 4; ++i)
+					cv::line(annotated,
+					         cv::Point(static_cast<int>(rpts[i].x),
+					                   static_cast<int>(rpts[i].y)),
+					         cv::Point(
+					             static_cast<int>(rpts[(i + 1) % 4].x),
+					             static_cast<int>(rpts[(i + 1) % 4].y)),
+					         cv::Scalar(0, 255, 255), 2);
 
-				// 球搜索 ROI（绿色）
-				cv::rectangle(annotated, ball_roi,
-				              cv::Scalar(0, 255, 0), 1);
-
-				// 轨道轴线（黄色）
+				// 管道轴线（黄色）
 				cv::line(annotated,
 				         cv::Point(
 				             static_cast<int>(locked_track_.axis_p1.x),
@@ -943,16 +1069,16 @@ namespace etest::vision
 				cv::circle(annotated,
 				           cv::Point(static_cast<int>(result.x),
 				                     static_cast<int>(result.y)),
-				           6, cv::Scalar(0, 0, 255), -1);
+				           8, cv::Scalar(0, 0, 255), -1);
 
 				const int conf_pct = static_cast<int>(
 				    std::lround(result.confidence * 100.0));
 				std::string label = "BALL "
 				    + std::to_string(result.offset_mm) + "mm "
 				    + std::to_string(conf_pct) + "%";
-				cv::putText(annotated, label, cv::Point(5, 15),
-				            cv::FONT_HERSHEY_SIMPLEX, 0.5,
-				            cv::Scalar(0, 255, 0), 1);
+				cv::putText(annotated, label, cv::Point(5, 20),
+				            cv::FONT_HERSHEY_SIMPLEX, 0.7,
+				            cv::Scalar(0, 255, 0), 2);
 			}
 			else
 			{
@@ -963,9 +1089,7 @@ namespace etest::vision
 					state_text = "CALIB";
 					break;
 				case BallState::TRACK_BALL:
-					state_text = result.error_code == "BALL_LOST"
-					    ? "LOST"
-					    : "TRACK";
+					state_text = "TRACK";
 					break;
 				case BallState::REACQUIRE_BALL:
 					state_text = "REACQ";
@@ -973,46 +1097,64 @@ namespace etest::vision
 				default:
 					break;
 				}
-				cv::putText(annotated, std::string(state_text),
-				            cv::Point(5, 15), cv::FONT_HERSHEY_SIMPLEX,
-				            0.5, cv::Scalar(0, 165, 255), 1);
+				cv::putText(annotated, state_text, cv::Point(5, 20),
+				            cv::FONT_HERSHEY_SIMPLEX, 0.7,
+				            cv::Scalar(0, 165, 255), 2);
+				if(!result.error_code.empty())
+					cv::putText(annotated, result.error_code,
+					            cv::Point(5, 45),
+					            cv::FONT_HERSHEY_SIMPLEX, 0.5,
+					            cv::Scalar(0, 0, 255), 1);
 			}
 
-			// 缩放完整标注帧到左上格子
-			cv::resize(annotated, top_left, cv::Size(kW, kH / 2), 0.0,
-			           0.0, cv::INTER_AREA);
+			cv::resize(annotated, top_left,
+			           cv::Size(top_left.cols, top_left.rows), 0.0, 0.0,
+			           cv::INTER_AREA);
 
-			// ── 右上：track mask（640×480 直接缩放填入）──
-			cv::Mat top_right = canvas(cv::Rect(kW, 0, kW, kH / 2));
+			// ── 右上：展开管道（原始彩色）──
+			cv::Mat top_right = canvas(cv::Rect(kW, 0, disp_w, disp_h));
+			if(!debug_warped_pipe_.empty())
+			{
+				cv::resize(debug_warped_pipe_, top_right,
+				           cv::Size(top_right.cols, top_right.rows),
+				           0.0, 0.0, cv::INTER_AREA);
+			}
+
+			// ── 左下：棕色管道掩膜 ──
+			cv::Mat bottom_left =
+			    canvas(cv::Rect(0, kH / 2, kW, kH / 2));
 			if(!debug_track_mask_.empty())
 			{
 				cv::Mat mask_color;
 				cv::cvtColor(debug_track_mask_, mask_color,
 				             cv::COLOR_GRAY2BGR);
-				cv::resize(mask_color, top_right, cv::Size(kW, kH / 2),
+				cv::resize(mask_color, bottom_left,
+				           cv::Size(bottom_left.cols, bottom_left.rows),
 				           0.0, 0.0, cv::INTER_NEAREST);
 			}
 
-			// ── 左下：ball binary（局部 ROI，缩放填入）──
-			cv::Mat bottom_left =
-			    canvas(cv::Rect(0, kH / 2, kW, kH / 2));
+			// ── 右下：钢球二值图 + 状态 ──
+			cv::Mat bottom_right =
+			    canvas(cv::Rect(kW, kH / 2, disp_w, kH / 2));
 			if(!debug_ball_binary_.empty())
 			{
 				cv::Mat bin_color;
 				cv::cvtColor(debug_ball_binary_, bin_color,
 				             cv::COLOR_GRAY2BGR);
-				cv::resize(bin_color, bottom_left, cv::Size(kW, kH / 2),
-				           0.0, 0.0, cv::INTER_NEAREST);
+				cv::resize(
+				    bin_color, bottom_right,
+				    cv::Size(bottom_right.cols, bottom_right.rows), 0.0,
+				    0.0, cv::INTER_NEAREST);
 			}
-
-			// ── 右下：状态文本 ──
-			cv::Mat bottom_right =
-			    canvas(cv::Rect(kW, kH / 2, kW, kH / 2));
+			// 叠加状态文本
 			std::string status_text;
 			if(result.valid && result.calibrated)
 			{
 				status_text = "OK offset="
-				    + std::to_string(result.offset_mm) + "mm";
+				    + std::to_string(result.offset_mm) + "mm" + " conf="
+				    + std::to_string(static_cast<int>(
+				        std::lround(result.confidence * 100.0)))
+				    + "%";
 			}
 			else if(result.error_code == "ZERO_CALIBRATING")
 			{
@@ -1025,10 +1167,9 @@ namespace etest::vision
 				status_text = result.error_code;
 			}
 			cv::putText(bottom_right, status_text, cv::Point(5, 20),
-			            cv::FONT_HERSHEY_SIMPLEX, 0.5,
+			            cv::FONT_HERSHEY_SIMPLEX, 0.7,
 			            cv::Scalar(200, 200, 200), 1);
 
-			// ── 缩放回原始帧尺寸供 imshow ──
 			cv::resize(canvas, frame, cv::Size(frame.cols, frame.rows),
 			           0.0, 0.0, cv::INTER_LINEAR);
 		}

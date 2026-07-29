@@ -9,6 +9,11 @@ min_area = 200.0
 morphology_kernel = 5
 
 [vision.ball]
+# ── 工作分辨率 ──
+work_width = 640
+work_height = 480
+
+# ── 搜索 ROI（工作分辨率内坐标）──
 roi_x = 60
 roi_y = 180
 roi_w = 520
@@ -20,13 +25,50 @@ axis_x2 = 560.0
 axis_y2 = 230.0
 axis_length_cm = 25.0
 
+# ── 棕色管道 HSV 阈值 ──
+brown_h_min = 5
+brown_h_max = 30
+brown_s_min = 60
+brown_s_max = 255
+brown_v_min = 30
+brown_v_max = 230
+
+# ── 管道形态学 ──
+pipe_close_kernel_w = 31
+pipe_close_kernel_h = 9
+pipe_open_kernel = 3
+
+# ── 管道几何约束 ──
+pipe_min_area_ratio = 0.05
+pipe_min_aspect_ratio = 3.0
+pipe_min_fill_ratio = 0.30
+pipe_horizontal_angle_max = 25.0
+
+# ── 管道锁定 ──
+pipe_stable_frames = 8
+pipe_lost_timeout_frames = 30
+
+# ── 透视展开 ──
+pipe_warp_width = 500
+pipe_warp_height = 120
+pipe_inner_margin_x_ratio = 0.03
+pipe_inner_margin_y_ratio = 0.10
+
+# ── 管道实际长度(mm) ──
+pipe_length_mm = 250.0
+
+# ── 钢球检测参数 ──
 bg_kernel = 31
 threshold = 18
 morph_kernel = 3
 
-min_area = 200.0
+min_area = 40.0
 max_area = 3000.0
-min_circularity = 0.45
+min_circularity = 0.35
+ball_min_aspect = 0.65
+ball_max_aspect = 1.45
+ball_min_local_contrast = 8.0
+ball_max_centerline_distance_px = 35.0
 max_axis_distance_px = 30.0
 max_jump_px = 50.0
 
@@ -39,19 +81,15 @@ zero_range_px = 4.0
 
 filter_alpha = 0.35
 
-# 白色轨道检测参数（收紧阈值 + 搜索区域限制）
+# 旧参数保留（待迁移）
 white_s_max = 50
 white_v_min = 160
 track_min_area_ratio = 0.05
 track_min_aspect_ratio = 4.0
 track_stable_frames = 10
 track_lost_timeout_frames = 60
-
-# 轨道搜索区域（工作分辨率 640×480，限定 y=220~440 排除衣服）
 track_search_roi_x = 0
 track_search_roi_y = 220
 track_search_roi_w = 640
 track_search_roi_h = 220
-
-# 横向角度限制（排除竖直手臂）
 track_horizontal_angle_max = 20.0

@@ -125,6 +125,10 @@ namespace etest
 
 	struct BallConfig
 	{
+		// ── 工作分辨率 ──
+		int work_width = 640;
+		int work_height = 480;
+
 		// ROI 区域（整幅图像坐标）
 		int roi_x = 60;
 		int roi_y = 180;
@@ -138,6 +142,38 @@ namespace etest
 		double axis_y2 = 230.0;
 		double axis_length_cm = 20.0;
 
+		// ── 棕色管道 HSV 阈值 ──
+		int brown_h_min = 5;
+		int brown_h_max = 30;
+		int brown_s_min = 60;
+		int brown_s_max = 255;
+		int brown_v_min = 30;
+		int brown_v_max = 230;
+
+		// ── 管道形态学 ──
+		int pipe_close_kernel_w = 31;
+		int pipe_close_kernel_h = 9;
+		int pipe_open_kernel = 3;
+
+		// ── 管道几何约束 ──
+		double pipe_min_area_ratio = 0.05;
+		double pipe_min_aspect_ratio = 3.0;
+		double pipe_min_fill_ratio = 0.30;
+		double pipe_horizontal_angle_max = 25.0;
+
+		// ── 管道锁定 ──
+		int pipe_stable_frames = 8;
+		int pipe_lost_timeout_frames = 30;
+
+		// ── 透视展开 ──
+		int pipe_warp_width = 500;
+		int pipe_warp_height = 120;
+		double pipe_inner_margin_x_ratio = 0.03;
+		double pipe_inner_margin_y_ratio = 0.10;
+
+		// ── 毫米换算：管道实际长度(mm) ──
+		double pipe_length_mm = 250.0;
+
 		// 局部对比度检测参数
 		int bg_kernel = 31;
 		int threshold = 18;
@@ -145,24 +181,35 @@ namespace etest
 
 		// 候选轮廓约束
 		double min_area = 40.0;
-		double max_area = 1200.0;
-		double min_circularity = 0.20;
+		double max_area = 3000.0;
+		double min_circularity = 0.35;
 		double max_axis_distance_px = 30.0;
-		double max_jump_px = 60.0;
+		double max_jump_px = 50.0;
+
+		// 钢球长宽比约束
+		double ball_min_aspect = 0.65;
+		double ball_max_aspect = 1.45;
+
+		// 局部对比度约束
+		double ball_min_local_contrast = 8.0;
+
+		// 到管道中心线最大距离
+		double ball_max_centerline_distance_px = 35.0;
 
 		// 重捕获：丢球超过此帧数后放弃旧参考点，进行全局搜索
 		int reacquire_after_lost_frames = 5;
 
 		// 零点校准
 		std::string zero_mode = "startup"; // "startup" | "fixed"
-		double zero_position_px = 240.5;   // 轴线投影距离(px), 非图像x坐标
+		double zero_position_px =
+		    240.5; // 轴线投影距离(px), 非图像x坐标
 		int zero_samples = 40;
 		double zero_range_px = 4.0;
 
 		// 位置低通滤波，越小越平滑但延迟越大
 		double filter_alpha = 0.35;
 
-		// 白色轨道检测参数
+		// 白色轨道检测参数（保留兼容，待迁移后移除）
 		int white_s_max = 65;
 		int white_v_min = 150;
 		double track_min_area_ratio = 0.05;
@@ -179,6 +226,64 @@ namespace etest
 		// 轨道横向角度限制（度），用于排除竖直手臂
 		double track_horizontal_angle_max = 20.0;
 
+		// ── SourceInfo ──
+		SourceInfo source_work_width;
+		SourceInfo source_work_height;
+		SourceInfo source_roi_x;
+		SourceInfo source_roi_y;
+		SourceInfo source_roi_w;
+		SourceInfo source_roi_h;
+		SourceInfo source_axis_x1;
+		SourceInfo source_axis_y1;
+		SourceInfo source_axis_x2;
+		SourceInfo source_axis_y2;
+		SourceInfo source_axis_length_cm;
+
+		SourceInfo source_brown_h_min;
+		SourceInfo source_brown_h_max;
+		SourceInfo source_brown_s_min;
+		SourceInfo source_brown_s_max;
+		SourceInfo source_brown_v_min;
+		SourceInfo source_brown_v_max;
+
+		SourceInfo source_pipe_close_kernel_w;
+		SourceInfo source_pipe_close_kernel_h;
+		SourceInfo source_pipe_open_kernel;
+
+		SourceInfo source_pipe_min_area_ratio;
+		SourceInfo source_pipe_min_aspect_ratio;
+		SourceInfo source_pipe_min_fill_ratio;
+		SourceInfo source_pipe_horizontal_angle_max;
+
+		SourceInfo source_pipe_stable_frames;
+		SourceInfo source_pipe_lost_timeout_frames;
+
+		SourceInfo source_pipe_warp_width;
+		SourceInfo source_pipe_warp_height;
+		SourceInfo source_pipe_inner_margin_x_ratio;
+		SourceInfo source_pipe_inner_margin_y_ratio;
+
+		SourceInfo source_pipe_length_mm;
+
+		SourceInfo source_bg_kernel;
+		SourceInfo source_threshold;
+		SourceInfo source_morph_kernel;
+		SourceInfo source_min_area;
+		SourceInfo source_max_area;
+		SourceInfo source_min_circularity;
+		SourceInfo source_ball_min_aspect;
+		SourceInfo source_ball_max_aspect;
+		SourceInfo source_ball_min_local_contrast;
+		SourceInfo source_ball_max_centerline_distance_px;
+		SourceInfo source_max_axis_distance_px;
+		SourceInfo source_max_jump_px;
+		SourceInfo source_reacquire_after_lost_frames;
+		SourceInfo source_zero_mode;
+		SourceInfo source_zero_position_px;
+		SourceInfo source_zero_samples;
+		SourceInfo source_zero_range_px;
+		SourceInfo source_filter_alpha;
+
 		SourceInfo source_white_s_max;
 		SourceInfo source_white_v_min;
 		SourceInfo source_track_min_area_ratio;
@@ -190,30 +295,6 @@ namespace etest
 		SourceInfo source_track_search_roi_w;
 		SourceInfo source_track_search_roi_h;
 		SourceInfo source_track_horizontal_angle_max;
-
-		SourceInfo source_roi_x;
-		SourceInfo source_roi_y;
-		SourceInfo source_roi_w;
-		SourceInfo source_roi_h;
-		SourceInfo source_axis_x1;
-		SourceInfo source_axis_y1;
-		SourceInfo source_axis_x2;
-		SourceInfo source_axis_y2;
-		SourceInfo source_axis_length_cm;
-		SourceInfo source_bg_kernel;
-		SourceInfo source_threshold;
-		SourceInfo source_morph_kernel;
-		SourceInfo source_min_area;
-		SourceInfo source_max_area;
-		SourceInfo source_min_circularity;
-		SourceInfo source_max_axis_distance_px;
-		SourceInfo source_max_jump_px;
-		SourceInfo source_reacquire_after_lost_frames;
-		SourceInfo source_zero_mode;
-		SourceInfo source_zero_position_px;
-		SourceInfo source_zero_samples;
-		SourceInfo source_zero_range_px;
-		SourceInfo source_filter_alpha;
 
 		std::string to_string() const;
 	};

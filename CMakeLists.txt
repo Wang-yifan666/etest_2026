@@ -50,9 +50,23 @@ add_executable(etest_test
 target_include_directories(etest_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_compile_options(etest_test PRIVATE -Wall -Wextra -pedantic)
 
+# 视觉测试
+add_executable(etest_vision_test
+    test/test_vision.cpp
+    src/vision/vision.cpp
+    src/vision/vision_utils.cpp
+    src/core/config.cpp
+    src/core/logger.cpp
+)
+
+target_include_directories(etest_vision_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(etest_vision_test PRIVATE ${OpenCV_LIBS} pthread)
+target_compile_options(etest_vision_test PRIVATE -Wall -Wextra -pedantic)
+
 enable_testing()
 
 add_test(NAME config_test COMMAND etest_test)
+add_test(NAME vision_test COMMAND etest_vision_test)
 
 # WSL 下 OpenCV 依赖附加库
 if(WSL)

@@ -650,6 +650,9 @@ namespace
 		    "vision.morphology_kernel",
 		    "vision.min_area",
 
+		    "vision.ball.work_width",
+		    "vision.ball.work_height",
+
 		    "vision.ball.roi_x",
 		    "vision.ball.roi_y",
 		    "vision.ball.roi_w",
@@ -659,12 +662,43 @@ namespace
 		    "vision.ball.axis_x2",
 		    "vision.ball.axis_y2",
 		    "vision.ball.axis_length_cm",
+
+		    "vision.ball.brown_h_min",
+		    "vision.ball.brown_h_max",
+		    "vision.ball.brown_s_min",
+		    "vision.ball.brown_s_max",
+		    "vision.ball.brown_v_min",
+		    "vision.ball.brown_v_max",
+
+		    "vision.ball.pipe_close_kernel_w",
+		    "vision.ball.pipe_close_kernel_h",
+		    "vision.ball.pipe_open_kernel",
+
+		    "vision.ball.pipe_min_area_ratio",
+		    "vision.ball.pipe_min_aspect_ratio",
+		    "vision.ball.pipe_min_fill_ratio",
+		    "vision.ball.pipe_horizontal_angle_max",
+
+		    "vision.ball.pipe_stable_frames",
+		    "vision.ball.pipe_lost_timeout_frames",
+
+		    "vision.ball.pipe_warp_width",
+		    "vision.ball.pipe_warp_height",
+		    "vision.ball.pipe_inner_margin_x_ratio",
+		    "vision.ball.pipe_inner_margin_y_ratio",
+
+		    "vision.ball.pipe_length_mm",
+
 		    "vision.ball.bg_kernel",
 		    "vision.ball.threshold",
 		    "vision.ball.morph_kernel",
 		    "vision.ball.min_area",
 		    "vision.ball.max_area",
 		    "vision.ball.min_circularity",
+		    "vision.ball.ball_min_aspect",
+		    "vision.ball.ball_max_aspect",
+		    "vision.ball.ball_min_local_contrast",
+		    "vision.ball.ball_max_centerline_distance_px",
 		    "vision.ball.max_axis_distance_px",
 		    "vision.ball.max_jump_px",
 		    "vision.ball.reacquire_after_lost_frames",
@@ -915,21 +949,21 @@ namespace
 			    getInt(raw_config, "vision.ball.roi_h", ball.roi_h, 1,
 			           2160, result, &ball.source_roi_h);
 
-			ball.axis_x1 = getDouble(
-			    raw_config, "vision.ball.axis_x1", ball.axis_x1, 0.0,
-			    4096.0, result, &ball.source_axis_x1);
+			ball.axis_x1 = getDouble(raw_config, "vision.ball.axis_x1",
+			                         ball.axis_x1, 0.0, 4096.0, result,
+			                         &ball.source_axis_x1);
 
-			ball.axis_y1 = getDouble(
-			    raw_config, "vision.ball.axis_y1", ball.axis_y1, 0.0,
-			    2160.0, result, &ball.source_axis_y1);
+			ball.axis_y1 = getDouble(raw_config, "vision.ball.axis_y1",
+			                         ball.axis_y1, 0.0, 2160.0, result,
+			                         &ball.source_axis_y1);
 
-			ball.axis_x2 = getDouble(
-			    raw_config, "vision.ball.axis_x2", ball.axis_x2, 0.0,
-			    4096.0, result, &ball.source_axis_x2);
+			ball.axis_x2 = getDouble(raw_config, "vision.ball.axis_x2",
+			                         ball.axis_x2, 0.0, 4096.0, result,
+			                         &ball.source_axis_x2);
 
-			ball.axis_y2 = getDouble(
-			    raw_config, "vision.ball.axis_y2", ball.axis_y2, 0.0,
-			    2160.0, result, &ball.source_axis_y2);
+			ball.axis_y2 = getDouble(raw_config, "vision.ball.axis_y2",
+			                         ball.axis_y2, 0.0, 2160.0, result,
+			                         &ball.source_axis_y2);
 
 			ball.axis_length_cm =
 			    getDouble(raw_config, "vision.ball.axis_length_cm",
@@ -940,9 +974,9 @@ namespace
 			{
 				const int prev = ball.bg_kernel;
 				etest::SourceInfo candidate_source;
-				const int candidate = getInt(
-				    raw_config, "vision.ball.bg_kernel", prev, 3, 255,
-				    result, &candidate_source);
+				const int candidate =
+				    getInt(raw_config, "vision.ball.bg_kernel", prev, 3,
+				           255, result, &candidate_source);
 
 				if(candidate % 2 == 1)
 				{
@@ -959,18 +993,17 @@ namespace
 				}
 			}
 
-			ball.threshold =
-			    getInt(raw_config, "vision.ball.threshold",
-			           ball.threshold, 0, 255, result,
-			           &ball.source_threshold);
+			ball.threshold = getInt(raw_config, "vision.ball.threshold",
+			                        ball.threshold, 0, 255, result,
+			                        &ball.source_threshold);
 
 			// morph_kernel: 必须奇数，非法时保留上一层值
 			{
 				const int prev = ball.morph_kernel;
 				etest::SourceInfo candidate_source;
-				const int candidate = getInt(
-				    raw_config, "vision.ball.morph_kernel", prev, 1, 31,
-				    result, &candidate_source);
+				const int candidate =
+				    getInt(raw_config, "vision.ball.morph_kernel", prev,
+				           1, 31, result, &candidate_source);
 
 				if(candidate % 2 == 1)
 				{
@@ -987,42 +1020,37 @@ namespace
 				}
 			}
 
-			ball.min_area =
-			    getDouble(raw_config, "vision.ball.min_area",
-			              ball.min_area, 0.1, 1000000.0, result,
-			              &ball.source_min_area);
+			ball.min_area = getDouble(
+			    raw_config, "vision.ball.min_area", ball.min_area, 0.1,
+			    1000000.0, result, &ball.source_min_area);
 
 			ball.max_area =
 			    getDouble(raw_config, "vision.ball.max_area",
-			              ball.max_area, ball.min_area + 0.1,
-			              1000000.0, result, &ball.source_max_area);
+			              ball.max_area, ball.min_area + 0.1, 1000000.0,
+			              result, &ball.source_max_area);
 
 			ball.min_circularity =
 			    getDouble(raw_config, "vision.ball.min_circularity",
 			              ball.min_circularity, 0.0, 1.0, result,
 			              &ball.source_min_circularity);
 
-			ball.max_axis_distance_px =
-			    getDouble(raw_config, "vision.ball.max_axis_distance_px",
-			              ball.max_axis_distance_px, 0.1, 500.0, result,
-			              &ball.source_max_axis_distance_px);
+			ball.max_axis_distance_px = getDouble(
+			    raw_config, "vision.ball.max_axis_distance_px",
+			    ball.max_axis_distance_px, 0.1, 500.0, result,
+			    &ball.source_max_axis_distance_px);
 
-			ball.max_jump_px =
-			    getDouble(raw_config, "vision.ball.max_jump_px",
-			              ball.max_jump_px, 0.1, 500.0, result,
-			              &ball.source_max_jump_px);
+			ball.max_jump_px = getDouble(
+			    raw_config, "vision.ball.max_jump_px", ball.max_jump_px,
+			    0.1, 500.0, result, &ball.source_max_jump_px);
 
-			ball.reacquire_after_lost_frames =
-			    getInt(raw_config,
-			           "vision.ball.reacquire_after_lost_frames",
-			           ball.reacquire_after_lost_frames, 1, 1000,
-			           result,
-			           &ball.source_reacquire_after_lost_frames);
+			ball.reacquire_after_lost_frames = getInt(
+			    raw_config, "vision.ball.reacquire_after_lost_frames",
+			    ball.reacquire_after_lost_frames, 1, 1000, result,
+			    &ball.source_reacquire_after_lost_frames);
 
-			ball.zero_mode =
-			    getString(raw_config, "vision.ball.zero_mode",
-			              ball.zero_mode, false, result,
-			              &ball.source_zero_mode);
+			ball.zero_mode = getString(
+			    raw_config, "vision.ball.zero_mode", ball.zero_mode,
+			    false, result, &ball.source_zero_mode);
 
 			if(ball.zero_mode != "startup" && ball.zero_mode != "fixed")
 			{
@@ -1053,66 +1081,189 @@ namespace
 			              ball.filter_alpha, 0.01, 1.0, result,
 			              &ball.source_filter_alpha);
 
-			ball.white_s_max =
-			    getInt(raw_config, "vision.ball.white_s_max",
-			           ball.white_s_max, 0, 255, result,
-			           &ball.source_white_s_max);
+			ball.white_s_max = getInt(
+			    raw_config, "vision.ball.white_s_max", ball.white_s_max,
+			    0, 255, result, &ball.source_white_s_max);
 
-			ball.white_v_min =
-			    getInt(raw_config, "vision.ball.white_v_min",
-			           ball.white_v_min, 0, 255, result,
-			           &ball.source_white_v_min);
+			ball.white_v_min = getInt(
+			    raw_config, "vision.ball.white_v_min", ball.white_v_min,
+			    0, 255, result, &ball.source_white_v_min);
 
-			ball.track_min_area_ratio =
-			    getDouble(raw_config,
-			              "vision.ball.track_min_area_ratio",
-			              ball.track_min_area_ratio, 0.001, 1.0,
-			              result,
-			              &ball.source_track_min_area_ratio);
+			ball.track_min_area_ratio = getDouble(
+			    raw_config, "vision.ball.track_min_area_ratio",
+			    ball.track_min_area_ratio, 0.001, 1.0, result,
+			    &ball.source_track_min_area_ratio);
 
-			ball.track_min_aspect_ratio =
-			    getDouble(raw_config,
-			              "vision.ball.track_min_aspect_ratio",
-			              ball.track_min_aspect_ratio, 1.0, 50.0,
-			              result,
-			              &ball.source_track_min_aspect_ratio);
+			ball.track_min_aspect_ratio = getDouble(
+			    raw_config, "vision.ball.track_min_aspect_ratio",
+			    ball.track_min_aspect_ratio, 1.0, 50.0, result,
+			    &ball.source_track_min_aspect_ratio);
 
 			ball.track_stable_frames =
 			    getInt(raw_config, "vision.ball.track_stable_frames",
 			           ball.track_stable_frames, 3, 120, result,
 			           &ball.source_track_stable_frames);
 
-			ball.track_lost_timeout_frames =
-			    getInt(raw_config,
-			           "vision.ball.track_lost_timeout_frames",
-			           ball.track_lost_timeout_frames, 5, 600,
-			           result,
-			           &ball.source_track_lost_timeout_frames);
+			ball.track_lost_timeout_frames = getInt(
+			    raw_config, "vision.ball.track_lost_timeout_frames",
+			    ball.track_lost_timeout_frames, 5, 600, result,
+			    &ball.source_track_lost_timeout_frames);
 
-ball.track_search_roi_x =
-    getInt(raw_config, "vision.ball.track_search_roi_x",
-           ball.track_search_roi_x, 0, 4096, result,
-           &ball.source_track_search_roi_x);
+			ball.track_search_roi_x =
+			    getInt(raw_config, "vision.ball.track_search_roi_x",
+			           ball.track_search_roi_x, 0, 4096, result,
+			           &ball.source_track_search_roi_x);
 
-ball.track_search_roi_y =
-    getInt(raw_config, "vision.ball.track_search_roi_y",
-           ball.track_search_roi_y, 0, 2160, result,
-           &ball.source_track_search_roi_y);
+			ball.track_search_roi_y =
+			    getInt(raw_config, "vision.ball.track_search_roi_y",
+			           ball.track_search_roi_y, 0, 2160, result,
+			           &ball.source_track_search_roi_y);
 
-ball.track_search_roi_w =
-    getInt(raw_config, "vision.ball.track_search_roi_w",
-           ball.track_search_roi_w, 1, 4096, result,
-           &ball.source_track_search_roi_w);
+			ball.track_search_roi_w =
+			    getInt(raw_config, "vision.ball.track_search_roi_w",
+			           ball.track_search_roi_w, 1, 4096, result,
+			           &ball.source_track_search_roi_w);
 
-ball.track_search_roi_h =
-    getInt(raw_config, "vision.ball.track_search_roi_h",
-           ball.track_search_roi_h, 1, 2160, result,
-           &ball.source_track_search_roi_h);
+			ball.track_search_roi_h =
+			    getInt(raw_config, "vision.ball.track_search_roi_h",
+			           ball.track_search_roi_h, 1, 2160, result,
+			           &ball.source_track_search_roi_h);
 
-ball.track_horizontal_angle_max =
-    getDouble(raw_config, "vision.ball.track_horizontal_angle_max",
-              ball.track_horizontal_angle_max, 0.0, 90.0, result,
-              &ball.source_track_horizontal_angle_max);
+			ball.track_horizontal_angle_max = getDouble(
+			    raw_config, "vision.ball.track_horizontal_angle_max",
+			    ball.track_horizontal_angle_max, 0.0, 90.0, result,
+			    &ball.source_track_horizontal_angle_max);
+
+			// ── 工作分辨率 ──
+			ball.work_width = getInt(
+			    raw_config, "vision.ball.work_width", ball.work_width,
+			    1, 4096, result, &ball.source_work_width);
+
+			ball.work_height = getInt(
+			    raw_config, "vision.ball.work_height", ball.work_height,
+			    1, 2160, result, &ball.source_work_height);
+
+			// ── 棕色管道 HSV ──
+			ball.brown_h_min = getInt(
+			    raw_config, "vision.ball.brown_h_min", ball.brown_h_min,
+			    0, 180, result, &ball.source_brown_h_min);
+
+			ball.brown_h_max = getInt(
+			    raw_config, "vision.ball.brown_h_max", ball.brown_h_max,
+			    0, 180, result, &ball.source_brown_h_max);
+
+			ball.brown_s_min = getInt(
+			    raw_config, "vision.ball.brown_s_min", ball.brown_s_min,
+			    0, 255, result, &ball.source_brown_s_min);
+
+			ball.brown_s_max = getInt(
+			    raw_config, "vision.ball.brown_s_max", ball.brown_s_max,
+			    0, 255, result, &ball.source_brown_s_max);
+
+			ball.brown_v_min = getInt(
+			    raw_config, "vision.ball.brown_v_min", ball.brown_v_min,
+			    0, 255, result, &ball.source_brown_v_min);
+
+			ball.brown_v_max = getInt(
+			    raw_config, "vision.ball.brown_v_max", ball.brown_v_max,
+			    0, 255, result, &ball.source_brown_v_max);
+
+			// ── 管道形态学 ──
+			ball.pipe_close_kernel_w =
+			    getInt(raw_config, "vision.ball.pipe_close_kernel_w",
+			           ball.pipe_close_kernel_w, 1, 255, result,
+			           &ball.source_pipe_close_kernel_w);
+
+			ball.pipe_close_kernel_h =
+			    getInt(raw_config, "vision.ball.pipe_close_kernel_h",
+			           ball.pipe_close_kernel_h, 1, 255, result,
+			           &ball.source_pipe_close_kernel_h);
+
+			ball.pipe_open_kernel =
+			    getInt(raw_config, "vision.ball.pipe_open_kernel",
+			           ball.pipe_open_kernel, 1, 31, result,
+			           &ball.source_pipe_open_kernel);
+
+			// ── 管道几何约束 ──
+			ball.pipe_min_area_ratio =
+			    getDouble(raw_config, "vision.ball.pipe_min_area_ratio",
+			              ball.pipe_min_area_ratio, 0.001, 1.0, result,
+			              &ball.source_pipe_min_area_ratio);
+
+			ball.pipe_min_aspect_ratio = getDouble(
+			    raw_config, "vision.ball.pipe_min_aspect_ratio",
+			    ball.pipe_min_aspect_ratio, 1.0, 50.0, result,
+			    &ball.source_pipe_min_aspect_ratio);
+
+			ball.pipe_min_fill_ratio =
+			    getDouble(raw_config, "vision.ball.pipe_min_fill_ratio",
+			              ball.pipe_min_fill_ratio, 0.01, 1.0, result,
+			              &ball.source_pipe_min_fill_ratio);
+
+			ball.pipe_horizontal_angle_max = getDouble(
+			    raw_config, "vision.ball.pipe_horizontal_angle_max",
+			    ball.pipe_horizontal_angle_max, 0.0, 90.0, result,
+			    &ball.source_pipe_horizontal_angle_max);
+
+			// ── 管道锁定 ──
+			ball.pipe_stable_frames =
+			    getInt(raw_config, "vision.ball.pipe_stable_frames",
+			           ball.pipe_stable_frames, 3, 120, result,
+			           &ball.source_pipe_stable_frames);
+
+			ball.pipe_lost_timeout_frames = getInt(
+			    raw_config, "vision.ball.pipe_lost_timeout_frames",
+			    ball.pipe_lost_timeout_frames, 5, 600, result,
+			    &ball.source_pipe_lost_timeout_frames);
+
+			// ── 透视展开 ──
+			ball.pipe_warp_width =
+			    getInt(raw_config, "vision.ball.pipe_warp_width",
+			           ball.pipe_warp_width, 10, 4096, result,
+			           &ball.source_pipe_warp_width);
+
+			ball.pipe_warp_height =
+			    getInt(raw_config, "vision.ball.pipe_warp_height",
+			           ball.pipe_warp_height, 10, 2160, result,
+			           &ball.source_pipe_warp_height);
+
+			ball.pipe_inner_margin_x_ratio = getDouble(
+			    raw_config, "vision.ball.pipe_inner_margin_x_ratio",
+			    ball.pipe_inner_margin_x_ratio, 0.0, 0.45, result,
+			    &ball.source_pipe_inner_margin_x_ratio);
+
+			ball.pipe_inner_margin_y_ratio = getDouble(
+			    raw_config, "vision.ball.pipe_inner_margin_y_ratio",
+			    ball.pipe_inner_margin_y_ratio, 0.0, 0.45, result,
+			    &ball.source_pipe_inner_margin_y_ratio);
+
+			// ── 毫米换算 ──
+			ball.pipe_length_mm =
+			    getDouble(raw_config, "vision.ball.pipe_length_mm",
+			              ball.pipe_length_mm, 1.0, 10000.0, result,
+			              &ball.source_pipe_length_mm);
+
+			// ── 钢球约束 ──
+			ball.ball_min_aspect =
+			    getDouble(raw_config, "vision.ball.ball_min_aspect",
+			              ball.ball_min_aspect, 0.1, 1.0, result,
+			              &ball.source_ball_min_aspect);
+
+			ball.ball_max_aspect =
+			    getDouble(raw_config, "vision.ball.ball_max_aspect",
+			              ball.ball_max_aspect, 1.0, 10.0, result,
+			              &ball.source_ball_max_aspect);
+
+			ball.ball_min_local_contrast = getDouble(
+			    raw_config, "vision.ball.ball_min_local_contrast",
+			    ball.ball_min_local_contrast, 0.0, 255.0, result,
+			    &ball.source_ball_min_local_contrast);
+
+			ball.ball_max_centerline_distance_px = getDouble(
+			    raw_config,
+			    "vision.ball.ball_max_centerline_distance_px",
+			    ball.ball_max_centerline_distance_px, 0.1, 500.0,
+			    result, &ball.source_ball_max_centerline_distance_px);
 		}
 
 		// ---- [uart] ----
@@ -1692,19 +1843,51 @@ namespace etest
 
 	std::string BallConfig::to_string() const
 	{
-		return "roi=" + std::to_string(roi_x) + "," + std::to_string(roi_y)
-		    + "," + std::to_string(roi_w) + "x" + std::to_string(roi_h)
-		    + ", axis=(" + std::to_string(axis_x1) + "," + std::to_string(axis_y1)
-		    + ")->(" + std::to_string(axis_x2) + "," + std::to_string(axis_y2)
+		return "work=" + std::to_string(work_width) + "x"
+		    + std::to_string(work_height) + ", roi="
+		    + std::to_string(roi_x) + "," + std::to_string(roi_y) + ","
+		    + std::to_string(roi_w) + "x" + std::to_string(roi_h)
+		    + ", axis=(" + std::to_string(axis_x1) + ","
+		    + std::to_string(axis_y1) + ")->(" + std::to_string(axis_x2)
+		    + "," + std::to_string(axis_y2)
 		    + "), axis_cm=" + std::to_string(axis_length_cm)
+		    + ", brown_h=" + std::to_string(brown_h_min) + "-"
+		    + std::to_string(brown_h_max)
+		    + ", brown_s=" + std::to_string(brown_s_min) + "-"
+		    + std::to_string(brown_s_max)
+		    + ", brown_v=" + std::to_string(brown_v_min) + "-"
+		    + std::to_string(brown_v_max) + ", pipe_close_kernel="
+		    + std::to_string(pipe_close_kernel_w) + "x"
+		    + std::to_string(pipe_close_kernel_h)
+		    + ", pipe_open_kernel=" + std::to_string(pipe_open_kernel)
+		    + ", pipe_min_area=" + std::to_string(pipe_min_area_ratio)
+		    + ", pipe_min_aspect="
+		    + std::to_string(pipe_min_aspect_ratio)
+		    + ", pipe_min_fill=" + std::to_string(pipe_min_fill_ratio)
+		    + ", pipe_h_angle_max="
+		    + std::to_string(pipe_horizontal_angle_max)
+		    + ", pipe_stable=" + std::to_string(pipe_stable_frames)
+		    + ", pipe_lost_timeout="
+		    + std::to_string(pipe_lost_timeout_frames)
+		    + ", warp=" + std::to_string(pipe_warp_width) + "x"
+		    + std::to_string(pipe_warp_height) + ", inner_margin_xy="
+		    + std::to_string(pipe_inner_margin_x_ratio) + "/"
+		    + std::to_string(pipe_inner_margin_y_ratio)
+		    + ", pipe_len_mm=" + std::to_string(pipe_length_mm)
 		    + ", bg_kernel=" + std::to_string(bg_kernel)
 		    + ", threshold=" + std::to_string(threshold)
-		    + ", morph=" + std::to_string(morph_kernel)
-		    + ", area=" + std::to_string(min_area) + "~" + std::to_string(max_area)
+		    + ", morph=" + std::to_string(morph_kernel) + ", area="
+		    + std::to_string(min_area) + "~" + std::to_string(max_area)
 		    + ", circ>=" + std::to_string(min_circularity)
+		    + ", aspect=" + std::to_string(ball_min_aspect) + "~"
+		    + std::to_string(ball_max_aspect) + ", local_contrast>="
+		    + std::to_string(ball_min_local_contrast)
+		    + ", centerline_dist<="
+		    + std::to_string(ball_max_centerline_distance_px)
 		    + ", max_dist=" + std::to_string(max_axis_distance_px)
 		    + ", max_jump=" + std::to_string(max_jump_px)
-		    + ", reacquire=" + std::to_string(reacquire_after_lost_frames)
+		    + ", reacquire="
+		    + std::to_string(reacquire_after_lost_frames)
 		    + ", zero_mode=" + zero_mode
 		    + ", zero_px=" + std::to_string(zero_position_px)
 		    + ", zero_samples=" + std::to_string(zero_samples)
@@ -1721,8 +1904,8 @@ namespace etest
 		    + ", saturation_min=" + std::to_string(saturation_min)
 		    + ", value_min=" + std::to_string(value_min)
 		    + ", morphology_kernel=" + std::to_string(morphology_kernel)
-		    + ", min_area=" + std::to_string(min_area)
-		    + ", ball=[" + ball.to_string() + "]";
+		    + ", min_area=" + std::to_string(min_area) + ", ball=["
+		    + ball.to_string() + "]";
 	}
 
 	std::string UartConfig::to_string() const
