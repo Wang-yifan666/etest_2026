@@ -1,14 +1,14 @@
 [camera]
 
 # 摄像头设备路径、数字索引或视频文件路径
-source = "0"
+source = "docs/videos/test.mp4"
 
-width = 640
-height = 480
+width = 1280
+height = 720
 fps = 30
 fourcc = "MJPG"
 
 # 视频回放
-loop_video = false
+loop_video = true
 realtime_playback = true
 playback_fps = 30

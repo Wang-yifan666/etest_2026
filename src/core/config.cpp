@@ -650,6 +650,30 @@ namespace
 		    "vision.morphology_kernel",
 		    "vision.min_area",
 
+		    "vision.ball.roi_x",
+		    "vision.ball.roi_y",
+		    "vision.ball.roi_w",
+		    "vision.ball.roi_h",
+		    "vision.ball.axis_x1",
+		    "vision.ball.axis_y1",
+		    "vision.ball.axis_x2",
+		    "vision.ball.axis_y2",
+		    "vision.ball.axis_length_cm",
+		    "vision.ball.bg_kernel",
+		    "vision.ball.threshold",
+		    "vision.ball.morph_kernel",
+		    "vision.ball.min_area",
+		    "vision.ball.max_area",
+		    "vision.ball.min_circularity",
+		    "vision.ball.max_axis_distance_px",
+		    "vision.ball.max_jump_px",
+		    "vision.ball.reacquire_after_lost_frames",
+		    "vision.ball.zero_mode",
+		    "vision.ball.zero_position_px",
+		    "vision.ball.zero_samples",
+		    "vision.ball.zero_std_px",
+		    "vision.ball.filter_alpha",
+
 		    "uart.device",
 		    "uart.baudrate",
 		    "uart.timeout_ms",
@@ -860,6 +884,165 @@ namespace
 		    raw_config, "vision.min_area", config.vision.min_area, 0.0,
 		    1000000000.0, result, &config.vision.source_min_area);
 
+		// ---- [vision.ball] ----
+		{
+			auto& ball = config.vision.ball;
+
+			ball.roi_x =
+			    getInt(raw_config, "vision.ball.roi_x", ball.roi_x, 0,
+			           4096, result, &ball.source_roi_x);
+
+			ball.roi_y =
+			    getInt(raw_config, "vision.ball.roi_y", ball.roi_y, 0,
+			           2160, result, &ball.source_roi_y);
+
+			ball.roi_w =
+			    getInt(raw_config, "vision.ball.roi_w", ball.roi_w, 1,
+			           4096, result, &ball.source_roi_w);
+
+			ball.roi_h =
+			    getInt(raw_config, "vision.ball.roi_h", ball.roi_h, 1,
+			           2160, result, &ball.source_roi_h);
+
+			ball.axis_x1 = getDouble(
+			    raw_config, "vision.ball.axis_x1", ball.axis_x1, 0.0,
+			    4096.0, result, &ball.source_axis_x1);
+
+			ball.axis_y1 = getDouble(
+			    raw_config, "vision.ball.axis_y1", ball.axis_y1, 0.0,
+			    2160.0, result, &ball.source_axis_y1);
+
+			ball.axis_x2 = getDouble(
+			    raw_config, "vision.ball.axis_x2", ball.axis_x2, 0.0,
+			    4096.0, result, &ball.source_axis_x2);
+
+			ball.axis_y2 = getDouble(
+			    raw_config, "vision.ball.axis_y2", ball.axis_y2, 0.0,
+			    2160.0, result, &ball.source_axis_y2);
+
+			ball.axis_length_cm =
+			    getDouble(raw_config, "vision.ball.axis_length_cm",
+			              ball.axis_length_cm, 0.1, 200.0, result,
+			              &ball.source_axis_length_cm);
+
+			// bg_kernel: 必须奇数，非法时保留上一层值
+			{
+				const int prev = ball.bg_kernel;
+				etest::SourceInfo candidate_source;
+				const int candidate = getInt(
+				    raw_config, "vision.ball.bg_kernel", prev, 3, 255,
+				    result, &candidate_source);
+
+				if(candidate % 2 == 1)
+				{
+					ball.bg_kernel = candidate;
+					ball.source_bg_kernel = candidate_source;
+				}
+				else
+				{
+					addMessage(
+					    result, etest::ConfigMessageLevel::ERROR,
+					    "vision.ball.bg_kernel must be odd; keeping "
+					    "current value "
+					        + std::to_string(prev));
+				}
+			}
+
+			ball.threshold =
+			    getInt(raw_config, "vision.ball.threshold",
+			           ball.threshold, 0, 255, result,
+			           &ball.source_threshold);
+
+			// morph_kernel: 必须奇数，非法时保留上一层值
+			{
+				const int prev = ball.morph_kernel;
+				etest::SourceInfo candidate_source;
+				const int candidate = getInt(
+				    raw_config, "vision.ball.morph_kernel", prev, 1, 31,
+				    result, &candidate_source);
+
+				if(candidate % 2 == 1)
+				{
+					ball.morph_kernel = candidate;
+					ball.source_morph_kernel = candidate_source;
+				}
+				else
+				{
+					addMessage(
+					    result, etest::ConfigMessageLevel::ERROR,
+					    "vision.ball.morph_kernel must be odd; keeping "
+					    "current value "
+					        + std::to_string(prev));
+				}
+			}
+
+			ball.min_area =
+			    getDouble(raw_config, "vision.ball.min_area",
+			              ball.min_area, 0.1, 1000000.0, result,
+			              &ball.source_min_area);
+
+			ball.max_area =
+			    getDouble(raw_config, "vision.ball.max_area",
+			              ball.max_area, ball.min_area + 0.1,
+			              1000000.0, result, &ball.source_max_area);
+
+			ball.min_circularity =
+			    getDouble(raw_config, "vision.ball.min_circularity",
+			              ball.min_circularity, 0.0, 1.0, result,
+			              &ball.source_min_circularity);
+
+			ball.max_axis_distance_px =
+			    getDouble(raw_config, "vision.ball.max_axis_distance_px",
+			              ball.max_axis_distance_px, 0.1, 500.0, result,
+			              &ball.source_max_axis_distance_px);
+
+			ball.max_jump_px =
+			    getDouble(raw_config, "vision.ball.max_jump_px",
+			              ball.max_jump_px, 0.1, 500.0, result,
+			              &ball.source_max_jump_px);
+
+			ball.reacquire_after_lost_frames =
+			    getInt(raw_config,
+			           "vision.ball.reacquire_after_lost_frames",
+			           ball.reacquire_after_lost_frames, 1, 1000,
+			           result,
+			           &ball.source_reacquire_after_lost_frames);
+
+			ball.zero_mode =
+			    getString(raw_config, "vision.ball.zero_mode",
+			              ball.zero_mode, false, result,
+			              &ball.source_zero_mode);
+
+			if(ball.zero_mode != "startup" && ball.zero_mode != "fixed")
+			{
+				addMessage(
+				    result, etest::ConfigMessageLevel::ERROR,
+				    "vision.ball.zero_mode must be \"startup\" or "
+				    "\"fixed\"; keeping \""
+				        + ball.zero_mode + "\"");
+			}
+
+			ball.zero_position_px =
+			    getDouble(raw_config, "vision.ball.zero_position_px",
+			              ball.zero_position_px, 0.0, 4096.0, result,
+			              &ball.source_zero_position_px);
+
+			ball.zero_samples =
+			    getInt(raw_config, "vision.ball.zero_samples",
+			           ball.zero_samples, 2, 500, result,
+			           &ball.source_zero_samples);
+
+			ball.zero_std_px =
+			    getDouble(raw_config, "vision.ball.zero_std_px",
+			              ball.zero_std_px, 0.01, 100.0, result,
+			              &ball.source_zero_std_px);
+
+			ball.filter_alpha =
+			    getDouble(raw_config, "vision.ball.filter_alpha",
+			              ball.filter_alpha, 0.01, 1.0, result,
+			              &ball.source_filter_alpha);
+		}
+
 		// ---- [uart] ----
 		config.uart.device =
 		    getString(raw_config, "uart.device", config.uart.device,
@@ -915,7 +1098,7 @@ namespace
 
 		config.uart.protocol_version =
 		    getInt(raw_config, "uart.protocol_version",
-		           config.uart.protocol_version, 4, 4, result,
+		           config.uart.protocol_version, 4, 5, result,
 		           &config.uart.source_protocol_version);
 
 		// ---- [record] ----
@@ -1435,6 +1618,28 @@ namespace etest
 		    + ", fps=" + std::to_string(fps) + ", fourcc=" + fourcc;
 	}
 
+	std::string BallConfig::to_string() const
+	{
+		return "roi=" + std::to_string(roi_x) + "," + std::to_string(roi_y)
+		    + "," + std::to_string(roi_w) + "x" + std::to_string(roi_h)
+		    + ", axis=(" + std::to_string(axis_x1) + "," + std::to_string(axis_y1)
+		    + ")->(" + std::to_string(axis_x2) + "," + std::to_string(axis_y2)
+		    + "), axis_cm=" + std::to_string(axis_length_cm)
+		    + ", bg_kernel=" + std::to_string(bg_kernel)
+		    + ", threshold=" + std::to_string(threshold)
+		    + ", morph=" + std::to_string(morph_kernel)
+		    + ", area=" + std::to_string(min_area) + "~" + std::to_string(max_area)
+		    + ", circ>=" + std::to_string(min_circularity)
+		    + ", max_dist=" + std::to_string(max_axis_distance_px)
+		    + ", max_jump=" + std::to_string(max_jump_px)
+		    + ", reacquire=" + std::to_string(reacquire_after_lost_frames)
+		    + ", zero_mode=" + zero_mode
+		    + ", zero_px=" + std::to_string(zero_position_px)
+		    + ", zero_samples=" + std::to_string(zero_samples)
+		    + ", zero_std=" + std::to_string(zero_std_px)
+		    + ", filter_alpha=" + std::to_string(filter_alpha);
+	}
+
 	std::string VisionConfig::to_string() const
 	{
 		return "red_h1=" + std::to_string(red_h1_min) + "-"
@@ -1444,7 +1649,8 @@ namespace etest
 		    + ", saturation_min=" + std::to_string(saturation_min)
 		    + ", value_min=" + std::to_string(value_min)
 		    + ", morphology_kernel=" + std::to_string(morphology_kernel)
-		    + ", min_area=" + std::to_string(min_area);
+		    + ", min_area=" + std::to_string(min_area)
+		    + ", ball=[" + ball.to_string() + "]";
 	}
 
 	std::string UartConfig::to_string() const
@@ -1546,10 +1752,11 @@ namespace etest
 			warn("uart.device is empty");
 		}
 
-		// 协议版本只接受 4
-		if(config.uart.protocol_version != 4)
+		// 协议版本只接受 4 或 5
+		if(config.uart.protocol_version != 4
+		   && config.uart.protocol_version != 5)
 		{
-			err("protocol_version must be 4, got "
+			err("protocol_version must be 4 or 5, got "
 			    + std::to_string(config.uart.protocol_version));
 		}
 

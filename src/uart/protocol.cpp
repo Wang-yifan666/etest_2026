@@ -2,6 +2,7 @@
 
 #include "uart/uart.hpp"
 
+#include <algorithm>
 #include <cerrno>
 #include <charconv>
 #include <cmath>
@@ -111,6 +112,35 @@ std::optional<int> getProtocolVersion(
 	}
 
 	return version;
+}
+
+std::optional<std::string> makeBallLine(std::uint32_t seq,
+                                        int offset_mm,
+                                        int confidence_0_255,
+                                        const std::string& status)
+{
+	if(confidence_0_255 < 0 || confidence_0_255 > 255)
+	{
+		return std::nullopt;
+	}
+
+	if(status != "OK" && status != "LOST" && status != "CALIB"
+	   && status != "ERROR")
+	{
+		return std::nullopt;
+	}
+
+	// V5 强制：非 OK 状态必须零位置、零置信度
+	if(status != "OK" && (offset_mm != 0 || confidence_0_255 != 0))
+	{
+		return std::nullopt;
+	}
+
+	std::ostringstream oss;
+	oss.imbue(std::locale::classic());
+	oss << "BALL," << seq << "," << offset_mm << ","
+	    << confidence_0_255 << "," << status;
+	return oss.str();
 }
 
 } // namespace etest::uart::protocol

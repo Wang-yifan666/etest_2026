@@ -199,7 +199,7 @@ namespace
 		        + std::to_string(config.search.nn_nms_threshold));
 	}
 
-	// 简单命令行解析（无第三方库）
+	// 简单命令行解析
 
 	struct CliArgs
 	{

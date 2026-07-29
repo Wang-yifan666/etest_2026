@@ -51,8 +51,30 @@ namespace etest::state
 			WAIT_PROTO
 		};
 
-		// 在下位机在线时发送 LOST，禁止继续发送旧结果
-		void sendLostIfOnline(
+		// Ball 模式：从 VisionResult 推导 V5 状态
+		const char* getBallStatus(
+		    const vision::VisionResult& result) noexcept
+		{
+			if(result.valid && result.calibrated)
+			{
+				return "OK";
+			}
+
+			if(result.error_code == "BALL_LOST")
+			{
+				return "LOST";
+			}
+
+			if(result.error_code == "ZERO_CALIBRATING")
+			{
+				return "CALIB";
+			}
+
+			return "ERROR";
+		}
+
+		// 帧读取失败时发送 BALL ERROR
+		void sendBallErrorIfOnline(
 		    AppContext& ctx, std::string& last_send_error,
 		    std::chrono::steady_clock::time_point& last_send_error_time)
 		{
@@ -61,14 +83,24 @@ namespace etest::state
 				return;
 			}
 
-			const std::string lost_line =
-			    uart::protocol::makeLostLine(++ctx.uart_seq);
+			const std::uint32_t seq = ++ctx.uart_seq;
+			const auto line = uart::protocol::makeBallLine(
+			    seq, 0, 0, "ERROR");
 
-			if(!ctx.uart.sendLine(lost_line))
+			if(!line.has_value())
+			{
+				ETEST_LOG_ERROR(
+				    "SEARCH",
+				    "failed to construct BALL ERROR");
+				return;
+			}
+
+			if(!ctx.uart.sendLine(*line))
 			{
 				constexpr int send_error_throttle_ms = 2000;
 				const std::string err_msg =
-				    "failed to send LOST (frame failure)";
+				    "failed to send BALL ERROR "
+				    "(frame failure)";
 
 				if(!shouldThrottle(err_msg, last_send_error,
 				                   last_send_error_time,
@@ -216,9 +248,9 @@ namespace etest::state
 					break;
 				}
 
-				// 立即发送 LOST，禁止继续发送旧结果
-				sendLostIfOnline(ctx, last_send_error,
-				                 last_send_error_time);
+					// 立即发送 BALL ERROR，禁止继续发送旧结果
+				sendBallErrorIfOnline(ctx, last_send_error,
+				                      last_send_error_time);
 
 				if(frame_failures >= 3)
 				{
@@ -480,11 +512,11 @@ namespace etest::state
 				}
 			}
 
-			// 4) 执行视觉算法（无论是否预览）
+			// 4) 执行视觉算法（Ball 模式）
 			ctx.vision_result = ctx.vision.process(
-			    ctx.frame, vision::VisionMode::ColorTarget);
+			    ctx.frame, vision::VisionMode::Ball);
 
-			// 5) 发送目标结果（仅在完成握手且在线时发送）
+			// 5) 发送 BALL 结果（仅在完成握手且在线时发送）
 			{
 				const bool can_send_vision = ctx.uart.isOpen()
 				    && ctx.lower_machine_online
@@ -492,74 +524,49 @@ namespace etest::state
 
 				if(can_send_vision)
 				{
-					if(ctx.vision_result.valid)
+					const std::uint32_t seq = ++ctx.uart_seq;
+					const char* status =
+					    getBallStatus(ctx.vision_result);
+					const bool usable =
+					    (std::string_view(status) == "OK");
+
+					const int offset_mm =
+					    usable ? ctx.vision_result.offset_mm : 0;
+					const int confidence_0_255 =
+					    usable
+					        ? std::clamp(
+					              static_cast<int>(std::lround(
+					                  ctx.vision_result.confidence
+					                  * 255.0)),
+					              0, 255)
+					        : 0;
+
+					auto line = uart::protocol::makeBallLine(
+					    seq, offset_mm, confidence_0_255, status);
+
+					if(!line.has_value())
 					{
-						auto line = uart::protocol::makeTargetLine(
-						    ++ctx.uart_seq, ctx.vision_result.x,
-						    ctx.vision_result.y,
-						    ctx.vision_result.angle,
-						    ctx.vision_result.confidence);
+						ETEST_LOG_ERROR(
+						    "SEARCH",
+						    "invalid BALL parameters; "
+						    "falling back to ERROR");
 
-						if(line.has_value())
-						{
-							if(!ctx.uart.sendLine(*line))
-							{
-								const std::string err_msg =
-								    "failed to send TARGET";
-
-								if(!shouldThrottle(
-								       err_msg, last_send_error,
-								       last_send_error_time,
-								       send_error_throttle_ms))
-								{
-									ETEST_LOG_ERROR("SEARCH", err_msg);
-								}
-							}
-						}
-						else
-						{
-							ETEST_LOG_ERROR(
-							    "SEARCH",
-							    "invalid vision result values; "
-							    "sending LOST");
-
-							const std::string lost_line =
-							    uart::protocol::makeLostLine(
-							        ++ctx.uart_seq);
-
-							if(!ctx.uart.sendLine(lost_line))
-							{
-								const std::string err_msg =
-								    "failed to send LOST "
-								    "(invalid target)";
-
-								if(!shouldThrottle(
-								       err_msg, last_send_error,
-								       last_send_error_time,
-								       send_error_throttle_ms))
-								{
-									ETEST_LOG_ERROR("SEARCH", err_msg);
-								}
-							}
-						}
+						line = uart::protocol::makeBallLine(
+						    seq, 0, 0, "ERROR");
 					}
-					else
+
+					if(line.has_value()
+					   && !ctx.uart.sendLine(*line))
 					{
-						const std::string lost_line =
-						    uart::protocol::makeLostLine(
-						        ++ctx.uart_seq);
+						const std::string err_msg =
+						    "failed to send BALL";
 
-						if(!ctx.uart.sendLine(lost_line))
+						if(!shouldThrottle(
+						       err_msg, last_send_error,
+						       last_send_error_time,
+						       send_error_throttle_ms))
 						{
-							const std::string err_msg =
-							    "failed to send LOST";
-
-							if(!shouldThrottle(err_msg, last_send_error,
-							                   last_send_error_time,
-							                   send_error_throttle_ms))
-							{
-								ETEST_LOG_ERROR("SEARCH", err_msg);
-							}
+							ETEST_LOG_ERROR("SEARCH", err_msg);
 						}
 					}
 				}
@@ -576,7 +583,25 @@ namespace etest::state
 				std::string msg =
 				    "searching... frame=" + std::to_string(frame_count);
 
-				if(ctx.vision_result.valid)
+				if(ctx.vision_result.target_type == "BALL")
+				{
+					if(ctx.vision_result.valid && ctx.vision_result.calibrated)
+					{
+						const int conf_pct = static_cast<int>(
+						    std::lround(ctx.vision_result.confidence * 100.0));
+						msg += " | ball: " + std::to_string(ctx.vision_result.offset_mm)
+						    + "mm conf=" + std::to_string(conf_pct) + "%";
+					}
+					else if(!ctx.vision_result.error_code.empty())
+					{
+						msg += " | ball: " + ctx.vision_result.error_code;
+					}
+					else
+					{
+						msg += " | ball: LOST";
+					}
+				}
+				else if(ctx.vision_result.valid)
 				{
 					msg += " | target: ("
 					    + std::to_string(ctx.vision_result.x) + ","

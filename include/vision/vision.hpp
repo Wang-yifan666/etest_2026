@@ -5,7 +5,9 @@
 #include <opencv2/core.hpp>
 #include <opencv2/dnn.hpp>
 
+#include <chrono>
 #include <cstdint>
+#include <deque>
 #include <string>
 #include <vector>
 
@@ -19,7 +21,8 @@ namespace etest::vision
 		Line = 2,
 		Circle = 3,
 		Tag = 4,
-		NeuralNetwork = 5
+		NeuralNetwork = 5,
+		Ball = 6
 	};
 
 	struct VisionResult
@@ -32,8 +35,12 @@ namespace etest::vision
 		double confidence = 0.0;
 		std::uint64_t frame_id = 0;
 		std::int64_t timestamp_ms = 0;
-		std::string target_type; // "RED_TARGET" etc.
+		std::string target_type; // "RED_TARGET", "BALL" etc.
 		std::string error_code;  // "" if valid, else reason
+
+		// Ball 模式专用（仅 target_type=="BALL" 时有效）
+		int offset_mm = 0;
+		bool calibrated = false;
 	};
 
 	// 单次神经网络检测中识别出的一个物品。
@@ -80,6 +87,11 @@ namespace etest::vision
 
 	private:
 		VisionResult detectColorTarget(const cv::Mat& frame);
+		VisionResult detectBall(const cv::Mat& frame);
+
+		// Ball 调试绘制
+		void drawBallDebugInfo(cv::Mat& frame,
+		                       const VisionResult& result) noexcept;
 
 		VisionConfig config_;
 		bool empty_frame_reported_ = false;
@@ -95,6 +107,23 @@ namespace etest::vision
 
 		// 最近一次 detectNn() 的检测结果。
 		std::vector<DetectionInfo> last_detections_;
+
+		// ── Ball 检测状态机 ──
+		bool ball_lost_ = false;
+		int ball_lost_frame_count_ = 0;
+		bool has_last_ball_center_ = false;
+		cv::Point2f last_ball_center_{-1.0F, -1.0F};
+
+		std::deque<double> zero_buffer_;
+		bool zero_locked_ = false;
+		double zero_position_px_ = 0.0;
+
+		bool ball_filter_initialized_ = false;
+		double filtered_offset_cm_ = 0.0;
+
+		bool ball_config_error_reported_ = false;
+
+		std::chrono::steady_clock::time_point last_ball_lost_log_time_{};
 	};
 
 } // namespace etest::vision

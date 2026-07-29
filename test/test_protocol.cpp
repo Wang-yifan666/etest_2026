@@ -1,9 +1,9 @@
 /**
  * @file test/test_protocol.cpp
- * @brief V4 协议辅助函数单元测试
+ * @brief V5 协议辅助函数单元测试
  *
- * 测试 makeTargetLine、makeLostLine、isBootOk、isPingResponse、
- * getProtocolVersion。
+ * 测试 makeTargetLine、makeLostLine、makeBallLine、isBootOk、
+ * isPingResponse、getProtocolVersion。
  * 所有测试调用真实的 src/uart/protocol.cpp 实现，不复制代码。
  */
 
@@ -123,6 +123,100 @@ static void test_makeLostLine_large_seq()
 }
 
 // =============================================================================
+// makeBallLine 测试 (V5 新增)
+// =============================================================================
+
+static void test_makeBallLine_ok()
+{
+	auto result = makeBallLine(123, -18, 220, "OK");
+	check("makeBallLine OK", result.has_value());
+	check("makeBallLine BALL,123,-18,220,OK",
+	      result.value() == "BALL,123,-18,220,OK");
+}
+
+static void test_makeBallLine_lost()
+{
+	auto result = makeBallLine(124, 0, 0, "LOST");
+	check("makeBallLine LOST", result.has_value());
+	check("makeBallLine BALL,124,0,0,LOST",
+	      result.value() == "BALL,124,0,0,LOST");
+}
+
+static void test_makeBallLine_calib()
+{
+	auto result = makeBallLine(125, 0, 0, "CALIB");
+	check("makeBallLine CALIB", result.has_value());
+	check("makeBallLine BALL,125,0,0,CALIB",
+	      result.value() == "BALL,125,0,0,CALIB");
+}
+
+static void test_makeBallLine_error()
+{
+	auto result = makeBallLine(126, 0, 0, "ERROR");
+	check("makeBallLine ERROR", result.has_value());
+	check("makeBallLine BALL,126,0,0,ERROR",
+	      result.value() == "BALL,126,0,0,ERROR");
+}
+
+static void test_makeBallLine_conf_neg_rejected()
+{
+	auto result = makeBallLine(1, 0, -1, "OK");
+	check("makeBallLine confidence=-1 rejected", !result.has_value());
+}
+
+static void test_makeBallLine_conf_256_rejected()
+{
+	auto result = makeBallLine(1, 0, 256, "OK");
+	check("makeBallLine confidence=256 rejected", !result.has_value());
+}
+
+static void test_makeBallLine_unknown_status_rejected()
+{
+	auto result = makeBallLine(1, 0, 0, "UNKNOWN");
+	check("makeBallLine unknown status rejected", !result.has_value());
+}
+
+static void test_makeBallLine_lost_nonzero_offset_rejected()
+{
+	auto result = makeBallLine(1, 5, 0, "LOST");
+	check("makeBallLine LOST + offset=5 rejected", !result.has_value());
+}
+
+static void test_makeBallLine_calib_nonzero_conf_rejected()
+{
+	auto result = makeBallLine(1, 0, 100, "CALIB");
+	check("makeBallLine CALIB + confidence=100 rejected",
+	      !result.has_value());
+}
+
+static void test_makeBallLine_max_seq_accepted()
+{
+	auto result = makeBallLine(0xFFFFFFFF, -120, 200, "OK");
+	check("makeBallLine max seq accepted", result.has_value());
+}
+
+static void test_makeBallLine_negative_offset_accepted()
+{
+	auto result = makeBallLine(1, -120, 200, "OK");
+	check("makeBallLine negative offset accepted", result.has_value());
+	check("makeBallLine BALL,1,-120,200,OK",
+	      result.value() == "BALL,1,-120,200,OK");
+}
+
+static void test_makeBallLine_ok_zero_zero()
+{
+	auto result = makeBallLine(1, 0, 0, "OK");
+	check("makeBallLine OK with offset=0 conf=0 accepted",
+	      result.has_value());
+}
+
+static void test_makeBallLine_error_nonzero_rejected()
+{
+	auto result = makeBallLine(1, 3, 0, "ERROR");
+	check("makeBallLine ERROR + offset=3 rejected", !result.has_value());
+}
+
+// =============================================================================
 // isBootOk 测试
 // =============================================================================
 
@@ -189,14 +283,22 @@ static void test_isPingResponse_wrong_type()
 }
 
 // =============================================================================
-// getProtocolVersion 测试
+// getProtocolVersion 测试 (V5: PROTO,5)
 // =============================================================================
 
 static void test_getProtocolVersion_valid()
 {
+	auto msg = Uart::parseLine("PROTO,5");
+	auto v = getProtocolVersion(msg);
+	check("getProtocolVersion PROTO,5 -> 5", v.has_value() && *v == 5);
+}
+
+static void test_getProtocolVersion_v4_accepted()
+{
 	auto msg = Uart::parseLine("PROTO,4");
 	auto v = getProtocolVersion(msg);
-	check("getProtocolVersion PROTO,4 -> 4", v.has_value() && *v == 4);
+	check("getProtocolVersion PROTO,4 -> 4 (parsed, not enforced)",
+	      v.has_value() && *v == 4);
 }
 
 static void test_getProtocolVersion_abc_rejected()
@@ -208,9 +310,9 @@ static void test_getProtocolVersion_abc_rejected()
 
 static void test_getProtocolVersion_extra_rejected()
 {
-	auto msg = Uart::parseLine("PROTO,4,EXTRA");
+	auto msg = Uart::parseLine("PROTO,5,EXTRA");
 	auto v = getProtocolVersion(msg);
-	check("getProtocolVersion PROTO,4,EXTRA -> nullopt",
+	check("getProtocolVersion PROTO,5,EXTRA -> nullopt",
 	      !v.has_value());
 }
 
@@ -245,8 +347,8 @@ static void test_parseLine_crlf()
 
 static void test_parseLine_proto()
 {
-	auto msg = Uart::parseLine("PROTO,4");
-	check("parseLine PROTO,4 -> type PROTOCOL",
+	auto msg = Uart::parseLine("PROTO,5");
+	check("parseLine PROTO,5 -> type PROTOCOL",
 	      msg.type == UartMessageType::PROTOCOL);
 }
 
@@ -256,7 +358,7 @@ static void test_parseLine_proto()
 
 int main()
 {
-	std::cout << "=== V4 Protocol Unit Tests ===\n\n";
+	std::cout << "=== V5 Protocol Unit Tests ===\n\n";
 
 	std::cout << "[1] makeTargetLine\n";
 	test_makeTargetLine_correct();
@@ -272,26 +374,42 @@ int main()
 	test_makeLostLine_correct();
 	test_makeLostLine_large_seq();
 
-	std::cout << "\n[3] isBootOk\n";
+	std::cout << "\n[3] makeBallLine (V5)\n";
+	test_makeBallLine_ok();
+	test_makeBallLine_lost();
+	test_makeBallLine_calib();
+	test_makeBallLine_error();
+	test_makeBallLine_conf_neg_rejected();
+	test_makeBallLine_conf_256_rejected();
+	test_makeBallLine_unknown_status_rejected();
+	test_makeBallLine_lost_nonzero_offset_rejected();
+	test_makeBallLine_calib_nonzero_conf_rejected();
+	test_makeBallLine_max_seq_accepted();
+	test_makeBallLine_negative_offset_accepted();
+	test_makeBallLine_ok_zero_zero();
+	test_makeBallLine_error_nonzero_rejected();
+
+	std::cout << "\n[4] isBootOk\n";
 	test_isBootOk_valid();
 	test_isBootOk_boot_error();
 	test_isBootOk_extra_fields();
 	test_isBootOk_wrong_tag();
 
-	std::cout << "\n[4] isPingResponse\n";
+	std::cout << "\n[5] isPingResponse\n";
 	test_isPingResponse_valid();
 	test_isPingResponse_extra();
 	test_isPingResponse_ping_extra();
 	test_isPingResponse_wrong_type();
 
-	std::cout << "\n[5] getProtocolVersion\n";
+	std::cout << "\n[6] getProtocolVersion (V5)\n";
 	test_getProtocolVersion_valid();
+	test_getProtocolVersion_v4_accepted();
 	test_getProtocolVersion_abc_rejected();
 	test_getProtocolVersion_extra_rejected();
 	test_getProtocolVersion_empty();
 	test_getProtocolVersion_proto_query();
 
-	std::cout << "\n[6] UART parseLine\n";
+	std::cout << "\n[7] UART parseLine\n";
 	test_parseLine_crlf();
 	test_parseLine_proto();
 

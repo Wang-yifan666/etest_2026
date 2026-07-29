@@ -2,6 +2,8 @@
 
 #include "core/logger.hpp"
 
+#include <opencv2/imgproc.hpp>
+
 #include <algorithm>
 #include <cctype>
 #include <climits>
@@ -286,6 +288,17 @@ bool Camera::read(cv::Mat& frame) noexcept
 			ETEST_LOG_INFO("CAMERA", "frame reading recovered");
 
 			read_error_reported_ = false;
+		}
+
+		// 若实际分辨率与配置不符，缩放到目标尺寸
+		const int target_w = config_.width;
+		const int target_h = config_.height;
+		if(target_w > 0 && target_h > 0
+		   && (frame.cols != target_w || frame.rows != target_h))
+		{
+			cv::resize(frame, frame,
+			           cv::Size(target_w, target_h), 0.0, 0.0,
+			           cv::INTER_LINEAR);
 		}
 
 		state_ = CameraState::OK;

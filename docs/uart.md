@@ -1,62 +1,80 @@
-# 工程通信协议
+# ETest 2026 工程通信协议 V5
 
-> **协议版本：V4**  
-> 本协议用于上位机与底盘控制器之间的 UART 文本通信，覆盖运动控制、状态查询、在线调参、故障处理、循迹控制和黑匣子导出等功能。
-
-## 目录
-
-- [1. 协议概述](#1-协议概述)
-- [2. 基本报文格式](#2-基本报文格式)
-- [3. 基础通信命令](#3-基础通信命令)
-- [4. 运动控制命令](#4-运动控制命令)
-- [5. 状态查询协议](#5-状态查询协议)
-- [6. 在线调参协议](#6-在线调参协议)
-- [7. 循迹控制协议](#7-循迹控制协议)
-- [8. 灰度传感器校准协议](#8-灰度传感器校准协议)
-- [9. 故障处理协议](#9-故障处理协议)
-- [10. 电机自检协议](#10-电机自检协议)
-- [11. 黑匣子协议](#11-黑匣子协议)
-- [12. 异步上报消息](#12-异步上报消息)
-- [13. 推荐通信流程](#13-推荐通信流程)
+> 适用对象：树莓派 5 上位机 ↔ STM32 底盘/摆杆控制器  
+> 版本：V5 Revision 1  
+> 核心新增：`BALL` 滚球视觉位置报文  
+> 兼容性：保留 V4 的 `TARGET`、`LOST` 和其余控制、查询、调参命令
 
 ---
 
-## 1. 协议概述
+## 1. 物理层与串口参数
 
-本工程采用基于 **UART0** 的 ASCII 文本通信协议，用于上位机与底盘控制器之间的控制、状态查询、在线调参、故障处理、循迹控制和黑匣子导出。
-
-### 1.1 串口配置
-
-| 项目 | 配置 |
+| 项目 | 约定 |
 |---|---|
-| 通信接口 | UART0 |
+| 接口 | UART |
+| 默认设备 | 树莓派 `/dev/ttyAMA0` |
 | 波特率 | 115200 bps |
 | 数据位 | 8 |
 | 停止位 | 1 |
-| 校验位 | 无 |
-| 硬件流控 | 无 |
-| 协议版本 | 4 |
-| 数据格式 | ASCII 文本 |
-| 字段分隔符 | `,` |
+| 校验位 | None |
+| 硬件流控 | None |
+| 数据编码 | ASCII |
+| 协议版本 | 5 |
+| 字段分隔符 | 英文逗号 `,` |
 | 报文结束符 | `\r\n` 或 `\n` |
+| 默认最大行长 | 512 字节 |
+| 默认读超时 | 50 ms |
+| 默认写超时 | 200 ms |
+| 默认重连间隔 | 1000 ms |
+| 默认握手超时 | 1500 ms |
+| 默认心跳周期 | 500 ms |
+| 默认心跳失联阈值 | 2000 ms |
 
-### 1.2 通信约定
+当前协议不使用二进制帧头、CRC 或转义机制。可靠性依赖参数范围检查、状态字段、序号、超时和心跳。因此：
 
-1. 每条报文以换行符结束。
-2. 多字段之间使用英文逗号 `,` 分隔。
-3. 命令和标签建议统一使用大写字母。
-4. 多行数据使用 `BEGIN` 和 `END` 报文包围。
-5. 异步消息可能在任意时刻由控制器主动发送。
-6. 上位机接收时应按行缓存，不应假设一次串口读取刚好得到一条完整报文。
+1. 字段内容不得包含逗号、`\r` 或 `\n`。
+2. 所有数值使用十进制 ASCII。
+3. 浮点数小数点固定使用 `.`，不能受系统区域设置影响。
+4. 未识别报文必须记录日志，但不得导致主程序退出。
 
 ---
 
-## 2. 基本报文格式
+## 2. 基本报文语法
 
-### 2.1 命令格式
+### 2.1 单行报文
 
 ```text
-COMMAND,param1,param2,...
+<TAG>[,<FIELD1>,<FIELD2>,...]\r\n
+```
+
+例：
+
+```text
+PING\r\n
+BALL,123,-18,220,OK\r\n
+```
+
+解析规则：
+
+1. 持续接收字节并缓存。
+2. 找到 `\n` 后切出一行。
+3. 删除行末 `\n`，再删除可选的 `\r`。
+4. 空行忽略。
+5. 使用英文逗号分割。
+6. 第一个字段是 `TAG`。
+7. 后续字段原样保留，包括空字段。
+
+例如：
+
+```text
+ERR,SAFETY,FAULT_ACTIVE,,DETAIL
+```
+
+必须解析为：
+
+```text
+TAG    = ERR
+fields = ["SAFETY", "FAULT_ACTIVE", "", "DETAIL"]
 ```
 
 ### 2.2 成功响应
@@ -67,30 +85,44 @@ OK,<COMMAND>
 OK,<COMMAND>,<DETAIL>
 ```
 
-### 2.3 错误响应
+### 2.3 接受与完成分离
+
+适用于转向等需要执行时间的动作：
+
+```text
+OK,<COMMAND>,<PARAMETERS>,ACCEPTED
+DONE,<COMMAND>,<PARAMETERS>
+```
+
+`ACCEPTED` 只表示命令已接收，不表示动作完成。只有收到 `DONE` 才能判定动作完成。
+
+### 2.4 错误响应
 
 ```text
 ERR,<OPERATION>,<ERROR_CODE>,<KEY>,<DETAIL>
 ```
 
-| 字段 | 描述 |
+| 字段 | 含义 |
 |---|---|
-| `OPERATION` | 发生错误的操作或模块 |
-| `ERROR_CODE` | 错误代码 |
-| `KEY` | 相关参数或对象，可为空 |
-| `DETAIL` | 错误详细信息，可为空 |
+| `OPERATION` | 发生错误的命令或模块 |
+| `ERROR_CODE` | 稳定、可程序判断的错误代码 |
+| `KEY` | 相关参数或对象；允许为空 |
+| `DETAIL` | 人类可读说明；允许为空 |
 
-### 2.4 警告消息
+例：
+
+```text
+ERR,L,INVALID_ANGLE,400,ANGLE_OUT_OF_RANGE
+ERR,SAFETY,FAULT_ACTIVE,,MOTOR_DISABLED
+```
+
+### 2.5 警告响应
 
 ```text
 WARN,<MODULE>,<WARNING_CODE>,<KEY>,<DETAIL>
 ```
 
-### 2.5 数据上报
-
-```text
-<TAG>,<VALUE1>,<VALUE2>,...
-```
+警告不一定要求停止当前动作，但上位机必须记录日志。
 
 ### 2.6 多行数据块
 
@@ -101,182 +133,225 @@ WARN,<MODULE>,<WARNING_CODE>,<KEY>,<DETAIL>
 <TAG>_END,<SEQ>,...
 ```
 
-- `SEQ` 为数据块序号。
-- 上位机应检查开始报文和结束报文中的序号是否一致。
-- 数据块未完整接收时，不应直接使用其中的数据。
+规则：
+
+1. `BEGIN` 与 `END` 的 `SEQ` 必须一致。
+2. 数据块接收期间，异步 `ERR/WARN/DONE/BOOT/M000x` 仍可能插入。
+3. 异步报文不能被误当作数据块内容。
+4. 未收到 `_END` 前，数据块不能视为完整。
+5. 数据块必须设置超时。
+6. 新的 `_BEGIN` 到来时，旧数据块应中止并记录错误。
 
 ---
 
-## 3. 基础通信命令
+## 3. 启动、心跳与协议握手
 
-| 命令 | 描述 | 返回 |
-|---|---|---|
-| `PING` | 检查设备是否在线 | `OK,PING` |
-| `PROTO?` | 查询协议版本 | `PROTO,4` |
-| `CONFIG` | 查询固件配置和功能开关 | `CONFIG_BEGIN...CONFIG_END` |
-| `SCHEMA` | 查询遥测数据字段定义 | `SCHEMA_BEGIN...SCHEMA_END` |
-| `STATUS` | 查询完整状态 | `STATUS_BEGIN...STATUS_END` |
-| `STATUS,FULL` | 查询完整状态 | `STATUS_BEGIN...STATUS_END` |
-| `STATUS,LITE` | 查询精简状态 | `STATUS_BEGIN...STATUS_END` |
+### 3.1 设备启动通知
 
-设备启动后主动发送：
+STM32 启动完成后主动发送：
 
 ```text
 BOOT,OK
 ```
 
+### 3.2 心跳
+
+上位机发送：
+
+```text
+PING
+```
+
+STM32 返回：
+
+```text
+OK,PING
+```
+
+建议行为：
+
+- 上位机每 500 ms 发送一次 `PING`。
+- 连续 2000 ms 未收到有效 `OK,PING`，将下位机标记为离线。
+- 离线后停止发送需要闭环执行的视觉控制量。
+- 串口恢复后重新执行协议握手。
+
+### 3.3 协议版本
+
+上位机发送：
+
+```text
+PROTO?
+```
+
+STM32 返回：
+
+```text
+PROTO,5
+```
+
+版本不是 `5` 时：
+
+1. 上位机记录 `ERROR`。
+2. 禁止进入自动控制。
+3. 允许继续保持串口连接，用于诊断。
+4. 不允许把 V5 的 `BALL` 报文解释成旧协议语义。
+
 ---
 
-## 4. 运动控制命令
+## 4. 基础查询命令
 
-### 4.1 通用响应规则
+| 上位机命令 | STM32 返回 |
+|---|---|
+| `PING` | `OK,PING` |
+| `PROTO?` | `PROTO,5` |
+| `CONFIG` | `CONFIG_BEGIN...CONFIG_END` |
+| `SCHEMA` | `SCHEMA_BEGIN...SCHEMA_END` |
+| `STATUS` | `STATUS_BEGIN...STATUS_END` |
+| `STATUS,FULL` | 完整状态块 |
+| `STATUS,LITE` | 精简状态块 |
 
-下位机收到运动命令并通过参数检查后，应立即返回“已接受”响应。该响应只表示命令已经被接收并准备执行，**不表示动作已经完成**。
+### 4.1 CONFIG
 
-动作完成后，下位机应再主动发送完成消息。
-
-统一格式：
-
-```text
-OK,<COMMAND>,<PARAMETERS>,ACCEPTED
-DONE,<COMMAND>,<PARAMETERS>
-```
-
-执行失败时返回：
-
-```text
-ERR,<COMMAND>,<ERROR_CODE>,<PARAMETERS>,<DETAIL>
-```
-
-例如，上位机发送左转 `80°`：
+请求：
 
 ```text
-L080
+CONFIG
 ```
 
-下位机确认接收：
+返回形式：
 
 ```text
-OK,L,80,ACCEPTED
+CONFIG_BEGIN,<seq>
+CONFIG_ITEM,<key>,<value>
+CONFIG_ITEM,<key>,<value>
+CONFIG_END,<seq>
 ```
 
-左转完成后，下位机主动发送：
+固件若已有其他内容标签，可以保持原标签；上位机应按数据块规则接收，而不是假设固定行数。
+
+### 4.2 SCHEMA
+
+请求：
 
 ```text
-DONE,L,80
+SCHEMA
 ```
 
-如果命令参数非法：
+返回形式：
 
 ```text
-ERR,L,INVALID_ANGLE,80,ANGLE_OUT_OF_RANGE
+SCHEMA_BEGIN,<seq>
+SCHEMA_ITEM,<tag>,<field1>,<field2>,...
+SCHEMA_END,<seq>
 ```
 
-> 上位机只有收到 `DONE` 后，才能认为本次转向动作已经完成。收到 `OK,...,ACCEPTED` 时，只能将任务状态设置为“执行中”。
+用于描述状态或黑匣子数据字段。具体内容由固件版本决定。
 
-### 4.2 前进
+---
 
-命令：
+## 5. 运动控制命令
+
+### 5.1 前进
+
+上位机：
 
 ```text
 F
 ```
 
-下位机确认接收：
+STM32：
 
 ```text
 OK,F,ACCEPTED
 ```
 
-前进命令默认为持续执行，直到收到停止命令、其他运动命令或触发安全保护，因此不主动发送 `DONE,F`。
+前进是持续动作，直到收到：
 
-### 4.3 后退
+- `STOP` 或 `S`
+- 另一运动命令
+- 安全保护触发
 
-命令：
+默认不发送 `DONE,F`。
+
+### 5.2 后退
+
+上位机：
 
 ```text
 B
 ```
 
-下位机确认接收：
+STM32：
 
 ```text
 OK,B,ACCEPTED
 ```
 
-后退命令默认为持续执行，直到收到停止命令、其他运动命令或触发安全保护，因此不主动发送 `DONE,B`。
+后退同样是持续动作，默认不发送 `DONE,B`。
 
-### 4.4 左转
+### 5.3 左转
 
 格式：
 
 ```text
-L0<angle>
+L<angle_3digits>
 ```
 
-其中：
+角度建议范围：
 
-- `angle` 为十进制整数角度。
-- 范围建议为 `1~360`。
-- 不足三位时前面补零。
+```text
+1~360
+```
 
-示例：
+不足三位左侧补零。
+
+例：
 
 ```text
 L080
 ```
 
-表示原地左转 `80°`。
-
-下位机确认接收：
+接收确认：
 
 ```text
 OK,L,80,ACCEPTED
 ```
 
-左转完成后：
+执行完成：
 
 ```text
 DONE,L,80
 ```
 
-### 4.5 右转
-
-格式：
+错误示例：
 
 ```text
-R0<angle>
+ERR,L,INVALID_ANGLE,400,ANGLE_OUT_OF_RANGE
 ```
 
-其中：
+### 5.4 右转
 
-- `angle` 为十进制整数角度。
-- 范围建议为 `1~360`。
-- 不足三位时前面补零。
-
-示例：
+例：
 
 ```text
 R180
 ```
 
-表示原地右转 `180°`。
-
-下位机确认接收：
+接收确认：
 
 ```text
 OK,R,180,ACCEPTED
 ```
 
-右转完成后：
+执行完成：
 
 ```text
 DONE,R,180
 ```
 
-### 4.6 停止
+### 5.5 停止
 
-命令：
+上位机：
 
 ```text
 STOP
@@ -288,29 +363,24 @@ STOP
 S
 ```
 
-下位机完成停车后返回：
+停车完成：
 
 ```text
 OK,STOP
 ```
 
-若下位机当前正在执行转向命令，收到停止命令后应中止当前动作，并可主动发送：
+若停止命令中止正在执行的转向，可额外上报：
 
 ```text
 ERR,L,ABORTED,<angle>,STOP_COMMAND
-```
-
-或：
-
-```text
 ERR,R,ABORTED,<angle>,STOP_COMMAND
 ```
 
 ---
 
-## 5. 状态查询协议
+## 6. 状态查询协议
 
-### 5.1 查询命令
+请求：
 
 ```text
 STATUS
@@ -318,7 +388,7 @@ STATUS,FULL
 STATUS,LITE
 ```
 
-### 5.2 返回格式
+完整返回示例结构：
 
 ```text
 STATUS_BEGIN,<seq>,<fw_ms>
@@ -336,27 +406,27 @@ LINEGRAY,<gray0>,<gray1>,<gray2>,<gray3>,<gray4>,<gray5>,<gray6>,<gray7>
 STATUS_END,<seq>,<partial>,<total_drop>
 ```
 
-### 5.3 通用字段说明
+关键字段：
 
-| 字段 | 描述 |
+| 字段 | 含义 |
 |---|---|
-| `seq` | 状态数据块序号 |
-| `fw_ms` | 固件运行时间，单位为毫秒 |
-| `partial` | `0` 表示完整，`1` 表示数据不完整 |
+| `seq` | 状态块序号 |
+| `fw_ms` | STM32 固件运行时间，单位 ms |
+| `partial` | `0` 完整，`1` 不完整 |
 | `total_drop` | 累计状态数据丢弃次数 |
 
-### 5.4 数据块完整性检查
+完整性规则：
 
-1. `STATUS_BEGIN` 与 `STATUS_END` 的 `seq` 必须一致。
-2. `partial` 为 `1` 时，应将本次状态标记为不完整。
-3. `total_drop` 增加时，应记录通信或缓冲区异常日志。
-4. 未收到 `STATUS_END` 前，不应将当前数据块判定为完整状态。
+1. `STATUS_BEGIN.seq == STATUS_END.seq`。
+2. `partial=1` 时，本次状态不能作为完整快照。
+3. `total_drop` 增加时记录通信或缓冲区警告。
+4. 数据块超时后丢弃本次临时数据。
 
 ---
 
-## 6. 在线调参协议
+## 7. 在线调参协议
 
-### 6.1 查询参数列表
+### 7.1 查询参数列表
 
 ```text
 TUNEKEYS
@@ -370,7 +440,7 @@ TUNEKEY,<key>,<min>,<max>,<current>,<group>,<safety>,<flags>
 TUNEKEYS_END
 ```
 
-### 6.2 查询单个参数
+### 7.2 查询单个参数
 
 ```text
 TUNEGET,<key>
@@ -382,7 +452,7 @@ TUNEGET,<key>
 TUNE,<key>,<value>
 ```
 
-### 6.3 查询全部参数
+### 7.3 查询全部参数
 
 ```text
 TUNEGET
@@ -403,7 +473,7 @@ TUNE,<key>,<value>
 TUNE_END
 ```
 
-### 6.4 修改单个参数
+### 7.4 修改单个参数
 
 ```text
 TUNESET,<key>,<value>
@@ -415,21 +485,21 @@ TUNESET,<key>,<value>
 TUNESET,PID_KP,0.250000
 ```
 
-成功返回：
+成功：
 
 ```text
 TUNE,PID_KP,0.250000
 ```
 
-错误返回：
+失败：
 
 ```text
 ERR,TUNESET,<ERROR_CODE>,<key>,<detail>
 ```
 
-### 6.5 批量调参事务
+### 7.5 批量事务
 
-#### 开始事务
+开始：
 
 ```text
 TUNEBEGIN
@@ -441,7 +511,7 @@ TUNEBEGIN
 OK,TUNEBEGIN
 ```
 
-#### 暂存参数
+暂存：
 
 ```text
 TUNESET,<key>,<value>
@@ -453,7 +523,7 @@ TUNESET,<key>,<value>
 TUNESTAGE,<key>,<value>
 ```
 
-#### 提交参数
+提交：
 
 ```text
 TUNECOMMIT
@@ -465,7 +535,7 @@ TUNECOMMIT
 OK,TUNECOMMIT,<count>
 ```
 
-#### 取消事务
+取消：
 
 ```text
 TUNEABORT
@@ -477,7 +547,15 @@ TUNEABORT
 OK,TUNEABORT
 ```
 
-### 6.6 参数保存
+事务要求：
+
+1. 提交前只暂存，不改变正式运行参数，或由固件明确说明暂存策略。
+2. 任一字段非法时，整个提交应失败或返回明确的部分失败信息。
+3. 不能静默截断超范围参数。
+
+### 7.6 保存、恢复与导出
+
+保存到 Flash：
 
 ```text
 TUNESAVE
@@ -489,15 +567,13 @@ TUNESAVE
 SAVECONFIG
 ```
 
-用于将当前参数保存到 Flash。
-
-### 6.7 恢复默认参数
+恢复默认：
 
 ```text
 TUNERESET
 ```
 
-### 6.8 导出参数
+导出：
 
 ```text
 TUNEEXPORT
@@ -505,9 +581,9 @@ TUNEEXPORT
 
 ---
 
-## 7. 循迹控制协议
+## 8. 循迹控制协议
 
-### 7.1 开始循迹
+开始：
 
 ```text
 LINESTART
@@ -519,7 +595,7 @@ LINESTART
 OK,LINESTART
 ```
 
-### 7.2 停止循迹
+停止：
 
 ```text
 LINESTOP
@@ -531,27 +607,25 @@ LINESTOP
 OK,LINESTOP
 ```
 
-### 7.3 查询循迹状态
+查询状态：
 
 ```text
 LINESTATUS
 ```
 
-### 7.4 设置循迹模式
-
-覆盖模式：
+设置覆盖模式：
 
 ```text
 LINEMODE,OVERRIDE
 ```
 
-排他模式：
+设置排他模式：
 
 ```text
 LINEMODE,EXCLUSIVE
 ```
 
-### 7.5 设置循迹参数
+设置参数：
 
 ```text
 LINESET,BASE,<value>
@@ -560,7 +634,7 @@ LINESET,KD,<value>
 LINESET,MAXW,<value>
 ```
 
-建议统一使用：
+推荐统一走在线调参接口：
 
 ```text
 TUNESET,LINE_<PARAMETER>,<value>
@@ -568,9 +642,9 @@ TUNESET,LINE_<PARAMETER>,<value>
 
 ---
 
-## 8. 灰度传感器校准协议
+## 9. 灰度传感器校准
 
-### 8.1 采集黑线数据
+### 9.1 采集黑线
 
 ```text
 LINECAL,LINE
@@ -588,7 +662,7 @@ LINECAL,LINE,BUSY
 OK,LINECAL,LINE
 ```
 
-### 8.2 采集背景数据
+### 9.2 采集背景
 
 ```text
 LINECAL,BACKGROUND
@@ -606,7 +680,7 @@ LINECAL,BACKGROUND,BUSY
 OK,LINECAL,BACKGROUND
 ```
 
-### 8.3 应用校准结果
+### 9.3 应用结果
 
 ```text
 LINECAL,APPLY
@@ -618,7 +692,7 @@ LINECAL,APPLY
 OK,LINECAL,APPLY
 ```
 
-### 8.4 查询灰度数据
+### 9.4 查询原始灰度
 
 ```text
 GRAYSHOW
@@ -632,9 +706,9 @@ GRAY,<gray0>,<gray1>,<gray2>,<gray3>,<gray4>,<gray5>,<gray6>,<gray7>
 
 ---
 
-## 9. 故障处理协议
+## 10. 故障处理协议
 
-### 9.1 清除故障
+清除故障：
 
 ```text
 FAULTCLR
@@ -646,19 +720,19 @@ FAULTCLR
 CLEARFAULT
 ```
 
-成功返回：
+成功：
 
 ```text
 OK,FAULTCLR
 ```
 
-失败返回：
+故障仍然存在：
 
 ```text
 ERR,SAFETY,FAULT_ACTIVE,,<detail>
 ```
 
-### 9.2 常见故障返回
+常见故障示例：
 
 ```text
 ERR,SAFETY,FAULT_LATCHED,,USE_FAULTCLR
@@ -667,17 +741,24 @@ ERR,IMU,INIT_FAIL,,
 ERR,LINE,ANOMALY,,
 ```
 
+安全规则：
+
+1. 故障锁存时禁止执行危险运动命令。
+2. `FAULTCLR` 只能在真实故障条件已经消失时成功。
+3. 上位机收到严重 `ERR` 后，不得只清界面状态而继续控制。
+4. 错误必须写日志，并保留原始报文。
+
 ---
 
-## 10. 电机自检协议
+## 11. 电机自检协议
 
-### 10.1 启动自检
+启动：
 
 ```text
 MTEST,<motor>,<duty>,<duration_ms>
 ```
 
-其中 `motor` 可为：
+`motor` 可取：
 
 ```text
 L
@@ -692,37 +773,37 @@ R
 MTEST,L,0.18,500
 ```
 
-开始返回：
+开始：
 
 ```text
 MTEST,BUSY
 ```
 
-完成后返回电机测试结果，包括占空比、编码器增量、估算速度和方向。
-
-### 10.2 查询自检状态
+查询状态：
 
 ```text
 MTESTSTATUS
 ```
 
-### 10.3 查询帮助
+帮助：
 
 ```text
 MTEST,HELP
 ```
 
-自检通过后可能返回：
+通过示例：
 
 ```text
 MTEST,IDLE,PASSED,SAFETY_GATE_OPEN
 ```
 
+自检过程中必须有占空比和持续时间上限，并允许 `STOP` 中止。
+
 ---
 
-## 11. 黑匣子协议
+## 12. 黑匣子协议
 
-### 11.1 查询黑匣子信息
+查询信息：
 
 ```text
 BLACKBOX,INFO
@@ -734,25 +815,25 @@ BLACKBOX,INFO
 BB,INFO
 ```
 
-### 11.2 清空数据
+清空：
 
 ```text
 BLACKBOX,CLEAR
 ```
 
-### 11.3 冻结记录
+冻结：
 
 ```text
 BLACKBOX,FREEZE
 ```
 
-### 11.4 恢复记录
+恢复：
 
 ```text
 BLACKBOX,RESUME
 ```
 
-### 11.5 导出数据
+导出：
 
 ```text
 BLACKBOX,DUMP
@@ -768,17 +849,24 @@ BB,<data1>,<data2>,...
 BLACKBOX_END,<dump_seq>,<count>
 ```
 
-### 11.6 查询帮助
+帮助：
 
 ```text
 BLACKBOX,HELP
 ```
 
+上位机必须检查：
+
+1. `dump_seq` 一致。
+2. 实际 `BB` 行数与 `count` 一致。
+3. 数据块超时或缺行时标记导出失败。
+4. 不完整数据可以保存用于诊断，但不得伪装成完整结果。
+
 ---
 
-## 12. 异步上报消息
+## 13. STM32 异步上报
 
-设备可能主动发送以下消息：
+STM32 可在任何时刻发送：
 
 ```text
 BOOT,OK
@@ -795,7 +883,7 @@ M0003
 M0004
 ```
 
-### 12.1 MCU 按键事件
+四个按键事件：
 
 ```text
 M0001
@@ -804,38 +892,37 @@ M0003
 M0004
 ```
 
-分别表示四个 MCU 按键事件。
+要求：
 
-上位机不应将这些消息当作普通命令响应，而应按异步事件处理。
-
-其中：
-
-```text
-DONE,L,<angle>
-DONE,R,<angle>
-```
-
-表示对应的转向动作已经真正完成。它们与立即返回的 `OK,...,ACCEPTED` 含义不同。
+- 异步消息不能当作某个请求的固定“下一条响应”。
+- 上位机需要按 `TAG` 分流。
+- `DONE` 表示动作真正完成。
+- `WARN/ERR` 必须立即记录。
+- 按键事件进入事件队列，不阻塞串口接收线程。
 
 ---
 
-## 13. 上位机视觉结果
+## 14. 上位机视觉报文
 
-以下消息由上位机发送给下位机。
-
-### 目标有效
+### 14.1 通用目标有效
 
 ```text
 TARGET,<seq>,<x>,<y>,<angle>,<confidence>
 ```
 
-| 字段 | 类型 | 描述 |
+| 字段 | 类型 | 说明 |
 |---|---|---|
-| `seq` | `uint32` | 上位机视觉消息递增序号，溢出后允许无符号回绕 |
-| `x` | `double` | 目标中心横坐标，单位为像素 |
-| `y` | `double` | 目标中心纵坐标，单位为像素 |
-| `angle` | `double` | 目标角度，单位为度 |
-| `confidence` | `double` | 置信度，范围 `0.0～1.0` |
+| `seq` | `uint32` | 视觉消息序号 |
+| `x` | 浮点 | 横坐标，像素 |
+| `y` | 浮点 | 纵坐标，像素 |
+| `angle` | 浮点 | 角度，度 |
+| `confidence` | 浮点 | `0.0~1.0` |
+
+格式约定：
+
+- `x/y/angle` 固定保留 2 位小数。
+- `confidence` 固定保留 3 位小数。
+- 拒绝 NaN、Inf 和超范围置信度。
 
 示例：
 
@@ -843,15 +930,7 @@ TARGET,<seq>,<x>,<y>,<angle>,<confidence>
 TARGET,152,320.50,241.20,-3.70,0.920
 ```
 
-规则：
-
-1. `TARGET` 中不使用分号分隔子字段，所有字段直接使用逗号分隔。
-2. 目标无效时只能发送 `LOST`，不能发送上一帧坐标。
-3. `seq` 自然递增，溢出后允许无符号回绕。
-4. 不要求下位机逐条回复高频 `TARGET`。
-5. 链路在线状态由 `PING / OK,PING` 判断。
-
-### 目标丢失
+### 14.2 通用目标丢失
 
 ```text
 LOST,<seq>
@@ -863,72 +942,270 @@ LOST,<seq>
 LOST,153
 ```
 
----
+目标无效时不得继续发送上一帧 `TARGET`。
 
-## 14. 推荐通信流程
+### 14.3 滚球位置报文
 
 ```text
-设备启动
-    ↓
-BOOT,OK
-    ↓
-上位机发送 PING
-    ↓
-OK,PING
-    ↓
-上位机发送 PROTO?
-    ↓
-PROTO,4
-    ↓
-上位机发送 CONFIG
-    ↓
-CONFIG_BEGIN ... CONFIG_END
-    ↓
-上位机发送 SCHEMA
-    ↓
-SCHEMA_BEGIN ... SCHEMA_END
-    ↓
-上位机发送 TUNEKEYS
-    ↓
-TUNEKEYS_BEGIN ... TUNEKEYS_END
-    ↓
-上位机开始发送控制、查询或调参命令
+BALL,<seq>,<offset_mm>,<confidence_0_255>,<status>
+```
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `seq` | `uint32` | 滚球视觉消息序号 |
+| `offset_mm` | `int32` | 钢球相对当前目标位置的一维偏差，单位 mm |
+| `confidence_0_255` | `uint8` 语义 | 置信度，范围 `0~255` |
+| `status` | 枚举字符串 | `OK/LOST/CALIB/ERROR` |
+
+偏差方向：
+
+```text
+OpenCV 标定轴线 P1 -> P2 为正方向
+```
+
+状态语义：
+
+| status | 含义 | 是否允许使用 offset_mm |
+|---|---|---|
+| `OK` | 检测有效、标定完成 | 是 |
+| `LOST` | 没有检测到球 | 否 |
+| `CALIB` | 检测到球，但零点仍在标定 | 否 |
+| `ERROR` | 配置、相机或计算异常 | 否 |
+
+示例：
+
+```text
+BALL,123,-18,220,OK
+BALL,124,0,0,LOST
+BALL,125,0,0,CALIB
+BALL,126,0,0,ERROR
+```
+
+强制规则：
+
+1. 仅 `status=OK` 时允许使用 `offset_mm`。
+2. `status!=OK` 时，`offset_mm` 和 `confidence_0_255` 必须均为 `0`。
+3. 不允许丢球后发送旧位置。
+4. `confidence_0_255` 必须在 `0~255`。
+5. 非法状态字符串必须拒绝。
+6. STM32 不需要逐条回复高频 `BALL`。
+7. `seq` 递增，按 `uint32_t` 自然回绕。
+8. `seq` 只用于新旧判断和丢帧统计，不是时间戳。
+9. 超过视觉超时没有收到新 `BALL` 时，数据自动失效。
+
+推荐视觉超时：
+
+```text
+200 ms
+```
+
+假设上位机视觉频率约为 20~30 Hz。最终值应放入下位机配置，而不是硬编码散落在控制代码中。
+
+### 14.4 BALL 接收安全状态机
+
+伪代码：
+
+```c
+on_ball_message(msg):
+    validate_field_count()
+    validate_integer_ranges()
+    validate_status()
+
+    last_ball_rx_ms = now()
+
+    if msg.status != OK:
+        ball_valid = false
+        disable_ball_pid()
+        enter_safe_output()
+        return
+
+    if msg.seq is older or duplicate:
+        ignore_and_log()
+        return
+
+    ball_offset_mm = msg.offset_mm
+    ball_confidence = msg.confidence
+    ball_valid = true
+```
+
+周期检查：
+
+```c
+if now() - last_ball_rx_ms > ball_timeout_ms:
+    ball_valid = false
+    disable_ball_pid()
+    enter_safe_output()
 ```
 
 ---
 
-## 附录 A：上位机接收建议
+## 15. 序号规则
 
-1. 使用字节缓冲区持续接收串口数据。
-2. 查找 `\n`，按行切分报文。
-3. 去除行末的 `\r` 和 `\n`。
-4. 空行直接忽略。
-5. 使用英文逗号分割字段。
-6. 根据首字段识别消息类型。
-7. 未识别的标签应记录警告日志，但不应终止程序。
-8. 单行超过最大长度时应丢弃当前行并记录错误。
-9. 多行数据块应设置接收超时，避免永久等待 `_END`。
-10. 异步消息和命令响应必须能够同时处理。
+`TARGET`、`LOST` 和 `BALL` 使用 `uint32_t seq`。
 
-## 附录 B：建议的日志等级
+建议：
 
-| 情况 | 建议等级 |
-|---|---|
-| 正常命令发送与响应 | `DEBUG` |
-| 设备启动、连接成功、协议匹配 | `INFO` |
-| 未知标签、状态数据不完整 | `WARN` |
-| 命令返回 `ERR`、数据块超时 | `ERROR` |
-| 串口无法打开、协议版本不兼容 | `ERROR` |
+1. 每生成一条视觉报文只增加一次。
+2. `0xFFFFFFFF -> 0` 允许自然回绕。
+3. 下位机使用无符号差判断新旧，不能简单使用 `new_seq > old_seq`。
+4. 重连后上位机可重新从 0 开始；下位机应在握手完成或长时间超时后重置序号跟踪。
+5. 重复序号可以忽略并记录 `DEBUG/WARN`。
+6. 小范围跳号表示丢帧，不应直接停止系统。
+7. 大范围反向跳变通常表示上位机重启，应结合心跳和握手判断。
 
 ---
 
-## 附录 C：修订记录
+## 16. 推荐启动流程
 
-### V4 Revision 1
+```text
+STM32 启动
+    ↓
+STM32 -> BOOT,OK
+    ↓
+树莓派 -> PING
+    ↓
+STM32 -> OK,PING
+    ↓
+树莓派 -> PROTO?
+    ↓
+STM32 -> PROTO,5
+    ↓
+树莓派 -> CONFIG
+    ↓
+STM32 -> CONFIG_BEGIN ... CONFIG_END
+    ↓
+树莓派 -> SCHEMA
+    ↓
+STM32 -> SCHEMA_BEGIN ... SCHEMA_END
+    ↓
+树莓派 -> TUNEKEYS
+    ↓
+STM32 -> TUNEKEYS_BEGIN ... TUNEKEYS_END
+    ↓
+树莓派开始发送 BALL / 查询 / 调参 / 控制命令
+```
 
-- 删除尚未使用的云台控制描述。
-- 明确转向命令采用两阶段反馈：
-  - `OK,...,ACCEPTED`：命令已接收，即将执行；
-  - `DONE,...`：动作已经完成。
-- 补充左转、右转的参数范围和补零规则。
-- 补充转向被停止命令中止时的错误反馈。
+比赛模式可以简化为：
+
+```text
+BOOT,OK
+PING / OK,PING
+PROTO? / PROTO,5
+BALL,...
+```
+
+但协议版本校验不能省略。
+
+---
+
+## 17. 超时与安全策略
+
+| 项目 | 建议值 | 超时动作 |
+|---|---:|---|
+| 串口单次读 | 50 ms | 返回主循环，不退出程序 |
+| 串口写 | 200 ms | 记录 ERROR，进入重连 |
+| 握手 | 1500 ms | 标记离线并重试 |
+| 心跳发送 | 500 ms | 发送 `PING` |
+| 心跳失联 | 2000 ms | 禁止自动控制 |
+| 多行数据块 | 1000 ms 左右 | 丢弃不完整块 |
+| BALL 视觉数据 | 200 ms 建议 | 退出滚球闭环 |
+| 串口重连间隔 | 1000 ms | 周期重试 |
+
+关键原则：
+
+- 串口错误不能使上位机进程退出。
+- 视觉无效不能沿用旧坐标。
+- 心跳在线不等于视觉有效。
+- 视觉有效不等于底盘安全状态正常。
+- PID 启用条件应同时满足：协议匹配、链路在线、无锁存故障、`BALL status=OK`、视觉数据未超时。
+
+---
+
+## 18. 非法报文处理
+
+遇到以下情况时丢弃报文并写日志：
+
+- 行长超过限制。
+- 字段数量不正确。
+- 数字解析失败。
+- 数值溢出。
+- `confidence` 超出范围。
+- `BALL status` 非法。
+- 非 `OK` 的 `BALL` 携带非零位置。
+- 多行块序号不一致。
+- 未知标签。
+- 行内包含不支持的格式。
+
+建议日志内容至少包含：
+
+```text
+方向、原始报文、错误代码、时间、串口状态
+```
+
+不得因单条坏报文退出接收线程或主程序。
+
+---
+
+## 19. 日志等级建议
+
+| 情况 | 等级 |
+|---|---|
+| 正常发送与正常响应 | DEBUG |
+| 启动、连接、重连成功、版本匹配 | INFO |
+| 未知标签、重复序号、轻微丢帧、状态块不完整 | WARN |
+| ERR 报文、解析失败、数据块超时、视觉超时 | ERROR |
+| 串口打不开、协议不兼容、持续失联 | ERROR |
+
+高频 `BALL` 正常报文不应逐帧写 INFO。建议周期汇总或 DEBUG 记录。
+
+---
+
+## 20. V5 相对 V4 的变化
+
+1. 协议版本由 `4` 升级为 `5`。
+2. 新增：
+
+```text
+BALL,<seq>,<offset_mm>,<confidence_0_255>,<status>
+```
+
+3. 新增状态：
+
+```text
+OK
+LOST
+CALIB
+ERROR
+```
+
+4. 规定非 `OK` 状态必须发送零位置、零置信度。
+5. 规定下位机只有在 `OK` 且未超时时才允许使用滚球位置。
+6. 保留全部 V4 命令和 `TARGET/LOST`，便于回退和其他控制题复用。
+
+---
+
+## 21. 最小比赛通信示例
+
+```text
+STM32 -> BOOT,OK
+HOST  -> PING
+STM32 -> OK,PING
+HOST  -> PROTO?
+STM32 -> PROTO,5
+
+HOST  -> BALL,1,0,0,CALIB
+HOST  -> BALL,2,0,0,CALIB
+HOST  -> BALL,3,-3,231,OK
+HOST  -> BALL,4,-5,228,OK
+HOST  -> BALL,5,0,0,LOST
+HOST  -> BALL,6,2,219,OK
+```
+
+STM32 行为：
+
+```text
+CALIB：不启用滚球 PID
+OK：更新偏差并允许闭环
+LOST：立即使视觉位置失效
+恢复 OK：使用新位置重新进入闭环
+```

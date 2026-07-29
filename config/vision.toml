@@ -7,3 +7,34 @@ saturation_min = 100
 value_min = 80
 min_area = 200.0
 morphology_kernel = 5
+
+[vision.ball]
+roi_x = 60
+roi_y = 180
+roi_w = 520
+roi_h = 100
+
+axis_x1 = 80.0
+axis_y1 = 230.0
+axis_x2 = 560.0
+axis_y2 = 230.0
+axis_length_cm = 20.0
+
+bg_kernel = 31
+threshold = 18
+morph_kernel = 3
+
+min_area = 40.0
+max_area = 1200.0
+min_circularity = 0.20
+max_axis_distance_px = 30.0
+max_jump_px = 60.0
+
+reacquire_after_lost_frames = 5
+
+zero_mode = "startup"
+zero_position_px = 240.5
+zero_samples = 40
+zero_std_px = 1.5
+
+filter_alpha = 0.35

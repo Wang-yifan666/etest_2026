@@ -121,6 +121,74 @@ namespace etest
 		std::string to_string() const;
 	};
 
+	// 子配置：滚球视觉
+
+	struct BallConfig
+	{
+		// ROI 区域（整幅图像坐标）
+		int roi_x = 60;
+		int roi_y = 180;
+		int roi_w = 520;
+		int roi_h = 100;
+
+		// 摆杆中心线两端（整幅图像坐标），P1→P2 为正方向
+		double axis_x1 = 80.0;
+		double axis_y1 = 230.0;
+		double axis_x2 = 560.0;
+		double axis_y2 = 230.0;
+		double axis_length_cm = 20.0;
+
+		// 局部对比度检测参数
+		int bg_kernel = 31;
+		int threshold = 18;
+		int morph_kernel = 3;
+
+		// 候选轮廓约束
+		double min_area = 40.0;
+		double max_area = 1200.0;
+		double min_circularity = 0.20;
+		double max_axis_distance_px = 30.0;
+		double max_jump_px = 60.0;
+
+		// 重捕获：丢球超过此帧数后放弃旧参考点，进行全局搜索
+		int reacquire_after_lost_frames = 5;
+
+		// 零点校准
+		std::string zero_mode = "startup"; // "startup" | "fixed"
+		double zero_position_px = 240.5;   // 轴线投影距离(px), 非图像x坐标
+		int zero_samples = 40;
+		double zero_std_px = 1.5;
+
+		// 位置低通滤波，越小越平滑但延迟越大
+		double filter_alpha = 0.35;
+
+		SourceInfo source_roi_x;
+		SourceInfo source_roi_y;
+		SourceInfo source_roi_w;
+		SourceInfo source_roi_h;
+		SourceInfo source_axis_x1;
+		SourceInfo source_axis_y1;
+		SourceInfo source_axis_x2;
+		SourceInfo source_axis_y2;
+		SourceInfo source_axis_length_cm;
+		SourceInfo source_bg_kernel;
+		SourceInfo source_threshold;
+		SourceInfo source_morph_kernel;
+		SourceInfo source_min_area;
+		SourceInfo source_max_area;
+		SourceInfo source_min_circularity;
+		SourceInfo source_max_axis_distance_px;
+		SourceInfo source_max_jump_px;
+		SourceInfo source_reacquire_after_lost_frames;
+		SourceInfo source_zero_mode;
+		SourceInfo source_zero_position_px;
+		SourceInfo source_zero_samples;
+		SourceInfo source_zero_std_px;
+		SourceInfo source_filter_alpha;
+
+		std::string to_string() const;
+	};
+
 	// 子配置：视觉处理
 
 	struct VisionConfig
@@ -144,6 +212,8 @@ namespace etest
 		SourceInfo source_morphology_kernel;
 		SourceInfo source_min_area;
 
+		BallConfig ball;
+
 		std::string to_string() const;
 	};
 
@@ -164,7 +234,7 @@ namespace etest
 		int handshake_timeout_ms = 1500;
 		int heartbeat_interval_ms = 500;
 		int heartbeat_timeout_ms = 2000;
-		int protocol_version = 4; // V4 only
+		int protocol_version = 5; // V5
 
 		SourceInfo source_device;
 		SourceInfo source_baudrate;

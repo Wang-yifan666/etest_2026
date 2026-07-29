@@ -12,7 +12,7 @@ namespace etest
 namespace etest::uart::protocol
 {
 
-	// 工程通信协议 V4 辅助函数
+	// 工程通信协议 V5 辅助函数
 
 	// 构造 TARGET 行：TARGET,<seq>,<x>,<y>,<angle>,<confidence>
 	// x/y/angle 保留两位小数，confidence 保留三位小数
@@ -27,6 +27,18 @@ namespace etest::uart::protocol
 	// 构造 LOST 行：LOST,<seq>
 	// 返回不含 \r\n 的行文本
 	std::string makeLostLine(std::uint32_t seq);
+
+	// 构造 BALL 行：BALL,<seq>,<offset_mm>,<confidence_0_255>,<status>
+	// offset_mm: int32 一维偏差 (mm)
+	// confidence_0_255: 0~255
+	// status: "OK" | "LOST" | "CALIB" | "ERROR"
+	// V5 强制：非 OK 状态时 offset_mm 与 confidence_0_255 必须为 0
+	// 非法 status / confidence 超范围 / 非 OK 携带非零值时返回 std::nullopt
+	// 返回不含 \r\n 的行文本
+	std::optional<std::string> makeBallLine(std::uint32_t seq,
+	                                        int offset_mm,
+	                                        int confidence_0_255,
+	                                        const std::string& status);
 
 	// 严格判断是否为 BOOT,OK 消息
 	// tag=="BOOT" && fields.size()==1 && fields[0]=="OK"
