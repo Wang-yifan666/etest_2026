@@ -1,7 +1,7 @@
 [camera]
 
 # 摄像头设备路径、数字索引或视频文件路径
-source = "docs/videos/test3.mp4"
+source = "docs/videos/test4.mp4"
 
 width = 1280
 height = 720

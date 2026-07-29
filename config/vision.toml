@@ -9,15 +9,28 @@ min_area = 200.0
 morphology_kernel = 5
 
 [vision.ball]
-# ── 工作分辨率 ──
+# ── 工作分辨率（16:9 对应 1280x720）──
 work_width = 640
-work_height = 480
+work_height = 360
 
-# ── 搜索 ROI（工作分辨率内坐标）──
-roi_x = 60
-roi_y = 180
-roi_w = 520
-roi_h = 100
+# ── 管道模式：auto = 颜色检测, fixed = 固定四点 ──
+pipe_mode = "fixed"
+
+# ── 预设管道四点（工作分辨率坐标）──
+pipe_fixed_tl_x = 48.0
+pipe_fixed_tl_y = 105.0
+pipe_fixed_tr_x = 588.0
+pipe_fixed_tr_y = 105.0
+pipe_fixed_br_x = 588.0
+pipe_fixed_br_y = 255.0
+pipe_fixed_bl_x = 48.0
+pipe_fixed_bl_y = 255.0
+
+# ── 管道搜索区域（工作分辨率内坐标，auto 模式使用）──
+pipe_search_roi_x = 10
+pipe_search_roi_y = 20
+pipe_search_roi_w = 540
+pipe_search_roi_h = 160
 
 axis_x1 = 80.0
 axis_y1 = 230.0
@@ -26,11 +39,11 @@ axis_y2 = 230.0
 axis_length_cm = 25.0
 
 # ── 棕色管道 HSV 阈值 ──
-brown_h_min = 5
-brown_h_max = 30
-brown_s_min = 30
+brown_h_min = 12
+brown_h_max = 33
+brown_s_min = 43
 brown_s_max = 255
-brown_v_min = 30
+brown_v_min = 6
 brown_v_max = 255
 
 # ── 管道形态学 ──
@@ -43,10 +56,13 @@ pipe_min_area_ratio = 0.05
 pipe_min_aspect_ratio = 3.0
 pipe_min_fill_ratio = 0.30
 pipe_horizontal_angle_max = 25.0
+pipe_min_short_side_px = 8.0
 
 # ── 管道锁定 ──
-pipe_stable_frames = 8
+pipe_stable_frames = 3
 pipe_lost_timeout_frames = 30
+pipe_similarity_center_max_px = 25.0
+pipe_similarity_length_max_px = 40.0
 
 # ── 透视展开 ──
 pipe_warp_width = 500
@@ -80,16 +96,3 @@ zero_samples = 20
 zero_range_px = 4.0
 
 filter_alpha = 0.35
-
-# 旧参数保留（待迁移）
-white_s_max = 50
-white_v_min = 160
-track_min_area_ratio = 0.05
-track_min_aspect_ratio = 4.0
-track_stable_frames = 10
-track_lost_timeout_frames = 60
-track_search_roi_x = 0
-track_search_roi_y = 220
-track_search_roi_w = 640
-track_search_roi_h = 220
-track_horizontal_angle_max = 20.0

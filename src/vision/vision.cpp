@@ -368,28 +368,29 @@ namespace etest::vision
 
 				if(ms.count() >= 1000)
 				{
-					const int non_zero =
-					    cv::countNonZero(brown_mask);
-					ETEST_LOG_INFO("PIPE_DEBUG",
-					               "roi="
-					                   + std::to_string(search_roi.x)
-					                   + "," + std::to_string(search_roi.y)
-					                   + " " + std::to_string(search_roi.width)
-					                   + "x" + std::to_string(search_roi.height)
-					                   + " mask_nz=" + std::to_string(non_zero)
-					                   + " contours=" + std::to_string(total_contours)
-					                   + " rej(area=" + std::to_string(rej_area)
-					                   + " aspect=" + std::to_string(rej_aspect)
-					                   + " angle=" + std::to_string(rej_angle)
-					                   + " fill=" + std::to_string(rej_fill)
-					                   + " short=" + std::to_string(rej_shortside)
-					                   + ")"
-					                   + " best(area=" + std::to_string(best_area)
-					                   + " aspect=" + std::to_string(best_aspect)
-					                   + " angle=" + std::to_string(best_angle)
-					                   + " fill=" + std::to_string(best_fill)
-					                   + " short=" + std::to_string(best_short)
-					                   + ") stable=" + std::to_string(track_stable_count_));
+					const int non_zero = cv::countNonZero(brown_mask);
+					ETEST_LOG_INFO(
+					    "PIPE_DEBUG",
+					    "roi=" + std::to_string(search_roi.x) + ","
+					        + std::to_string(search_roi.y) + " "
+					        + std::to_string(search_roi.width) + "x"
+					        + std::to_string(search_roi.height)
+					        + " mask_nz=" + std::to_string(non_zero)
+					        + " contours="
+					        + std::to_string(total_contours)
+					        + " rej(area=" + std::to_string(rej_area)
+					        + " aspect=" + std::to_string(rej_aspect)
+					        + " angle=" + std::to_string(rej_angle)
+					        + " fill=" + std::to_string(rej_fill)
+					        + " short=" + std::to_string(rej_shortside)
+					        + ")"
+					        + " best(area=" + std::to_string(best_area)
+					        + " aspect=" + std::to_string(best_aspect)
+					        + " angle=" + std::to_string(best_angle)
+					        + " fill=" + std::to_string(best_fill)
+					        + " short=" + std::to_string(best_short)
+					        + ") stable="
+					        + std::to_string(track_stable_count_));
 					last_log_time = now;
 				}
 			}
@@ -403,18 +404,18 @@ namespace etest::vision
 
 			result.valid = true;
 			result.rect = best_rect;
-			result.bounding_roi = cv::Rect(
-			    static_cast<int>(best_rect.center.x
-			                     - best_rect.size.width / 2),
-			    static_cast<int>(best_rect.center.y
-			                     - best_rect.size.height / 2),
-			    static_cast<int>(best_rect.size.width),
-			    static_cast<int>(best_rect.size.height));
+			result.bounding_roi =
+			    cv::Rect(static_cast<int>(best_rect.center.x
+			                              - best_rect.size.width / 2),
+			             static_cast<int>(best_rect.center.y
+			                              - best_rect.size.height / 2),
+			             static_cast<int>(best_rect.size.width),
+			             static_cast<int>(best_rect.size.height));
 			result.bounding_roi &=
 			    cv::Rect(0, 0, frame.cols, frame.rows);
 
-			result.confidence = std::clamp(
-			    best_score / (roi_area * 20.0), 0.0, 1.0);
+			result.confidence =
+			    std::clamp(best_score / (roi_area * 20.0), 0.0, 1.0);
 
 			// 提取轴线
 			cv::Point2f points[4];
@@ -470,10 +471,9 @@ namespace etest::vision
 		const double length_b =
 		    std::max(b.rect.size.width, b.rect.size.height);
 
-		return center_distance
-		    < ball.pipe_similarity_center_max_px
+		return center_distance < ball.pipe_similarity_center_max_px
 		    && std::abs(length_a - length_b)
-		        < ball.pipe_similarity_length_max_px;
+		    < ball.pipe_similarity_length_max_px;
 	}
 
 	cv::Rect VisionProcessor::makeInnerRoi(
@@ -506,37 +506,99 @@ namespace etest::vision
 		VisionResult result;
 		result.target_type = "BALL";
 
-		// 0) 统一到可配置工作分辨率
 		const auto& ball = config_.ball;
 		const int kWorkWidth = ball.work_width;
 		const int kWorkHeight = ball.work_height;
 
+		// 0) Letterbox resize — 保持宽高比
 		cv::Mat work_frame;
+		const double scale =
+		    std::min(static_cast<double>(kWorkWidth) / frame.cols,
+		             static_cast<double>(kWorkHeight) / frame.rows);
+		const int scaled_w =
+		    static_cast<int>(frame.cols * scale);
+		const int scaled_h =
+		    static_cast<int>(frame.rows * scale);
 
-		if(frame.cols != kWorkWidth || frame.rows != kWorkHeight)
+		cv::Mat scaled;
+		cv::resize(frame, scaled, cv::Size(scaled_w, scaled_h), 0.0,
+		           0.0, cv::INTER_LINEAR);
+
+		work_frame = cv::Mat(kWorkHeight, kWorkWidth, frame.type(),
+		                     cv::Scalar(0, 0, 0));
+		const int off_x = (kWorkWidth - scaled_w) / 2;
+		const int off_y = (kWorkHeight - scaled_h) / 2;
+		scaled.copyTo(work_frame(
+		    cv::Rect(off_x, off_y, scaled_w, scaled_h)));
+
+		// ── Fixed points 模式 ──
+		if(ball.pipe_mode == "fixed")
 		{
-			if(!ball_resolution_reported_)
+			// 从配置读取四点，跳过管道检测直接计算透视矩阵
+			const cv::Point2f src_fixed[4] = {
+			    cv::Point2f(static_cast<float>(ball.pipe_fixed_tl_x),
+			                static_cast<float>(ball.pipe_fixed_tl_y)),
+			    cv::Point2f(static_cast<float>(ball.pipe_fixed_tr_x),
+			                static_cast<float>(ball.pipe_fixed_tr_y)),
+			    cv::Point2f(static_cast<float>(ball.pipe_fixed_br_x),
+			                static_cast<float>(ball.pipe_fixed_br_y)),
+			    cv::Point2f(static_cast<float>(ball.pipe_fixed_bl_x),
+			                static_cast<float>(ball.pipe_fixed_bl_y))};
+
+			// 校验四边形面积
+			const double area_fixed = std::abs(
+			    (src_fixed[1].x - src_fixed[0].x)
+			        * (src_fixed[3].y - src_fixed[0].y)
+			    - (src_fixed[1].y - src_fixed[0].y)
+			        * (src_fixed[3].x - src_fixed[0].x));
+			if(area_fixed < 100.0)
 			{
-				ETEST_LOG_INFO("VISION",
-				               "resizing input from "
-				                   + std::to_string(frame.cols) + "x"
-				                   + std::to_string(frame.rows)
-				                   + " to work resolution "
-				                   + std::to_string(kWorkWidth) + "x"
-				                   + std::to_string(kWorkHeight));
-				ball_resolution_reported_ = true;
+				ETEST_LOG_ERROR("VISION",
+				                "fixed pipe area too small");
+				result.error_code = "TRACK_CONFIG_INVALID";
+				return result;
 			}
 
-			cv::resize(frame, work_frame,
-			           cv::Size(kWorkWidth, kWorkHeight), 0.0, 0.0,
-			           cv::INTER_LINEAR);
-		}
-		else
-		{
-			work_frame = frame;
+			if(!warp_locked_)
+			{
+				const int ww = ball.pipe_warp_width;
+				const int wh = ball.pipe_warp_height;
+				const cv::Point2f dst[4] = {
+				    cv::Point2f(0.0F, 0.0F),
+				    cv::Point2f(static_cast<float>(ww - 1), 0.0F),
+				    cv::Point2f(static_cast<float>(ww - 1),
+				                static_cast<float>(wh - 1)),
+				    cv::Point2f(0.0F,
+				                static_cast<float>(wh - 1))};
+				warp_matrix_ = cv::getPerspectiveTransform(
+				    src_fixed, dst);
+				if(warp_matrix_.empty()
+				   || std::isnan(
+				       warp_matrix_.at<double>(0, 0)))
+				{
+					ETEST_LOG_ERROR(
+					    "VISION",
+					    "fixed perspective transform failed");
+					result.error_code = "PIPE_WARP_FAILED";
+					return result;
+				}
+				warp_locked_ = true;
+				track_locked_ = true;
+
+				// 构造伪 locked_track_
+				locked_track_.valid = true;
+				locked_track_.bounding_roi = cv::Rect(
+				    0, 0, kWorkWidth, kWorkHeight);
+				locked_track_.axis_p1 = src_fixed[0];
+				locked_track_.axis_p2 = src_fixed[1];
+				ETEST_LOG_INFO("VISION",
+				               "fixed pipe mode activated");
+			}
+
+			goto warp_and_detect;
 		}
 
-		// ── 1) 管道检测 → 维护锁定状态 ──
+		// ── Auto 模式：管道检测 → 维护锁定状态 ──
 		if(!track_locked_)
 		{
 			const TrackResult track = detectBrownPipe(work_frame);
@@ -546,14 +608,16 @@ namespace etest::vision
 				if(isTrackSimilar(track, locked_track_))
 				{
 					++track_stable_count_;
-					if(track_stable_count_ >= ball.pipe_stable_frames)
+					if(track_stable_count_
+					   >= ball.pipe_stable_frames)
 					{
 						track_locked_ = true;
 						locked_track_ = track;
 						track_lost_frame_count_ = 0;
 						warp_locked_ = false;
-						ETEST_LOG_INFO("VISION",
-						               "pipe geometry locked");
+						ETEST_LOG_INFO(
+						    "VISION",
+						    "pipe geometry locked");
 					}
 				}
 				else
@@ -570,13 +634,12 @@ namespace etest::vision
 		else
 		{
 			const TrackResult track = detectBrownPipe(work_frame);
-
-			if(!track.valid || !isTrackSimilar(track, locked_track_))
+			if(!track.valid
+			   || !isTrackSimilar(track, locked_track_))
 			{
 				if(track_lost_frame_count_ == 0)
 					ETEST_LOG_WARN("VISION", "pipe lost");
 				++track_lost_frame_count_;
-
 				if(track_lost_frame_count_
 				   >= ball.pipe_lost_timeout_frames)
 				{
@@ -590,15 +653,15 @@ namespace etest::vision
 					ball_filter_initialized_ = false;
 					ETEST_LOG_WARN(
 					    "VISION",
-					    "pipe lost timeout; resetting to FIND_TRACK");
+					    "pipe lost timeout; resetting to "
+					    "FIND_TRACK");
 				}
 			}
 			else
 			{
 				if(track_lost_frame_count_ > 0)
-					ETEST_LOG_INFO(
-					    "VISION",
-					    "pipe recovered; locked geometry kept");
+					ETEST_LOG_INFO("VISION",
+					               "pipe recovered");
 				track_lost_frame_count_ = 0;
 			}
 		}
@@ -609,52 +672,27 @@ namespace etest::vision
 			return result;
 		}
 
-		// ── 2) 透视展开管道 ROI ──
+		// ── 透视展开 ──
 		if(!warp_locked_)
 		{
 			const auto& rect = locked_track_.rect;
-
 			cv::Point2f pts[4];
 			rect.points(pts);
-
-			// 四点排序：左上、右上、右下、左下
-			std::sort(pts, pts + 4,
-			          [](const cv::Point2f& a, const cv::Point2f& b) {
-				          return (a.y < b.y)
-				              || (a.y == b.y && a.x < b.x);
-			          });
-
-			cv::Point2f top_left, top_right;
-			if(pts[0].x <= pts[1].x)
-			{
-				top_left = pts[0];
-				top_right = pts[1];
-			}
-			else
-			{
-				top_left = pts[1];
-				top_right = pts[0];
-			}
-
-			cv::Point2f bottom_left, bottom_right;
-			if(pts[2].x <= pts[3].x)
-			{
-				bottom_left = pts[2];
-				bottom_right = pts[3];
-			}
-			else
-			{
-				bottom_left = pts[3];
-				bottom_right = pts[2];
-			}
-
-			const cv::Point2f src[4] = {top_left, top_right,
-			                            bottom_right, bottom_left};
-
-			// 锁定左右方向
-			const double top_dx = top_right.x - top_left.x;
-			warp_direction_ = (top_dx >= 0.0) ? 1 : -1;
-
+			std::sort(
+			    pts, pts + 4,
+			    [](const cv::Point2f& a, const cv::Point2f& b) {
+				    return (a.y < b.y)
+				        || (a.y == b.y && a.x < b.x);
+			    });
+			cv::Point2f tl = (pts[0].x <= pts[1].x) ? pts[0]
+			                                        : pts[1];
+			cv::Point2f tr = (pts[0].x <= pts[1].x) ? pts[1]
+			                                        : pts[0];
+			cv::Point2f bl = (pts[2].x <= pts[3].x) ? pts[2]
+			                                        : pts[3];
+			cv::Point2f br = (pts[2].x <= pts[3].x) ? pts[3]
+			                                        : pts[2];
+			const cv::Point2f src[4] = {tl, tr, br, bl};
 			const int ww = ball.pipe_warp_width;
 			const int wh = ball.pipe_warp_height;
 			const cv::Point2f dst[4] = {
@@ -662,23 +700,23 @@ namespace etest::vision
 			    cv::Point2f(static_cast<float>(ww - 1), 0.0F),
 			    cv::Point2f(static_cast<float>(ww - 1),
 			                static_cast<float>(wh - 1)),
-			    cv::Point2f(0.0F, static_cast<float>(wh - 1))};
-
-			warp_matrix_ = cv::getPerspectiveTransform(src, dst);
-
+			    cv::Point2f(0.0F,
+			                static_cast<float>(wh - 1))};
+			warp_matrix_ =
+			    cv::getPerspectiveTransform(src, dst);
 			if(warp_matrix_.empty()
 			   || std::isnan(warp_matrix_.at<double>(0, 0)))
 			{
-				ETEST_LOG_ERROR("VISION",
-				                "perspective transform failed");
+				ETEST_LOG_ERROR(
+				    "VISION",
+				    "perspective transform failed");
 				result.error_code = "PIPE_WARP_FAILED";
 				return result;
 			}
-
 			warp_locked_ = true;
 		}
 
-		// ── 3) 执行透视变换 ──
+	warp_and_detect:
 		cv::Mat warped;
 		cv::warpPerspective(
 		    work_frame, warped, warp_matrix_,
@@ -686,7 +724,6 @@ namespace etest::vision
 		    cv::INTER_LINEAR);
 		debug_warped_pipe_ = warped.clone();
 
-		// 定义内部有效区域（排除管壁边缘）
 		const int margin_x = static_cast<int>(
 		    ball.pipe_warp_width * ball.pipe_inner_margin_x_ratio);
 		const int margin_y = static_cast<int>(
@@ -696,7 +733,6 @@ namespace etest::vision
 		    std::max(1, ball.pipe_warp_width - 2 * margin_x),
 		    std::max(1, ball.pipe_warp_height - 2 * margin_y));
 		inner_roi &= cv::Rect(0, 0, warped.cols, warped.rows);
-
 		if(inner_roi.empty() || inner_roi.width < 10
 		   || inner_roi.height < 5)
 		{
@@ -705,266 +741,250 @@ namespace etest::vision
 		}
 
 		const cv::Mat roi_img = warped(inner_roi);
-
-		// ── 4) 灰度 + 高斯滤波 ──
 		cv::Mat gray;
 		if(roi_img.channels() == 3)
 			cv::cvtColor(roi_img, gray, cv::COLOR_BGR2GRAY);
 		else
 			gray = roi_img.clone();
-
 		cv::GaussianBlur(gray, gray, cv::Size(5, 5), 0.0);
 
-		// ── 5) 黑帽+顶帽：适应球体可能比背景亮或暗 ──
 		const cv::Mat se = cv::getStructuringElement(
 		    cv::MORPH_ELLIPSE,
 		    cv::Size(ball.bg_kernel, ball.bg_kernel));
-
-		cv::Mat blackhat;
+		cv::Mat blackhat, tophat;
 		cv::morphologyEx(gray, blackhat, cv::MORPH_BLACKHAT, se);
-
-		cv::Mat tophat;
 		cv::morphologyEx(gray, tophat, cv::MORPH_TOPHAT, se);
-
 		cv::Mat combined = cv::max(blackhat, tophat);
 
-		// ── 6) 二值化 ──
 		cv::Mat binary;
 		cv::threshold(combined, binary, ball.threshold, 255,
 		              cv::THRESH_BINARY);
-
-		const cv::Mat morph_kernel = cv::getStructuringElement(
+		const cv::Mat mk = cv::getStructuringElement(
 		    cv::MORPH_ELLIPSE,
 		    cv::Size(ball.morph_kernel, ball.morph_kernel));
-		cv::morphologyEx(binary, binary, cv::MORPH_CLOSE, morph_kernel);
-		cv::morphologyEx(binary, binary, cv::MORPH_OPEN, morph_kernel);
-
+		cv::morphologyEx(binary, binary, cv::MORPH_CLOSE, mk);
+		cv::morphologyEx(binary, binary, cv::MORPH_OPEN, mk);
 		debug_ball_binary_ = binary.clone();
 
-		// ── 7) 轮廓筛选 ──
 		std::vector<std::vector<cv::Point>> contours;
 		cv::findContours(binary, contours, cv::RETR_EXTERNAL,
 		                 cv::CHAIN_APPROX_SIMPLE);
 
-		// 管道中心线（水平展开后中心线 y=warp_height/2）
 		const double centerline_y =
 		    ball.pipe_warp_height * 0.5 - margin_y;
-
 		double best_score = -1e9;
 		double best_circularity = 0.0;
 		cv::Point2f best_center;
-
 		const bool in_reacquire =
 		    (ball_state_ == BallState::REACQUIRE_BALL);
+
+		// 存储所有候选的调试信息
+		struct CandidateDebug
+		{
+			cv::Point2f center;
+			double area;
+			double circ;
+			double contrast;
+			double cdist;
+			double aspect;
+			std::string reject;
+		};
+		std::vector<CandidateDebug> cand_debug;
 
 		for(const auto& contour: contours)
 		{
 			const double area = cv::contourArea(contour);
-			if(area < ball.min_area || area > ball.max_area)
-				continue;
-
-			const double perimeter = cv::arcLength(contour, true);
-			if(perimeter < 1.0)
-				continue;
-
+			const double perimeter =
+			    cv::arcLength(contour, true);
 			const double circularity =
-			    4.0 * CV_PI * area / (perimeter * perimeter);
-			if(circularity < ball.min_circularity)
-				continue;
-
+			    (perimeter > 0.0)
+			        ? 4.0 * CV_PI * area
+			            / (perimeter * perimeter)
+			        : 0.0;
 			const cv::Rect box = cv::boundingRect(contour);
-			const double aspect = static_cast<double>(box.width)
+			const double aspect =
+			    static_cast<double>(box.width)
 			    / std::max(1, box.height);
-			if(aspect < ball.ball_min_aspect
-			   || aspect > ball.ball_max_aspect)
-				continue;
 
 			const cv::Moments moments = cv::moments(contour);
 			if(std::abs(moments.m00) < 1e-6)
 				continue;
-
-			const cv::Point2f center_in_roi(
+			const cv::Point2f ctr(
 			    static_cast<float>(moments.m10 / moments.m00),
-			    static_cast<float>(moments.m01 / moments.m00));
+			    static_cast<float>(
+			        moments.m01 / moments.m00));
 
-			// 局部对比度：轮廓区域 vs 外围环的平均灰度差
-			cv::Mat mask = cv::Mat::zeros(binary.size(), CV_8UC1);
+			cv::Mat mask = cv::Mat::zeros(binary.size(),
+			                               CV_8UC1);
 			cv::drawContours(
-			    mask, std::vector<std::vector<cv::Point>>{contour}, -1,
-			    255, -1);
-
+			    mask,
+			    std::vector<std::vector<cv::Point>>{contour},
+			    -1, 255, -1);
 			cv::Mat dilated_mask;
-			const cv::Mat dilate_kernel = cv::getStructuringElement(
-			    cv::MORPH_ELLIPSE, cv::Size(11, 11));
-			cv::dilate(mask, dilated_mask, dilate_kernel);
+			cv::dilate(mask, dilated_mask,
+			           cv::getStructuringElement(
+			               cv::MORPH_ELLIPSE,
+			               cv::Size(11, 11)));
 			cv::Mat outer_ring = dilated_mask - mask;
+			const double contrast =
+			    std::abs(cv::mean(gray, mask)[0]
+			             - cv::mean(gray, outer_ring)[0]);
+			const double cdist =
+			    std::abs(ctr.y - centerline_y);
 
-			const double inner_mean = cv::mean(gray, mask)[0];
-			const double outer_mean = cv::mean(gray, outer_ring)[0];
-			const double local_contrast =
-			    std::abs(inner_mean - outer_mean);
+			CandidateDebug cd;
+			cd.center = ctr;
+			cd.area = area;
+			cd.circ = circularity;
+			cd.contrast = contrast;
+			cd.cdist = cdist;
+			cd.aspect = aspect;
 
-			if(local_contrast < ball.ball_min_local_contrast)
-				continue;
-
-			// 到中心线距离
-			const double centerline_distance =
-			    std::abs(center_in_roi.y - centerline_y);
-			if(centerline_distance
-			   > ball.ball_max_centerline_distance_px)
-				continue;
-
-			// 位置跳变检查
-			double jump_distance = 0.0;
-			if(!in_reacquire && has_last_ball_center_)
+			if(area < ball.min_area || area > ball.max_area)
 			{
-				jump_distance =
-				    cv::norm(center_in_roi - last_ball_center_);
-				if(jump_distance > ball.max_jump_px)
-					continue;
+				cd.reject = "area";
+				cand_debug.push_back(cd);
+				continue;
+			}
+			if(circularity < ball.min_circularity)
+			{
+				cd.reject = "circ";
+				cand_debug.push_back(cd);
+				continue;
+			}
+			if(aspect < ball.ball_min_aspect
+			   || aspect > ball.ball_max_aspect)
+			{
+				cd.reject = "aspect";
+				cand_debug.push_back(cd);
+				continue;
+			}
+			if(contrast < ball.ball_min_local_contrast)
+			{
+				cd.reject = "contrast";
+				cand_debug.push_back(cd);
+				continue;
+			}
+			if(cdist > ball.ball_max_centerline_distance_px)
+			{
+				cd.reject = "centerline";
+				cand_debug.push_back(cd);
+				continue;
 			}
 
-			// 评分：圆度 + 对比度 - 中心线距离 - 跳变
-			const double score = circularity * 100.0
-			    + local_contrast * 2.0 - centerline_distance * 1.5
-			    - jump_distance * 0.2;
+			double jump = 0.0;
+			if(!in_reacquire && has_last_ball_center_)
+			{
+				jump = cv::norm(ctr - last_ball_center_);
+				if(jump > ball.max_jump_px)
+				{
+					cd.reject = "jump";
+					cand_debug.push_back(cd);
+					continue;
+				}
+			}
 
+			cd.reject.clear();
+			cand_debug.push_back(cd);
+
+			const double score = circularity * 100.0
+			    + contrast * 2.0 - cdist * 1.5
+			    - jump * 0.2;
 			if(score > best_score)
 			{
 				best_score = score;
-				best_center = center_in_roi;
+				best_center = ctr;
 				best_circularity = circularity;
 			}
 		}
 
-		// ── 8) 无候选 → 状态机处理 ──
+		// 存储候选调试数据供绘制使用
+		static std::vector<CandidateDebug>
+		    s_last_candidates;
+		s_last_candidates = cand_debug;
+
 		if(best_score < -1e7)
 		{
 			++ball_lost_frame_count_;
-
 			if(!ball_lost_)
 			{
 				ball_lost_ = true;
-				ETEST_LOG_WARN("VISION", "Ball lost");
 				last_ball_lost_log_time_ =
 				    std::chrono::steady_clock::now();
 			}
-			else
-			{
-				const auto now = std::chrono::steady_clock::now();
-				const auto elapsed = std::chrono::duration_cast<
-				    std::chrono::milliseconds>(
-				    now - last_ball_lost_log_time_);
-				if(elapsed.count() >= 1000)
-				{
-					ETEST_LOG_WARN(
-					    "VISION",
-					    "Ball remains lost, frames="
-					        + std::to_string(ball_lost_frame_count_));
-					last_ball_lost_log_time_ = now;
-				}
-			}
-
 			if(ball_lost_frame_count_
 			   >= ball.reacquire_after_lost_frames)
 			{
 				if(ball_state_ == BallState::TRACK_BALL
-				   || ball_state_ == BallState::CALIBRATE_ZERO)
+				   || ball_state_
+				       == BallState::CALIBRATE_ZERO)
 				{
 					ball_state_ = BallState::REACQUIRE_BALL;
 					has_last_ball_center_ = false;
 					ball_filter_initialized_ = false;
 				}
 			}
-
 			if(!zero_locked_)
 				zero_buffer_.clear();
-
 			result.error_code = "BALL_NOT_FOUND";
 			return result;
 		}
 
-		// ── 9) 检测成功 → 校正 ──
 		ball_lost_frame_count_ = 0;
-
 		if(ball_lost_)
-		{
 			ball_lost_ = false;
-			ETEST_LOG_INFO("VISION", "Ball recovered");
-		}
-
 		has_last_ball_center_ = true;
 		last_ball_center_ = best_center;
 
-		const double axis_position_px = best_center.x + inner_roi.x;
-
-		// 外推 result.x/y 到工作帧坐标（调试用）
-		result.x =
-		    best_center.x + inner_roi.x + locked_track_.bounding_roi.x;
-		result.y =
-		    best_center.y + inner_roi.y + locked_track_.bounding_roi.y;
+		const double axis_position_px =
+		    best_center.x + inner_roi.x;
+		result.x = best_center.x + inner_roi.x
+		    + locked_track_.bounding_roi.x;
+		result.y = best_center.y + inner_roi.y
+		    + locked_track_.bounding_roi.y;
 
 		if(ball_state_ == BallState::REACQUIRE_BALL)
-		{
 			ball_state_ = BallState::TRACK_BALL;
-			ETEST_LOG_INFO("VISION", "Ball reacquired; resuming TRACK");
-		}
 
-		// ── 10) 零点校准 ──
+		// 零点校准
 		if(!zero_locked_)
 		{
 			if(ball_state_ != BallState::CALIBRATE_ZERO
 			   && ball_state_ != BallState::TRACK_BALL)
-			{
 				ball_state_ = BallState::CALIBRATE_ZERO;
-			}
 
 			if(ball.zero_mode == "fixed")
 			{
 				zero_position_px_ = ball.zero_position_px;
 				zero_locked_ = true;
 				ball_state_ = BallState::TRACK_BALL;
-				ETEST_LOG_INFO("VISION",
-				               "Ball zero locked (fixed): "
-				                   + std::to_string(zero_position_px_)
-				                   + " px");
 			}
 			else
 			{
-				if(!zero_buffer_.empty())
-				{
-					const double last = zero_buffer_.back();
-					if(std::abs(axis_position_px - last)
-					   > ball.max_jump_px)
-						zero_buffer_.clear();
-				}
-
+				if(!zero_buffer_.empty()
+				   && std::abs(axis_position_px
+				               - zero_buffer_.back())
+				       > ball.max_jump_px)
+					zero_buffer_.clear();
 				zero_buffer_.push_back(axis_position_px);
-
 				while(static_cast<int>(zero_buffer_.size())
 				      > ball.zero_samples)
 					zero_buffer_.pop_front();
-
 				if(static_cast<int>(zero_buffer_.size())
 				   >= ball.zero_samples)
 				{
-					std::vector<double> values(zero_buffer_.begin(),
-					                           zero_buffer_.end());
-					std::sort(values.begin(), values.end());
-
-					const double median = values[values.size() / 2];
-					const double range = values.back() - values.front();
-
-					if(range <= ball.zero_range_px)
+					std::vector<double> vals(
+					    zero_buffer_.begin(),
+					    zero_buffer_.end());
+					std::sort(vals.begin(), vals.end());
+					const double med =
+					    vals[vals.size() / 2];
+					if(vals.back() - vals.front()
+					   <= ball.zero_range_px)
 					{
-						zero_position_px_ = median;
+						zero_position_px_ = med;
 						zero_locked_ = true;
 						ball_state_ = BallState::TRACK_BALL;
-						ETEST_LOG_INFO("VISION",
-						               "Ball zero calibrated: median="
-						                   + std::to_string(median)
-						                   + " px, range="
-						                   + std::to_string(range));
 					}
 				}
 			}
@@ -976,34 +996,33 @@ namespace etest::vision
 			return result;
 		}
 
-		// ── 11) 毫米换算 + 低通滤波 ──
-		const double effective_warp_width = ball.pipe_warp_width
+		const double eff_w = ball.pipe_warp_width
 		    * (1.0 - 2.0 * ball.pipe_inner_margin_x_ratio);
-		const double mm_per_warp_pixel = effective_warp_width > 0.0
-		    ? ball.pipe_length_mm / effective_warp_width
+		const double mm_per_px = eff_w > 0.0
+		    ? ball.pipe_length_mm / eff_w
 		    : ball.pipe_length_mm / ball.pipe_warp_width;
-
-		const double raw_offset_mm =
-		    (axis_position_px - zero_position_px_) * mm_per_warp_pixel;
+		const double raw_mm =
+		    (axis_position_px - zero_position_px_) * mm_per_px;
 
 		if(!ball_filter_initialized_)
 		{
-			filtered_offset_cm_ = raw_offset_mm / 10.0;
+			filtered_offset_cm_ = raw_mm / 10.0;
 			ball_filter_initialized_ = true;
 		}
 		else
 		{
 			const double alpha =
 			    std::clamp(ball.filter_alpha, 0.01, 1.0);
-			filtered_offset_cm_ = alpha * raw_offset_mm / 10.0
+			filtered_offset_cm_ = alpha * raw_mm / 10.0
 			    + (1.0 - alpha) * filtered_offset_cm_;
 		}
 
 		result.valid = true;
 		result.calibrated = true;
-		result.confidence = std::clamp(best_circularity, 0.0, 1.0);
-		result.offset_mm =
-		    static_cast<int>(std::lround(filtered_offset_cm_ * 10.0));
+		result.confidence =
+		    std::clamp(best_circularity, 0.0, 1.0);
+		result.offset_mm = static_cast<int>(
+		    std::lround(filtered_offset_cm_ * 10.0));
 		result.error_code.clear();
 
 		return result;

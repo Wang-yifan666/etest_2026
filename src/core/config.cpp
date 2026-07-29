@@ -653,6 +653,16 @@ namespace
 		    "vision.ball.work_width",
 		    "vision.ball.work_height",
 
+		    "vision.ball.pipe_mode",
+		    "vision.ball.pipe_fixed_tl_x",
+		    "vision.ball.pipe_fixed_tl_y",
+		    "vision.ball.pipe_fixed_tr_x",
+		    "vision.ball.pipe_fixed_tr_y",
+		    "vision.ball.pipe_fixed_br_x",
+		    "vision.ball.pipe_fixed_br_y",
+		    "vision.ball.pipe_fixed_bl_x",
+		    "vision.ball.pipe_fixed_bl_y",
+
 		    "vision.ball.pipe_search_roi_x",
 		    "vision.ball.pipe_search_roi_y",
 		    "vision.ball.pipe_search_roi_w",
@@ -921,6 +931,50 @@ namespace
 		// ---- [vision.ball] ----
 		{
 			auto& ball = config.vision.ball;
+
+			ball.pipe_mode = getString(
+			    raw_config, "vision.ball.pipe_mode", ball.pipe_mode,
+			    false, result, &ball.source_pipe_mode);
+			if(ball.pipe_mode != "auto" && ball.pipe_mode != "fixed")
+			{
+				addMessage(result, etest::ConfigMessageLevel::ERROR,
+				           "vision.ball.pipe_mode must be \"auto\" or "
+				           "\"fixed\"; keeping \""
+				               + ball.pipe_mode + "\"");
+			}
+
+			ball.pipe_fixed_tl_x =
+			    getDouble(raw_config, "vision.ball.pipe_fixed_tl_x",
+			              ball.pipe_fixed_tl_x, 0.0, 4096.0, result,
+			              &ball.source_pipe_fixed_tl_x);
+			ball.pipe_fixed_tl_y =
+			    getDouble(raw_config, "vision.ball.pipe_fixed_tl_y",
+			              ball.pipe_fixed_tl_y, 0.0, 2160.0, result,
+			              &ball.source_pipe_fixed_tl_y);
+			ball.pipe_fixed_tr_x =
+			    getDouble(raw_config, "vision.ball.pipe_fixed_tr_x",
+			              ball.pipe_fixed_tr_x, 0.0, 4096.0, result,
+			              &ball.source_pipe_fixed_tr_x);
+			ball.pipe_fixed_tr_y =
+			    getDouble(raw_config, "vision.ball.pipe_fixed_tr_y",
+			              ball.pipe_fixed_tr_y, 0.0, 2160.0, result,
+			              &ball.source_pipe_fixed_tr_y);
+			ball.pipe_fixed_br_x =
+			    getDouble(raw_config, "vision.ball.pipe_fixed_br_x",
+			              ball.pipe_fixed_br_x, 0.0, 4096.0, result,
+			              &ball.source_pipe_fixed_br_x);
+			ball.pipe_fixed_br_y =
+			    getDouble(raw_config, "vision.ball.pipe_fixed_br_y",
+			              ball.pipe_fixed_br_y, 0.0, 2160.0, result,
+			              &ball.source_pipe_fixed_br_y);
+			ball.pipe_fixed_bl_x =
+			    getDouble(raw_config, "vision.ball.pipe_fixed_bl_x",
+			              ball.pipe_fixed_bl_x, 0.0, 4096.0, result,
+			              &ball.source_pipe_fixed_bl_x);
+			ball.pipe_fixed_bl_y =
+			    getDouble(raw_config, "vision.ball.pipe_fixed_bl_y",
+			              ball.pipe_fixed_bl_y, 0.0, 2160.0, result,
+			              &ball.source_pipe_fixed_bl_y);
 
 			ball.pipe_search_roi_x =
 			    getInt(raw_config, "vision.ball.pipe_search_roi_x",
@@ -1784,14 +1838,14 @@ namespace etest
 	std::string BallConfig::to_string() const
 	{
 		return "work=" + std::to_string(work_width) + "x"
-		    + std::to_string(work_height) + ", pipe_roi="
-		    + std::to_string(pipe_search_roi_x) + ","
+		    + std::to_string(work_height)
+		    + ", pipe_roi=" + std::to_string(pipe_search_roi_x) + ","
 		    + std::to_string(pipe_search_roi_y) + ","
 		    + std::to_string(pipe_search_roi_w) + "x"
 		    + std::to_string(pipe_search_roi_h) + ", axis=("
-		    + std::to_string(axis_x1) + ","
-		    + std::to_string(axis_y1) + ")->(" + std::to_string(axis_x2)
-		    + "," + std::to_string(axis_y2)
+		    + std::to_string(axis_x1) + "," + std::to_string(axis_y1)
+		    + ")->(" + std::to_string(axis_x2) + ","
+		    + std::to_string(axis_y2)
 		    + "), axis_cm=" + std::to_string(axis_length_cm)
 		    + ", brown_h=" + std::to_string(brown_h_min) + "-"
 		    + std::to_string(brown_h_max)

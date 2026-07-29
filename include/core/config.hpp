@@ -127,13 +127,26 @@ namespace etest
 	{
 		// ── 工作分辨率 ──
 		int work_width = 640;
-		int work_height = 480;
+		int work_height = 360;
+
+		// ── 管道模式 ──
+		std::string pipe_mode = "fixed"; // "auto" | "fixed"
+
+		// ── 固定管道四点（工作分辨率坐标，pipe_mode=fixed 时使用）──
+		double pipe_fixed_tl_x = 20.0;
+		double pipe_fixed_tl_y = 30.0;
+		double pipe_fixed_tr_x = 620.0;
+		double pipe_fixed_tr_y = 30.0;
+		double pipe_fixed_br_x = 620.0;
+		double pipe_fixed_br_y = 170.0;
+		double pipe_fixed_bl_x = 20.0;
+		double pipe_fixed_bl_y = 170.0;
 
 		// ── 管道搜索区域（工作分辨率内坐标）──
-		int pipe_search_roi_x = 0;
-		int pipe_search_roi_y = 220;
-		int pipe_search_roi_w = 640;
-		int pipe_search_roi_h = 220;
+		int pipe_search_roi_x = 10;
+		int pipe_search_roi_y = 20;
+		int pipe_search_roi_w = 540;
+		int pipe_search_roi_h = 160;
 
 		// 摆杆中心线两端（整幅图像坐标），P1→P2 为正方向
 		double axis_x1 = 80.0;
@@ -217,6 +230,15 @@ namespace etest
 		// ── SourceInfo ──
 		SourceInfo source_work_width;
 		SourceInfo source_work_height;
+		SourceInfo source_pipe_mode;
+		SourceInfo source_pipe_fixed_tl_x;
+		SourceInfo source_pipe_fixed_tl_y;
+		SourceInfo source_pipe_fixed_tr_x;
+		SourceInfo source_pipe_fixed_tr_y;
+		SourceInfo source_pipe_fixed_br_x;
+		SourceInfo source_pipe_fixed_br_y;
+		SourceInfo source_pipe_fixed_bl_x;
+		SourceInfo source_pipe_fixed_bl_y;
 		SourceInfo source_pipe_search_roi_x;
 		SourceInfo source_pipe_search_roi_y;
 		SourceInfo source_pipe_search_roi_w;

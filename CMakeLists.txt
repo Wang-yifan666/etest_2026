@@ -63,10 +63,24 @@ target_include_directories(etest_vision_test PRIVATE ${CMAKE_SOURCE_DIR}/include
 target_link_libraries(etest_vision_test PRIVATE ${OpenCV_LIBS} pthread)
 target_compile_options(etest_vision_test PRIVATE -Wall -Wextra -pedantic)
 
+# HSV 范围测试
+add_executable(etest_hsv_test
+    test/test_hsv.cpp
+    src/vision/vision.cpp
+    src/vision/vision_utils.cpp
+    src/core/config.cpp
+    src/core/logger.cpp
+)
+
+target_include_directories(etest_hsv_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(etest_hsv_test PRIVATE ${OpenCV_LIBS} pthread)
+target_compile_options(etest_hsv_test PRIVATE -Wall -Wextra -pedantic)
+
 enable_testing()
 
 add_test(NAME config_test COMMAND etest_test)
 add_test(NAME vision_test COMMAND etest_vision_test)
+add_test(NAME hsv_test COMMAND etest_hsv_test)
 
 # WSL 下 OpenCV 依赖附加库
 if(WSL)
