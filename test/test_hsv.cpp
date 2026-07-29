@@ -3,16 +3,16 @@
 
 namespace
 {
-	int h_min = 15, h_max = 42;
-	int s_min = 5, s_max = 110;
-	int v_min = 90, v_max = 255;
+	int h_min = 12, h_max = 33;
+	int s_min = 43, s_max = 255;
+	int v_min = 6, v_max = 255;
 
 	void on_trackbar(int, void *) {}
 } // namespace
 
 int main()
 {
-	cv::VideoCapture cap("docs/videos/test4.mp4");
+	cv::VideoCapture cap("docs/videos/test5.mp4");
 	if(!cap.isOpened())
 	{
 		std::cerr << "Failed to open video\n";
@@ -58,7 +58,7 @@ int main()
 		cv::resize(frame, frame, cv::Size(640, 360));
 
 		// 按当前视频调整
-		cv::Rect roi(48, 105, 540, 150);
+		cv::Rect roi(25, 143, 586, 72);
 		roi &= cv::Rect(0, 0, frame.cols, frame.rows);
 
 		if(roi.width <= 0 || roi.height <= 0)
