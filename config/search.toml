@@ -12,7 +12,7 @@ detector = "yolo"
 # ── YOLO 后端选择 ──
 # opencv = 使用 OpenCV DNN 加载 ONNX
 # ncnn   = 使用 NCNN 加载 .param/.bin（编译时需 ETEST_ENABLE_NCNN=ON）
-yolo_backend = "opencv"
+yolo_backend = "ncnn"
 
 # ONNX 模型路径（yolo_backend = "opencv" 时使用）
 model_path = "model/onnx_640_640/best.onnx"
@@ -21,7 +21,7 @@ model_path = "model/onnx_640_640/best.onnx"
 class_names_path = "model/onnx_640_640/classes.txt"
 
 # NCNN 模型参数文件路径（yolo_backend = "ncnn" 时使用，.bin 自动推导）
-ncnn_param_path = "model/ncnn_640x640/best_640x640_fp32.ncnn.param"
+ncnn_param_path = "model/ncnn_640x640/best_640x640_fp16.ncnn.param"
 
 # 置信度阈值，低于该值的检测结果会被过滤
 nn_confidence_threshold = 0.45
@@ -37,8 +37,8 @@ nn_input_height = 640
 nn_threads = 4
 
 # ── NCNN 高级选项（仅 yolo_backend = "ncnn"）──
-ncnn_use_fp16_storage = false
-ncnn_use_fp16_arithmetic = false
+ncnn_use_fp16_storage = true
+ncnn_use_fp16_arithmetic = true
 ncnn_use_vulkan = false
 ncnn_input_blob = "in0"
 ncnn_output_blob = "out0"
