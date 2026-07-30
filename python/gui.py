@@ -21,6 +21,7 @@ import threading
 import time
 import tkinter as tk
 from tkinter import messagebox, ttk
+import json
 from typing import Callable, Optional, TypeVar
 
 try:
@@ -43,6 +44,7 @@ GUI_LOG_DIR = LOG_DIR / "gui"
 RUN_DIR = PROJECT_ROOT / "data" / "run"
 
 GUI_LOG_FILE = GUI_LOG_DIR / "gui.log"
+GUI_PREFS_FILE = GUI_LOG_DIR / "gui_prefs.json"
 PROCESS_CONSOLE_LOG = GUI_LOG_DIR / "process_console.log"
 PID_FILE = RUN_DIR / "etest_2026.pid"
 
@@ -237,6 +239,9 @@ class EtestGui:
         self.config_file_var = tk.StringVar()
         self.mode_hint_var = tk.StringVar(value="当前配置模式：未知")
 
+        self.font_size_var = tk.IntVar(value=10)
+        self._load_gui_prefs()
+
         self.build_ui()
         self.refresh_config_file_list()
         self.load_initial_config()
@@ -337,6 +342,9 @@ class EtestGui:
         self.build_log_tab()
         self.build_config_tab()
 
+        # 应用从偏好加载的字号
+        self._on_font_size_changed()
+
         notice = ttk.Label(
             outer,
             textvariable=self.notice_var,
@@ -380,6 +388,17 @@ class EtestGui:
         ttk.Button(
             toolbar, text="打开日志目录", command=self.on_open_log_dir
         ).pack(side=tk.LEFT, padx=3)
+
+        ttk.Label(toolbar, text="  字号：").pack(side=tk.LEFT)
+        self.font_spinbox = ttk.Spinbox(
+            toolbar,
+            from_=8,
+            to=24,
+            width=4,
+            textvariable=self.font_size_var,
+            command=self._on_font_size_changed,
+        )
+        self.font_spinbox.pack(side=tk.LEFT)
 
         ttk.Label(
             self.log_tab,
@@ -1409,6 +1428,32 @@ class EtestGui:
         except Exception as exc:
             LOGGER.warning("读取当前模式失败：%s", exc, exc_info=True)
             self.mode_hint_var.set(f"当前配置模式：读取失败（{exc}）")
+
+    # GUI 偏好存取
+
+    def _load_gui_prefs(self) -> None:
+        try:
+            if GUI_PREFS_FILE.is_file():
+                data = json.loads(GUI_PREFS_FILE.read_text(encoding="utf-8"))
+                size = data.get("font_size", 10)
+                if 8 <= size <= 24:
+                    self.font_size_var.set(size)
+        except Exception:
+            LOGGER.warning("读取 GUI 偏好失败，使用默认值", exc_info=True)
+
+    def _save_gui_prefs(self) -> None:
+        try:
+            data = {"font_size": self.font_size_var.get()}
+            GUI_PREFS_FILE.parent.mkdir(parents=True, exist_ok=True)
+            atomic_write_text(GUI_PREFS_FILE, json.dumps(data, indent=2) + "\n", make_backup=False)
+        except Exception:
+            LOGGER.warning("保存 GUI 偏好失败", exc_info=True)
+
+    def _on_font_size_changed(self, *_args) -> None:
+        size = self.font_size_var.get()
+        self.log_text.configure(font=("TkFixedFont", size))
+        self.config_text.configure(font=("TkFixedFont", size + 1))
+        self._save_gui_prefs()
 
     # UI 状态与关闭
 

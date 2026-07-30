@@ -1,5 +1,5 @@
 [uart]
-device = "/dev/pts/6"
+device = "/dev/ttyACM0"
 baudrate = 115200
 timeout_ms = 50
 write_timeout_ms = 200
