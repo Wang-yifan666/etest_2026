@@ -282,9 +282,10 @@ namespace etest::state
 			}
 		}
 
-		// 4. V4 握手：等待可选 BOOT,OK → 发送 PING → 等待 OK,PING →
-		//              发送 PROTO? → 等待 PROTO,<expected>
-		ETEST_LOG_INFO("STATE_START", "self-check: V4 handshake");
+		// 4. V5 握手：等待可选 BOOT,OK → 发送 PING → 等待 OK,PING →
+		//              发送 PROTO? → 等待 PROTO,<expected_major>,<expected_minor> →
+		//              发送 CAPS? → 等待 CAPS,...
+		ETEST_LOG_INFO("STATE_START", "self-check: V5 handshake");
 
 		if(!ctx.uart.isOpen())
 		{
@@ -294,7 +295,8 @@ namespace etest::state
 		else
 		{
 			const int timeout_ms = uart_cfg.handshake_timeout_ms;
-			const int expected_version = uart_cfg.protocol_version;
+			const int expected_major = uart_cfg.protocol_version_major;
+			const int expected_minor = uart_cfg.protocol_version_minor;
 
 			// 步骤 4a：等待可选的 BOOT,OK
 			{
@@ -385,7 +387,7 @@ namespace etest::state
 				}
 			}
 
-			// 步骤 4c：发送 PROTO? 并等待 PROTO,<expected_version>
+			// 步骤 4c：发送 PROTO? 并等待 PROTO,<major>,<minor>
 			// 即使 PING 超时也尝试 PROTO 查询
 			{
 				ETEST_LOG_INFO("STATE_START", "sending PROTO?");
@@ -412,31 +414,42 @@ namespace etest::state
 					{
 						if(msg.type == UartMessageType::PROTOCOL)
 						{
-							auto version =
-							    uart::protocol::getProtocolVersion(msg);
+							auto major =
+							    uart::protocol::getProtocolVersionMajor(
+							        msg);
+							auto minor =
+							    uart::protocol::getProtocolVersionMinor(
+							        msg);
 
-							if(version.has_value()
-							   && *version == expected_version)
+							if(major.has_value()
+							   && *major == expected_major
+							   && minor.has_value()
+							   && *minor == expected_minor)
 							{
 								proto_ok = true;
-								lower_machine_ready = true;
 								ctx.lower_machine_online = true;
 
 								ETEST_LOG_INFO(
 								    "STATE_START",
 								    "protocol version confirmed: "
-								        + std::to_string(*version));
+								        + std::to_string(*major) + "."
+								        + std::to_string(*minor));
 								break;
 							}
-							else if(version.has_value())
+							else if(major.has_value())
 							{
 								ETEST_LOG_ERROR(
 								    "STATE_START",
 								    "protocol version mismatch: got "
-								        + std::to_string(*version)
+								        + std::to_string(*major) + "."
+								        + (minor.has_value()
+								               ? std::to_string(*minor)
+								               : "?")
 								        + ", expected "
+								        + std::to_string(expected_major)
+								        + "."
 								        + std::to_string(
-								            expected_version));
+								            expected_minor));
 							}
 							else
 							{
@@ -467,6 +480,57 @@ namespace etest::state
 					ETEST_LOG_ERROR("STATE_START",
 					                "protocol version check failed");
 					ctx.lower_machine_online = false;
+				}
+			}
+
+			// 步骤 4d：发送 CAPS? 并等待 CAPS 响应
+			{
+				ETEST_LOG_INFO("STATE_START", "sending CAPS?");
+				ctx.uart.sendLine("CAPS?");
+
+				UartMessage msg;
+				bool caps_ok = false;
+				const auto caps_deadline =
+				    std::chrono::steady_clock::now()
+				    + std::chrono::milliseconds(timeout_ms);
+
+				while(std::chrono::steady_clock::now() < caps_deadline)
+				{
+					if(!ctx.running)
+						break;
+
+					if(ctx.shutdown_flag != nullptr
+					   && ctx.shutdown_flag->load())
+					{
+						return State::END;
+					}
+
+					if(ctx.uart.waitPop(msg, 100))
+					{
+						if(uart::protocol::isCapsResponse(msg))
+						{
+							caps_ok = true;
+							lower_machine_ready = true;
+							ctx.lower_machine_online = true;
+							ETEST_LOG_INFO("STATE_START",
+							               "received CAPS response");
+							break;
+						}
+
+						if(msg.type == UartMessageType::ERROR
+						   || msg.type == UartMessageType::WARNING)
+						{
+							ETEST_LOG_WARN(
+							    "STATE_START",
+							    "message during CAPS wait: " + msg.raw);
+						}
+					}
+				}
+
+				if(!caps_ok)
+				{
+					ETEST_LOG_ERROR("STATE_START",
+					                "CAPS? timeout; no CAPS received");
 				}
 			}
 		}
@@ -516,6 +580,42 @@ namespace etest::state
 			}
 
 			ETEST_LOG_INFO("STATE_START", self_check_result);
+		}
+
+		// 6. 加载 YOLO 模型（detector=yolo 时）
+		if(search_cfg.detector == "yolo")
+		{
+			ETEST_LOG_INFO("STATE_START", "loading YOLO model...");
+
+			if(!ctx.vision.loadNnModel(
+			       search_cfg.model_path, search_cfg.class_names_path,
+			       search_cfg.nn_confidence_threshold,
+			       search_cfg.nn_nms_threshold))
+			{
+				ETEST_LOG_ERROR(
+				    "STATE_START",
+				    "YOLO model failed to load; will retry in SEARCH");
+			}
+			else
+			{
+				ETEST_LOG_INFO("STATE_START",
+				               "YOLO model loaded successfully");
+			}
+
+			// 初始化会话 ID 和时间零点
+			ctx.task.session_id = static_cast<std::uint32_t>(
+			    std::chrono::steady_clock::now()
+			        .time_since_epoch()
+			        .count()
+			    & 0xFFFFFFFFu);
+			ctx.task.vision_epoch_ns = std::chrono::steady_clock::now()
+			                               .time_since_epoch()
+			                               .count();
+			ctx.vision.setVisionEpoch(ctx.task.vision_epoch_ns);
+
+			ETEST_LOG_INFO("STATE_START",
+			               "VSESSION session_id="
+			                   + std::to_string(ctx.task.session_id));
 		}
 
 		ETEST_LOG_INFO("STATE_START",

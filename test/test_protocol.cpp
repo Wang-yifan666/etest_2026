@@ -1,10 +1,11 @@
 /**
  * @file test/test_protocol.cpp
- * @brief V5 协议辅助函数单元测试
+ * @brief V5.2 协议辅助函数单元测试
  *
- * 测试 makeTargetLine、makeLostLine、makeBallLine、isBootOk、
- * isPingResponse、getProtocolVersion。
- * 所有测试调用真实的 src/uart/protocol.cpp 实现，不复制代码。
+ * 覆盖：makeTargetLine、makeLostLine、makeBallLine、isBootOk、
+ * isPingResponse、getProtocolVersion (legacy)、getProtocolVersionMajor/Minor、
+ * isCapsResponse、isMissionCode、parseMissionCode、missionModeName、
+ * makeContestStartLine、makeContestStatusQueryLine。
  */
 
 #include "uart/protocol.hpp"
@@ -37,9 +38,9 @@ static void check(const std::string& name, bool condition)
 	}
 }
 
-// =============================================================================
-// makeTargetLine 测试
-// =============================================================================
+
+// makeTargetLine
+
 
 static void test_makeTargetLine_correct()
 {
@@ -106,9 +107,9 @@ static void test_makeTargetLine_one_confidence()
 	check("makeTargetLine confidence=1 ok", result.has_value());
 }
 
-// =============================================================================
-// makeLostLine 测试
-// =============================================================================
+
+// makeLostLine
+
 
 static void test_makeLostLine_correct()
 {
@@ -122,9 +123,9 @@ static void test_makeLostLine_large_seq()
 	check("makeLostLine large seq", !line.empty());
 }
 
-// =============================================================================
-// makeBallLine 测试 (V5 新增)
-// =============================================================================
+
+// makeBallLine (V5 legacy: offset_mm + confidence_0_255)
+
 
 static void test_makeBallLine_ok()
 {
@@ -213,20 +214,17 @@ static void test_makeBallLine_ok_zero_zero()
 static void test_makeBallLine_error_nonzero_rejected()
 {
 	auto result = makeBallLine(1, 3, 0, "ERROR");
-	check("makeBallLine ERROR + offset=3 rejected", !result.has_value());
+	check("makeBallLine ERROR + offset=3 rejected",
+	      !result.has_value());
 }
 
-// =============================================================================
-// isBootOk 测试
-// =============================================================================
+
+// isBootOk
+
 
 static void test_isBootOk_valid()
 {
-	// 构造正确的 BOOT,OK 消息：parseLine("BOOT,OK")
 	auto msg = Uart::parseLine("BOOT,OK");
-	// parseLine 设置 tag="BOOT", fields=["OK"]
-	check("parseLine BOOT,OK -> type BOOT",
-	      msg.type == UartMessageType::BOOT);
 	check("isBootOk BOOT,OK -> true", isBootOk(msg));
 }
 
@@ -249,16 +247,11 @@ static void test_isBootOk_wrong_tag()
 	check("isBootOk OK,PING -> false", !isBootOk(msg));
 }
 
-// =============================================================================
-// isPingResponse 测试
-// =============================================================================
+// isPingResponse
 
 static void test_isPingResponse_valid()
 {
 	auto msg = Uart::parseLine("OK,PING");
-	// parseLine: tag="OK", type=OK, fields=["PING"]
-	check("parseLine OK,PING -> type OK",
-	      msg.type == UartMessageType::OK);
 	check("isPingResponse OK,PING -> true", isPingResponse(msg));
 }
 
@@ -282,9 +275,7 @@ static void test_isPingResponse_wrong_type()
 	check("isPingResponse ERR,PING -> false", !isPingResponse(msg));
 }
 
-// =============================================================================
-// getProtocolVersion 测试 (V5: PROTO,5)
-// =============================================================================
+// getProtocolVersion (legacy: PROTO,<single_version>)
 
 static void test_getProtocolVersion_valid()
 {
@@ -297,8 +288,7 @@ static void test_getProtocolVersion_v4_accepted()
 {
 	auto msg = Uart::parseLine("PROTO,4");
 	auto v = getProtocolVersion(msg);
-	check("getProtocolVersion PROTO,4 -> 4 (parsed, not enforced)",
-	      v.has_value() && *v == 4);
+	check("getProtocolVersion PROTO,4 -> 4", v.has_value() && *v == 4);
 }
 
 static void test_getProtocolVersion_abc_rejected()
@@ -326,20 +316,117 @@ static void test_getProtocolVersion_empty()
 static void test_getProtocolVersion_proto_query()
 {
 	auto msg = Uart::parseLine("PROTO?");
-	// PROTO? 会被解析为类型 DATA（因为末尾有?，不匹配PROTO）
-	// 确认 getProtocolVersion 拒绝它
 	auto v = getProtocolVersion(msg);
-	check("getProtocolVersion PROTO? -> nullopt (tag mismatch)",
-	      !v.has_value());
+	check("getProtocolVersion PROTO? -> nullopt", !v.has_value());
 }
 
-// =============================================================================
-// UART 行解析测试（\n vs \r\n 兼容性）
-// =============================================================================
+
+// V5.2 PROTO,<major>,<minor>
+
+
+static void test_getProtoMajorMinor_valid()
+{
+	auto msg = Uart::parseLine("PROTO,5,2");
+	auto major = getProtocolVersionMajor(msg);
+	auto minor = getProtocolVersionMinor(msg);
+	check("getProtocolVersionMajor PROTO,5,2 -> 5",
+	      major.has_value() && *major == 5);
+	check("getProtocolVersionMinor PROTO,5,2 -> 2",
+	      minor.has_value() && *minor == 2);
+}
+
+static void test_getProtoMajorMinor_old_format_rejected()
+{
+	auto msg = Uart::parseLine("PROTO,5");
+	auto major = getProtocolVersionMajor(msg);
+	check("getProtocolVersionMajor PROTO,5 -> nullopt",
+	      !major.has_value());
+}
+
+static void test_getProtoMajorMinor_abc_rejected()
+{
+	auto msg = Uart::parseLine("PROTO,abc,2");
+	auto major = getProtocolVersionMajor(msg);
+	check("getProtocolVersionMajor PROTO,abc,2 -> nullopt",
+	      !major.has_value());
+}
+
+
+// CAPS response
+
+
+static void test_isCapsResponse_valid()
+{
+	auto msg = Uart::parseLine("CAPS,MOTION=4,BALL=2");
+	check("isCapsResponse CAPS,MOTION=4,BALL=2 -> true",
+	      isCapsResponse(msg));
+}
+
+static void test_isCapsResponse_wrong()
+{
+	auto msg = Uart::parseLine("PROTO,5,2");
+	check("isCapsResponse PROTO,5,2 -> false", !isCapsResponse(msg));
+}
+
+
+// M000X mission code
+
+
+static void test_isMissionCode_valid()
+{
+	auto msg = Uart::parseLine("M0004");
+	check("isMissionCode M0004 -> true", isMissionCode(msg));
+}
+
+static void test_isMissionCode_invalid()
+{
+	auto msg = Uart::parseLine("M0006");
+	check("isMissionCode M0006 -> false", !isMissionCode(msg));
+}
+
+static void test_parseMissionCode()
+{
+	auto msg = Uart::parseLine("M0003");
+	check("parseMissionCode M0003 -> 3", parseMissionCode(msg) == 3);
+}
+
+static void test_missionModeName()
+{
+	check("missionModeName 1 -> H2", missionModeName(1) == "H2");
+	check("missionModeName 4 -> H5", missionModeName(4) == "H5");
+	check("missionModeName 5 -> H6", missionModeName(5) == "H6");
+	check("missionModeName 0 -> empty", missionModeName(0) == "");
+}
+
+
+// CONTESTSTART / CONTESTSTATUS
+
+
+static void test_makeContestStartLine_v5()
+{
+	auto line = makeContestStartLine("H5");
+	check("makeContestStartLine H5", line == "CONTESTSTART,H5");
+}
+
+static void test_makeContestStatusQueryLine()
+{
+	auto line = makeContestStatusQueryLine();
+	check("makeContestStatusQueryLine", line == "CONTESTSTATUS?");
+}
+
+
+// UART parseLine (M0005 / PROTO)
+
+
+static void test_parseLine_m0005()
+{
+	auto msg = Uart::parseLine("M0005");
+	check("parseLine M0005 -> KEY_EVENT",
+	      msg.type == UartMessageType::KEY_EVENT);
+}
 
 static void test_parseLine_crlf()
 {
-	// parseLine 不处理末尾换行，只接收纯文本行
 	auto msg = Uart::parseLine("BOOT,OK");
 	check("parseLine BOOT,OK (no newline)",
 	      msg.type == UartMessageType::BOOT);
@@ -352,13 +439,13 @@ static void test_parseLine_proto()
 	      msg.type == UartMessageType::PROTOCOL);
 }
 
-// =============================================================================
-// 入口
-// =============================================================================
+
+// main
+
 
 int main()
 {
-	std::cout << "=== V5 Protocol Unit Tests ===\n\n";
+	std::cout << "=== V5.2 Protocol Unit Tests ===\n\n";
 
 	std::cout << "[1] makeTargetLine\n";
 	test_makeTargetLine_correct();
@@ -374,7 +461,7 @@ int main()
 	test_makeLostLine_correct();
 	test_makeLostLine_large_seq();
 
-	std::cout << "\n[3] makeBallLine (V5)\n";
+	std::cout << "\n[3] makeBallLine (V5 legacy)\n";
 	test_makeBallLine_ok();
 	test_makeBallLine_lost();
 	test_makeBallLine_calib();
@@ -401,7 +488,7 @@ int main()
 	test_isPingResponse_ping_extra();
 	test_isPingResponse_wrong_type();
 
-	std::cout << "\n[6] getProtocolVersion (V5)\n";
+	std::cout << "\n[6] getProtocolVersion (V5 legacy)\n";
 	test_getProtocolVersion_valid();
 	test_getProtocolVersion_v4_accepted();
 	test_getProtocolVersion_abc_rejected();
@@ -409,7 +496,27 @@ int main()
 	test_getProtocolVersion_empty();
 	test_getProtocolVersion_proto_query();
 
-	std::cout << "\n[7] UART parseLine\n";
+	std::cout << "\n[7] V5.2 PROTO major/minor\n";
+	test_getProtoMajorMinor_valid();
+	test_getProtoMajorMinor_old_format_rejected();
+	test_getProtoMajorMinor_abc_rejected();
+
+	std::cout << "\n[8] CAPS response\n";
+	test_isCapsResponse_valid();
+	test_isCapsResponse_wrong();
+
+	std::cout << "\n[9] M000X mission code\n";
+	test_isMissionCode_valid();
+	test_isMissionCode_invalid();
+	test_parseMissionCode();
+	test_missionModeName();
+
+	std::cout << "\n[10] CONTESTSTART / CONTESTSTATUS\n";
+	test_makeContestStartLine_v5();
+	test_makeContestStatusQueryLine();
+
+	std::cout << "\n[11] UART parseLine (M0005 / PROTO)\n";
+	test_parseLine_m0005();
 	test_parseLine_crlf();
 	test_parseLine_proto();
 

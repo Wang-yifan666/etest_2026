@@ -56,7 +56,14 @@ namespace etest::vision
 				r.timestamp_ms = static_cast<int64_t>(ts);
 				return r;
 			case VisionMode::Ball:
-				r = detectBall(frame);
+				if(nn_loaded_ && !yolo_model_unhealthy_)
+				{
+					r = processYoloBall(frame);
+				}
+				else
+				{
+					r = detectBall(frame);
+				}
 				r.frame_id = frame_id_counter_;
 				r.timestamp_ms = static_cast<int64_t>(ts);
 				return r;
@@ -913,10 +920,10 @@ warp_and_detect:
 		// 候选坐标从 ROI 局部空间转换到 warped 全图空间
 		for(auto& c: candidates)
 		{
-			c.center.x += inner_roi.x;
-			c.center.y += inner_roi.y;
+			/* keep ROI-local coords */
+			/* keep ROI-local coords */
 			c.normalized_x = c.center.x
-			    / std::max(1.0, static_cast<double>(warped.cols) - 1.0);
+			    / std::max(1.0, static_cast<double>(inner_roi.width) - 1.0);
 		}
 		debug_ball_candidates_ = candidates;
 		auto now = std::chrono::steady_clock::now();
@@ -1268,7 +1275,14 @@ ratio_zero:
 				return;
 			if(result.target_type == "BALL")
 			{
-				drawBallDebugInfo(frame, result);
+				if(nn_loaded_ && !yolo_model_unhealthy_)
+				{
+					drawYoloDebugInfo(frame, result);
+				}
+				else
+				{
+					drawBallDebugInfo(frame, result);
+				}
 				return;
 			}
 			cv::Point c(frame.cols / 2, frame.rows / 2);

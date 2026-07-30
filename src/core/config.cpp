@@ -694,6 +694,9 @@ namespace
 
 		    "vision.ball.pipe_stable_frames",
 		    "vision.ball.pipe_lost_timeout_frames",
+		    "vision.ball.pipe_min_short_side_px",
+		    "vision.ball.pipe_similarity_center_max_px",
+		    "vision.ball.pipe_similarity_length_max_px",
 
 		    "vision.ball.pipe_warp_width",
 		    "vision.ball.pipe_warp_height",
@@ -763,6 +766,8 @@ namespace
 		    "uart.heartbeat_interval_ms",
 		    "uart.heartbeat_timeout_ms",
 		    "uart.protocol_version",
+		    "uart.protocol_version_major",
+		    "uart.protocol_version_minor",
 
 		    "record.enabled",
 		    "record.save_raw",
@@ -774,10 +779,31 @@ namespace
 
 		    "search.show_preview",
 		    "search.enable_nn",
+		    "search.detector",
 		    "search.model_path",
 		    "search.class_names_path",
 		    "search.nn_confidence_threshold",
 		    "search.nn_nms_threshold",
+		    "search.nn_input_width",
+		    "search.nn_input_height",
+		    "search.zero_sample_count",
+		    "search.zero_max_jitter_px",
+		    "search.zero_max_wait_frames",
+		    "search.zero_min_confidence",
+		    "search.max_target_jump_px",
+		    "search.position_filter_alpha",
+		    "search.max_hold_frames",
+		    "search.lost_confirm_frames",
+		    "search.reacquire_confirm_frames",
+		    "search.mm_per_pixel",
+		    "search.invert_offset",
+		    "search.result_send_interval_ms",
+		    "search.calib_status_interval_ms",
+		    "search.vsession_retry_interval_ms",
+		    "search.max_inference_errors",
+		    "search.model_reload_interval_ms",
+		    "search.camera_id",
+		    "search.nominal_fps",
 		};
 
 		return s;
@@ -1132,13 +1158,13 @@ namespace
 			    raw_config, "vision.ball.zero_mode", ball.zero_mode,
 			    false, result, &ball.source_zero_mode);
 
-			if(ball.zero_mode != "startup" && ball.zero_mode != "fixed")
+			if(ball.zero_mode != "startup" && ball.zero_mode != "fixed"
+			   && ball.zero_mode != "ratio")
 			{
-				addMessage(
-				    result, etest::ConfigMessageLevel::ERROR,
-				    "vision.ball.zero_mode must be \"startup\" or "
-				    "\"fixed\"; keeping \""
-				        + ball.zero_mode + "\"");
+				addMessage(result, etest::ConfigMessageLevel::ERROR,
+				           "vision.ball.zero_mode must be \"startup\", "
+				           "\"fixed\", or \"ratio\"; keeping \""
+				               + ball.zero_mode + "\"");
 			}
 
 			ball.zero_position_px =
@@ -1233,10 +1259,10 @@ namespace
 			    &ball.source_pipe_horizontal_angle_max);
 
 			// ── 管道几何平滑 ──
-			ball.pipe_geometry_alpha = getDouble(
-			    raw_config, "vision.ball.pipe_geometry_alpha",
-			    ball.pipe_geometry_alpha, 0.01, 1.0, result,
-			    &ball.source_pipe_geometry_alpha);
+			ball.pipe_geometry_alpha =
+			    getDouble(raw_config, "vision.ball.pipe_geometry_alpha",
+			              ball.pipe_geometry_alpha, 0.01, 1.0, result,
+			              &ball.source_pipe_geometry_alpha);
 
 			ball.pipe_update_each_frame = getBool(
 			    raw_config, "vision.ball.pipe_update_each_frame",
@@ -1305,30 +1331,29 @@ namespace
 
 			// ── HoughCircles ──
 			ball.hough_dp = getDouble(
-			    raw_config, "vision.ball.hough_dp", ball.hough_dp,
-			    1.0, 2.0, result, &ball.source_hough_dp);
-			ball.hough_min_distance = getDouble(
-			    raw_config, "vision.ball.hough_min_distance",
-			    ball.hough_min_distance, 5.0, 500.0, result,
-			    &ball.source_hough_min_distance);
-			ball.hough_param1 = getDouble(
-			    raw_config, "vision.ball.hough_param1",
-			    ball.hough_param1, 10.0, 255.0, result,
-			    &ball.source_hough_param1);
-			ball.hough_param2 = getDouble(
-			    raw_config, "vision.ball.hough_param2",
-			    ball.hough_param2, 1.0, 255.0, result,
-			    &ball.source_hough_param2);
+			    raw_config, "vision.ball.hough_dp", ball.hough_dp, 1.0,
+			    2.0, result, &ball.source_hough_dp);
+			ball.hough_min_distance =
+			    getDouble(raw_config, "vision.ball.hough_min_distance",
+			              ball.hough_min_distance, 5.0, 500.0, result,
+			              &ball.source_hough_min_distance);
+			ball.hough_param1 =
+			    getDouble(raw_config, "vision.ball.hough_param1",
+			              ball.hough_param1, 10.0, 255.0, result,
+			              &ball.source_hough_param1);
+			ball.hough_param2 =
+			    getDouble(raw_config, "vision.ball.hough_param2",
+			              ball.hough_param2, 1.0, 255.0, result,
+			              &ball.source_hough_param2);
 
-			ball.ball_min_radius = getInt(
-			    raw_config, "vision.ball.ball_min_radius",
-			    ball.ball_min_radius, 1, 500, result,
-			    &ball.source_ball_min_radius);
-			ball.ball_max_radius = getInt(
-			    raw_config, "vision.ball.ball_max_radius",
-			    ball.ball_max_radius,
-			    ball.ball_min_radius + 1, 500, result,
-			    &ball.source_ball_max_radius);
+			ball.ball_min_radius =
+			    getInt(raw_config, "vision.ball.ball_min_radius",
+			           ball.ball_min_radius, 1, 500, result,
+			           &ball.source_ball_min_radius);
+			ball.ball_max_radius =
+			    getInt(raw_config, "vision.ball.ball_max_radius",
+			           ball.ball_max_radius, ball.ball_min_radius + 1,
+			           500, result, &ball.source_ball_max_radius);
 			ball.ball_expected_radius = getDouble(
 			    raw_config, "vision.ball.ball_expected_radius",
 			    ball.ball_expected_radius, 1.0, 500.0, result,
@@ -1347,10 +1372,10 @@ namespace
 			    ball.ball_expected_center_y_ratio, 0.0, 1.0, result,
 			    &ball.source_ball_expected_center_y_ratio);
 
-			ball.ball_max_inner_gray = getDouble(
-			    raw_config, "vision.ball.ball_max_inner_gray",
-			    ball.ball_max_inner_gray, 0.0, 255.0, result,
-			    &ball.source_ball_max_inner_gray);
+			ball.ball_max_inner_gray =
+			    getDouble(raw_config, "vision.ball.ball_max_inner_gray",
+			              ball.ball_max_inner_gray, 0.0, 255.0, result,
+			              &ball.source_ball_max_inner_gray);
 			ball.ball_min_ring_contrast = getDouble(
 			    raw_config, "vision.ball.ball_min_ring_contrast",
 			    ball.ball_min_ring_contrast, -255.0, 255.0, result,
@@ -1359,24 +1384,24 @@ namespace
 			    raw_config, "vision.ball.ball_good_ring_contrast",
 			    ball.ball_good_ring_contrast, 0.1, 255.0, result,
 			    &ball.source_ball_good_ring_contrast);
-			ball.ball_min_quality = getDouble(
-			    raw_config, "vision.ball.ball_min_quality",
-			    ball.ball_min_quality, 0.0, 1.0, result,
-			    &ball.source_ball_min_quality);
+			ball.ball_min_quality =
+			    getDouble(raw_config, "vision.ball.ball_min_quality",
+			              ball.ball_min_quality, 0.0, 1.0, result,
+			              &ball.source_ball_min_quality);
 
 			// ── alpha-beta 跟踪器 ──
-			ball.tracker_alpha = getDouble(
-			    raw_config, "vision.ball.tracker_alpha",
-			    ball.tracker_alpha, 0.01, 1.0, result,
-			    &ball.source_tracker_alpha);
-			ball.tracker_beta = getDouble(
-			    raw_config, "vision.ball.tracker_beta",
-			    ball.tracker_beta, 0.001, 1.0, result,
-			    &ball.source_tracker_beta);
-			ball.tracker_gate_ratio = getDouble(
-			    raw_config, "vision.ball.tracker_gate_ratio",
-			    ball.tracker_gate_ratio, 0.01, 1.0, result,
-			    &ball.source_tracker_gate_ratio);
+			ball.tracker_alpha =
+			    getDouble(raw_config, "vision.ball.tracker_alpha",
+			              ball.tracker_alpha, 0.01, 1.0, result,
+			              &ball.source_tracker_alpha);
+			ball.tracker_beta =
+			    getDouble(raw_config, "vision.ball.tracker_beta",
+			              ball.tracker_beta, 0.001, 1.0, result,
+			              &ball.source_tracker_beta);
+			ball.tracker_gate_ratio =
+			    getDouble(raw_config, "vision.ball.tracker_gate_ratio",
+			              ball.tracker_gate_ratio, 0.01, 1.0, result,
+			              &ball.source_tracker_gate_ratio);
 			ball.tracker_gate_growth_per_lost_frame = getDouble(
 			    raw_config,
 			    "vision.ball.tracker_gate_growth_per_lost_frame",
@@ -1394,8 +1419,7 @@ namespace
 			    result,
 			    &ball.source_tracker_max_speed_ratio_per_second);
 			ball.tracker_max_predict_frames = getInt(
-			    raw_config,
-			    "vision.ball.tracker_max_predict_frames",
+			    raw_config, "vision.ball.tracker_max_predict_frames",
 			    ball.tracker_max_predict_frames, 1, 120, result,
 			    &ball.source_tracker_max_predict_frames);
 			ball.tracker_global_reacquire_frames = getInt(
@@ -1408,20 +1432,20 @@ namespace
 			    ball.reacquire_confirm_frames, 1, 10, result,
 			    &ball.source_reacquire_confirm_frames);
 
-			ball.acquire_confirm_frames = getInt(
-			    raw_config, "vision.ball.acquire_confirm_frames",
-			    ball.acquire_confirm_frames, 1, 10, result,
-			    &ball.source_acquire_confirm_frames);
+			ball.acquire_confirm_frames =
+			    getInt(raw_config, "vision.ball.acquire_confirm_frames",
+			           ball.acquire_confirm_frames, 1, 10, result,
+			           &ball.source_acquire_confirm_frames);
 
-			ball.zero_position_ratio = getDouble(
-			    raw_config, "vision.ball.zero_position_ratio",
-			    ball.zero_position_ratio, 0.0, 1.0, result,
-			    &ball.source_zero_position_ratio);
+			ball.zero_position_ratio =
+			    getDouble(raw_config, "vision.ball.zero_position_ratio",
+			              ball.zero_position_ratio, 0.0, 1.0, result,
+			              &ball.source_zero_position_ratio);
 
-			ball.video_output = getString(
-			    raw_config, "vision.ball.video_output",
-			    ball.video_output, true, result,
-			    &ball.source_video_output);
+			ball.video_output =
+			    getString(raw_config, "vision.ball.video_output",
+			              ball.video_output, true, result,
+			              &ball.source_video_output);
 		}
 
 		// ---- [uart] ----
@@ -1482,6 +1506,16 @@ namespace
 		           config.uart.protocol_version, 4, 5, result,
 		           &config.uart.source_protocol_version);
 
+		config.uart.protocol_version_major =
+		    getInt(raw_config, "uart.protocol_version_major",
+		           config.uart.protocol_version_major, 1, 10, result,
+		           &config.uart.source_protocol_version_major);
+
+		config.uart.protocol_version_minor =
+		    getInt(raw_config, "uart.protocol_version_minor",
+		           config.uart.protocol_version_minor, 0, 10, result,
+		           &config.uart.source_protocol_version_minor);
+
 		// ---- [record] ----
 		config.record.enabled =
 		    getBool(raw_config, "record.enabled", config.record.enabled,
@@ -1540,6 +1574,111 @@ namespace
 		    getDouble(raw_config, "search.nn_nms_threshold",
 		              config.search.nn_nms_threshold, 0.0, 1.0, result,
 		              &config.search.source_nn_nms_threshold);
+
+		// ── 检测器选择 ──
+		config.search.detector = getString(
+		    raw_config, "search.detector", config.search.detector,
+		    false, result, &config.search.source_detector);
+		if(config.search.detector != "traditional"
+		   && config.search.detector != "yolo")
+		{
+			addMessage(result, etest::ConfigMessageLevel::ERROR,
+			           "search.detector must be \"traditional\" or "
+			           "\"yolo\"; keeping \""
+			               + config.search.detector + "\"");
+		}
+
+		// ── YOLO 输入尺寸 ──
+		config.search.nn_input_width =
+		    getInt(raw_config, "search.nn_input_width",
+		           config.search.nn_input_width, 32, 1920, result,
+		           &config.search.source_nn_input_width);
+		config.search.nn_input_height =
+		    getInt(raw_config, "search.nn_input_height",
+		           config.search.nn_input_height, 32, 1920, result,
+		           &config.search.source_nn_input_height);
+
+		// ── 原点标定 ──
+		config.search.zero_sample_count =
+		    getInt(raw_config, "search.zero_sample_count",
+		           config.search.zero_sample_count, 3, 500, result,
+		           &config.search.source_zero_sample_count);
+		config.search.zero_max_jitter_px =
+		    getDouble(raw_config, "search.zero_max_jitter_px",
+		              config.search.zero_max_jitter_px, 0.1, 100.0,
+		              result, &config.search.source_zero_max_jitter_px);
+		config.search.zero_max_wait_frames =
+		    getInt(raw_config, "search.zero_max_wait_frames",
+		           config.search.zero_max_wait_frames, 10, 6000, result,
+		           &config.search.source_zero_max_wait_frames);
+		config.search.zero_min_confidence = getDouble(
+		    raw_config, "search.zero_min_confidence",
+		    config.search.zero_min_confidence, 0.0, 1.0, result,
+		    &config.search.source_zero_min_confidence);
+
+		// ── 跟踪与滤波 ──
+		config.search.max_target_jump_px =
+		    getDouble(raw_config, "search.max_target_jump_px",
+		              config.search.max_target_jump_px, 1.0, 500.0,
+		              result, &config.search.source_max_target_jump_px);
+		config.search.position_filter_alpha = getDouble(
+		    raw_config, "search.position_filter_alpha",
+		    config.search.position_filter_alpha, 0.01, 1.0, result,
+		    &config.search.source_position_filter_alpha);
+		config.search.max_hold_frames =
+		    getInt(raw_config, "search.max_hold_frames",
+		           config.search.max_hold_frames, 0, 30, result,
+		           &config.search.source_max_hold_frames);
+		config.search.lost_confirm_frames =
+		    getInt(raw_config, "search.lost_confirm_frames",
+		           config.search.lost_confirm_frames, 1, 60, result,
+		           &config.search.source_lost_confirm_frames);
+		config.search.reacquire_confirm_frames = getInt(
+		    raw_config, "search.reacquire_confirm_frames",
+		    config.search.reacquire_confirm_frames, 1, 10, result,
+		    &config.search.source_reacquire_confirm_frames);
+
+		// ── 物理换算 ──
+		config.search.mm_per_pixel =
+		    getDouble(raw_config, "search.mm_per_pixel",
+		              config.search.mm_per_pixel, 0.001, 100.0, result,
+		              &config.search.source_mm_per_pixel);
+		config.search.invert_offset =
+		    getBool(raw_config, "search.invert_offset",
+		            config.search.invert_offset, result,
+		            &config.search.source_invert_offset);
+
+		// ── 通信周期 ──
+		config.search.result_send_interval_ms = getInt(
+		    raw_config, "search.result_send_interval_ms",
+		    config.search.result_send_interval_ms, 10, 500, result,
+		    &config.search.source_result_send_interval_ms);
+		config.search.calib_status_interval_ms = getInt(
+		    raw_config, "search.calib_status_interval_ms",
+		    config.search.calib_status_interval_ms, 50, 2000, result,
+		    &config.search.source_calib_status_interval_ms);
+		config.search.vsession_retry_interval_ms = getInt(
+		    raw_config, "search.vsession_retry_interval_ms",
+		    config.search.vsession_retry_interval_ms, 100, 5000, result,
+		    &config.search.source_vsession_retry_interval_ms);
+
+		// ── 模型恢复 ──
+		config.search.max_inference_errors =
+		    getInt(raw_config, "search.max_inference_errors",
+		           config.search.max_inference_errors, 1, 100, result,
+		           &config.search.source_max_inference_errors);
+		config.search.model_reload_interval_ms = getInt(
+		    raw_config, "search.model_reload_interval_ms",
+		    config.search.model_reload_interval_ms, 500, 60000, result,
+		    &config.search.source_model_reload_interval_ms);
+
+		// ── VSESSION ──
+		config.search.camera_id = getString(
+		    raw_config, "search.camera_id", config.search.camera_id,
+		    false, result, &config.search.source_camera_id);
+		config.search.nominal_fps = getInt(
+		    raw_config, "search.nominal_fps", config.search.nominal_fps,
+		    1, 240, result, &config.search.source_nominal_fps);
 	}
 
 	// 模式名称校验
@@ -2027,7 +2166,8 @@ namespace etest
 		    + ", pipe_h_angle_max="
 		    + std::to_string(pipe_horizontal_angle_max)
 		    + ", pipe_geom_alpha=" + std::to_string(pipe_geometry_alpha)
-		    + ", pipe_update_each=" + std::to_string(pipe_update_each_frame)
+		    + ", pipe_update_each="
+		    + std::to_string(pipe_update_each_frame)
 		    + ", pipe_stable=" + std::to_string(pipe_stable_frames)
 		    + ", pipe_lost_timeout="
 		    + std::to_string(pipe_lost_timeout_frames)
@@ -2088,7 +2228,10 @@ namespace etest
 		    + std::to_string(heartbeat_interval_ms)
 		    + ", heartbeat_timeout_ms="
 		    + std::to_string(heartbeat_timeout_ms)
-		    + ", protocol_version=" + std::to_string(protocol_version);
+		    + ", protocol_version_major="
+		    + std::to_string(protocol_version_major)
+		    + ", protocol_version_minor="
+		    + std::to_string(protocol_version_minor);
 	}
 
 	std::string RecordConfig::to_string() const
@@ -2107,10 +2250,36 @@ namespace etest
 		return "show_preview="
 		    + std::string(show_preview ? "true" : "false")
 		    + ", enable_nn=" + std::string(enable_nn ? "true" : "false")
-		    + ", model_path=" + model_path + ", class_names_path="
-		    + class_names_path + ", nn_confidence_threshold="
+		    + ", detector=" + detector + ", model_path=" + model_path
+		    + ", class_names_path=" + class_names_path
+		    + ", nn_confidence_threshold="
 		    + std::to_string(nn_confidence_threshold)
-		    + ", nn_nms_threshold=" + std::to_string(nn_nms_threshold);
+		    + ", nn_nms_threshold=" + std::to_string(nn_nms_threshold)
+		    + ", nn_input=" + std::to_string(nn_input_width) + "x"
+		    + std::to_string(nn_input_height)
+		    + ", zero_samples=" + std::to_string(zero_sample_count)
+		    + ", zero_jitter=" + std::to_string(zero_max_jitter_px)
+		    + "px, zero_wait=" + std::to_string(zero_max_wait_frames)
+		    + "fr, zero_min_conf=" + std::to_string(zero_min_confidence)
+		    + ", max_jump=" + std::to_string(max_target_jump_px)
+		    + "px, filt_alpha=" + std::to_string(position_filter_alpha)
+		    + ", max_hold=" + std::to_string(max_hold_frames)
+		    + ", lost_confirm=" + std::to_string(lost_confirm_frames)
+		    + ", reacquire_confirm="
+		    + std::to_string(reacquire_confirm_frames)
+		    + ", mm_per_pixel=" + std::to_string(mm_per_pixel)
+		    + ", invert_offset="
+		    + std::string(invert_offset ? "true" : "false")
+		    + ", send_int=" + std::to_string(result_send_interval_ms)
+		    + "ms, calib_int="
+		    + std::to_string(calib_status_interval_ms)
+		    + "ms, vsession_retry="
+		    + std::to_string(vsession_retry_interval_ms)
+		    + "ms, max_infer_err="
+		    + std::to_string(max_inference_errors)
+		    + ", reload_int=" + std::to_string(model_reload_interval_ms)
+		    + "ms, camera_id=" + camera_id
+		    + ", nominal_fps=" + std::to_string(nominal_fps);
 	}
 
 	// 配置校验
@@ -2169,12 +2338,12 @@ namespace etest
 			warn("uart.device is empty");
 		}
 
-		// 协议版本只接受 4 或 5
-		if(config.uart.protocol_version != 4
-		   && config.uart.protocol_version != 5)
+		// 协议主版本号只接受 4 或 5
+		if(config.uart.protocol_version_major != 4
+		   && config.uart.protocol_version_major != 5)
 		{
-			err("protocol_version must be 4 or 5, got "
-			    + std::to_string(config.uart.protocol_version));
+			err("protocol_version_major must be 4 or 5, got "
+			    + std::to_string(config.uart.protocol_version_major));
 		}
 
 		// handshake_timeout_ms: 100~10000

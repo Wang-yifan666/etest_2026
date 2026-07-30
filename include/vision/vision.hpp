@@ -47,6 +47,7 @@ namespace etest::vision
 		std::string target_type;
 		std::string error_code;
 		int offset_mm = 0;
+		int position_0p1mm = 0; // 0.1mm 单位，给新协议 BALL 行
 		bool calibrated = false;
 	};
 
@@ -56,6 +57,29 @@ namespace etest::vision
 		float confidence = 0.0F;
 		int x1 = 0, y1 = 0, x2 = 0, y2 = 0, x3 = 0, y3 = 0, x4 = 0,
 		    y4 = 0;
+	};
+
+	// YOLO 检测结果
+	struct YoloDetection
+	{
+		int class_id = -1;
+		float confidence = 0.0F;
+		cv::Rect box;
+
+		cv::Point2f center() const noexcept
+		{
+			return {
+			    box.x + box.width * 0.5F,
+			    box.y + box.height * 0.5F};
+		}
+	};
+
+	// Letterbox 预处理信息
+	struct LetterboxInfo
+	{
+		float scale = 1.0F;
+		int pad_x = 0;
+		int pad_y = 0;
 	};
 
 	struct TrackResult
@@ -110,6 +134,19 @@ namespace etest::vision
 		    const noexcept;
 
 		bool isNnLoaded() const noexcept;
+
+		// ── YOLO 接口 ──
+		void setVisionEpoch(std::uint64_t epoch_ns) noexcept;
+		std::vector<YoloDetection> inferYolo(
+		    const cv::Mat& frame) noexcept;
+		VisionResult processYoloBall(const cv::Mat& frame) noexcept;
+		void resetYoloSession() noexcept;
+		bool isYoloBallReady() const noexcept;
+		void drawYoloDebugInfo(cv::Mat& frame,
+		                       const VisionResult& result) noexcept;
+		bool tryReloadYoloModel(
+		    const std::string& model_path,
+		    const std::string& class_names_path) noexcept;
 
 	private:
 		VisionResult detectColorTarget(const cv::Mat& frame);
@@ -203,6 +240,31 @@ namespace etest::vision
 		std::string last_ball_error_code_;
 		std::chrono::steady_clock::time_point last_ball_error_time_{};
 		int ball_lost_frames_on_recover_ = 0;
+
+		// ── YOLO 会话状态 ──
+		std::uint64_t vision_epoch_ns_ = 0;
+		bool yolo_shape_logged_ = false;
+
+		std::deque<cv::Point2f> yolo_zero_samples_;
+		bool yolo_zero_locked_ = false;
+		cv::Point2f yolo_zero_origin_{0.0F, 0.0F};
+		int yolo_calib_frame_count_ = 0;
+
+		int yolo_lost_frames_ = 0;
+		int yolo_reacquire_confirm_ = 0;
+		cv::Point2f yolo_last_center_{-1.0F, -1.0F};
+		bool yolo_tracking_initialized_ = false;
+
+		double yolo_filtered_x_ = 0.0;
+
+		int yolo_consecutive_errors_ = 0;
+		bool yolo_model_unhealthy_ = false;
+		std::chrono::steady_clock::time_point yolo_last_reload_attempt_;
+		std::chrono::steady_clock::time_point yolo_lost_log_time_;
+		std::string yolo_last_error_code_;
+		std::chrono::steady_clock::time_point yolo_last_error_time_;
+
+		std::vector<YoloDetection> yolo_last_detections_;
 	};
 
 } // namespace etest::vision

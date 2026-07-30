@@ -182,21 +182,7 @@ namespace
 		        + ", uart.queue_capacity="
 		        + std::to_string(config.uart.queue_capacity));
 
-		ETEST_LOG_INFO(
-		    "CONFIG",
-		    "search.show_preview="
-		        + std::string(config.search.show_preview ? "true"
-		                                                 : "false")
-		        + ", search.enable_nn="
-		        + std::string(config.search.enable_nn ? "true"
-		                                              : "false")
-		        + ", search.model_path=" + config.search.model_path
-		        + ", search.class_names_path="
-		        + config.search.class_names_path
-		        + ", search.nn_confidence_threshold="
-		        + std::to_string(config.search.nn_confidence_threshold)
-		        + ", search.nn_nms_threshold="
-		        + std::to_string(config.search.nn_nms_threshold));
+		ETEST_LOG_INFO("CONFIG", config.search.to_string());
 	}
 
 	// 简单命令行解析
@@ -337,7 +323,11 @@ int main(int argc, char* argv[])
 		                      0,
 		                      0,
 		                      etest::ExitReason::NORMAL,
-		                      &g_shutdown_requested};
+		                      &g_shutdown_requested,
+		                      false,
+		                      0,
+		                      {},
+		                      etest::TaskPhase::CALIBRATING};
 
 		etest::State current_state = etest::State::START;
 

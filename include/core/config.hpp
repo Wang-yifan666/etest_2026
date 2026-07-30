@@ -414,7 +414,10 @@ namespace etest
 		int handshake_timeout_ms = 1500;
 		int heartbeat_interval_ms = 500;
 		int heartbeat_timeout_ms = 2000;
-		int protocol_version = 5; // V5
+		int protocol_version_major = 5;
+		int protocol_version_minor = 2;
+		// 旧版兼容字段
+		int protocol_version = 5; // V5 (deprecated)
 
 		SourceInfo source_device;
 		SourceInfo source_baudrate;
@@ -427,6 +430,8 @@ namespace etest
 		SourceInfo source_handshake_timeout_ms;
 		SourceInfo source_heartbeat_interval_ms;
 		SourceInfo source_heartbeat_timeout_ms;
+		SourceInfo source_protocol_version_major;
+		SourceInfo source_protocol_version_minor;
 		SourceInfo source_protocol_version;
 
 		std::string to_string() const;
@@ -461,17 +466,78 @@ namespace etest
 	{
 		bool show_preview = true;
 		bool enable_nn = false;
+
+		// ── 检测器选择 ──
+		std::string detector = "traditional"; // "traditional" | "yolo"
+
+		// ── 模型路径 ──
 		std::string model_path = "model/yolov5s.onnx";
 		std::string class_names_path = "model/coco.names";
+
 		double nn_confidence_threshold = 0.5;
 		double nn_nms_threshold = 0.4;
 
+		// ── YOLO 输入尺寸 ──
+		int nn_input_width = 640;
+		int nn_input_height = 640;
+
+		// ── 原点标定 ──
+		int zero_sample_count = 12;
+		double zero_max_jitter_px = 5.0;
+		int zero_max_wait_frames = 90;
+		double zero_min_confidence = 0.55;
+
+		// ── 跟踪与滤波 ──
+		double max_target_jump_px = 80.0;
+		double position_filter_alpha = 0.45;
+		int max_hold_frames = 2;
+		int lost_confirm_frames = 3;
+		int reacquire_confirm_frames = 2;
+
+		// ── 物理换算 ──
+		double mm_per_pixel = 0.52;
+		bool invert_offset = false;
+
+		// ── 通信周期 ──
+		int result_send_interval_ms = 40;
+		int calib_status_interval_ms = 250;
+		int vsession_retry_interval_ms = 500;
+
+		// ── 模型恢复 ──
+		int max_inference_errors = 5;
+		int model_reload_interval_ms = 2000;
+
+		// ── VSESSION ──
+		std::string camera_id = "CAM0";
+		int nominal_fps = 30;
+
 		SourceInfo source_show_preview;
 		SourceInfo source_enable_nn;
+		SourceInfo source_detector;
 		SourceInfo source_model_path;
 		SourceInfo source_class_names_path;
 		SourceInfo source_nn_confidence_threshold;
 		SourceInfo source_nn_nms_threshold;
+		SourceInfo source_nn_input_width;
+		SourceInfo source_nn_input_height;
+		SourceInfo source_zero_sample_count;
+		SourceInfo source_zero_max_jitter_px;
+		SourceInfo source_zero_max_wait_frames;
+		SourceInfo source_zero_min_confidence;
+		SourceInfo source_max_target_jump_px;
+		SourceInfo source_position_filter_alpha;
+		SourceInfo source_max_hold_frames;
+		SourceInfo source_lost_confirm_frames;
+		SourceInfo source_reacquire_confirm_frames;
+		SourceInfo source_mm_per_pixel;
+		SourceInfo source_invert_offset;
+		SourceInfo source_result_send_interval_ms;
+		SourceInfo source_calib_status_interval_ms;
+		SourceInfo source_vsession_retry_interval_ms;
+		SourceInfo source_max_inference_errors;
+		SourceInfo source_model_reload_interval_ms;
+		SourceInfo source_camera_id;
+		SourceInfo source_nominal_fps;
 
 		std::string to_string() const;
 	};

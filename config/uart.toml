@@ -1,5 +1,5 @@
 [uart]
-device = "/dev/ttyACM0"
+device = "/dev/pts/6"
 baudrate = 115200
 timeout_ms = 50
 write_timeout_ms = 200
@@ -7,6 +7,9 @@ reconnect_interval_ms = 1000
 auto_reconnect = true
 max_line_length = 512
 queue_capacity = 256
+protocol_version_major = 5
+protocol_version_minor = 2
+# 旧版兼容
 protocol_version = 5
 handshake_timeout_ms = 1500
 heartbeat_interval_ms = 500

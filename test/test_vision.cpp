@@ -247,14 +247,17 @@ namespace
 
 		for(double ang: angles)
 		{
-			cv::RotatedRect rect(
-			    cv::Point2f(320, 200), cv::Size2f(400, 80), static_cast<float>(ang));
+			cv::RotatedRect rect(cv::Point2f(320, 200),
+			                     cv::Size2f(400, 80),
+			                     static_cast<float>(ang));
 
 			std::array<cv::Point2f, 4> o;
 			bool r = vp.orderTrackCorners(rect, o);
 			if(!r)
 			{
-				std::cout << "  orderTrackCorners returned false for angle=" << ang << "\n";
+				std::cout
+				    << "  orderTrackCorners returned false for angle="
+				    << ang << "\n";
 				assert(false);
 			}
 
@@ -276,7 +279,8 @@ namespace
 			assert(left_sum < right_sum);
 		}
 
-		std::cout << "[PASS] test_orderTrackCorners_no_flip (multi-angle)\n";
+		std::cout
+		    << "[PASS] test_orderTrackCorners_no_flip (multi-angle)\n";
 	}
 
 	void test_orderTrackCorners_degenerate()
@@ -284,16 +288,15 @@ namespace
 		etest::VisionConfig cfg;
 		etest::vision::VisionProcessor vp(cfg);
 
-		cv::RotatedRect rect(
-		    cv::Point2f(320, 200), cv::Size2f(1, 1), 0);
+		cv::RotatedRect rect(cv::Point2f(320, 200), cv::Size2f(1, 1),
+		                     0);
 
 		std::array<cv::Point2f, 4> o;
 		bool r = vp.orderTrackCorners(rect, o);
 		(void)r;
 		assert(!r);
 
-		std::cout
-		    << "[PASS] test_orderTrackCorners_degenerate\n";
+		std::cout << "[PASS] test_orderTrackCorners_degenerate\n";
 	}
 
 	void test_perspective_direction()
@@ -305,21 +308,20 @@ namespace
 
 		// 模拟横向管道 (TL, TR, BR, BL)，构造一个略微倾斜的矩形
 		std::array<cv::Point2f, 4> pts = {
-			cv::Point2f(100.0F, 200.0F),   // TL
-			cv::Point2f(520.0F, 210.0F),   // TR
-			cv::Point2f(510.0F, 250.0F),   // BR
-			cv::Point2f(90.0F, 240.0F)     // BL
+		    cv::Point2f(100.0F, 200.0F), // TL
+		    cv::Point2f(520.0F, 210.0F), // TR
+		    cv::Point2f(510.0F, 250.0F), // BR
+		    cv::Point2f(90.0F, 240.0F)   // BL
 		};
 
 		// 计算透视变换矩阵（模拟 updateWarpMatrices 的行为）
 		int ww = cfg.ball.pipe_warp_width;
 		int wh = cfg.ball.pipe_warp_height;
 		const cv::Point2f dst[4] = {
-			{0.0F, 0.0F},
-			{static_cast<float>(ww - 1), 0.0F},
-			{static_cast<float>(ww - 1), static_cast<float>(wh - 1)},
-			{0.0F, static_cast<float>(wh - 1)}
-		};
+		    {0.0F, 0.0F},
+		    {static_cast<float>(ww - 1), 0.0F},
+		    {static_cast<float>(ww - 1), static_cast<float>(wh - 1)},
+		    {0.0F, static_cast<float>(wh - 1)}};
 		cv::Mat M = cv::getPerspectiveTransform(pts.data(), dst);
 		assert(!M.empty());
 
@@ -360,23 +362,19 @@ namespace
 		double alpha = 0.5;
 		for(int i = 0; i < 4; ++i)
 		{
-			float new_x =
-			    static_cast<float>(alpha * det_pts[i].x
-			                       + (1.0 - alpha)
-			                           * old_pts[i].x);
-			float new_y =
-			    static_cast<float>(alpha * det_pts[i].y
-			                       + (1.0 - alpha)
-			                           * old_pts[i].y);
+			float new_x = static_cast<float>(
+			    alpha * det_pts[i].x + (1.0 - alpha) * old_pts[i].x);
+			float new_y = static_cast<float>(
+			    alpha * det_pts[i].y + (1.0 - alpha) * old_pts[i].y);
 			(void)new_x;
 			(void)new_y;
 
-			assert(std::abs(new_x - (old_pts[i].x + det_pts[i].x)
-			                       / 2.0F)
-			       < 0.001F);
-			assert(std::abs(new_y - (old_pts[i].y + det_pts[i].y)
-			                       / 2.0F)
-			       < 0.001F);
+			assert(
+			    std::abs(new_x - (old_pts[i].x + det_pts[i].x) / 2.0F)
+			    < 0.001F);
+			assert(
+			    std::abs(new_y - (old_pts[i].y + det_pts[i].y) / 2.0F)
+			    < 0.001F);
 		}
 
 		std::cout << "[PASS] test_smooth_points_between\n";
@@ -384,19 +382,15 @@ namespace
 
 	void test_warp_roundtrip()
 	{
-		cv::Point2f src_pts[4] = {cv::Point2f(0, 0),
-		                          cv::Point2f(499, 0),
-		                          cv::Point2f(499, 119),
-		                          cv::Point2f(0, 119)};
-		cv::Point2f dst_pts[4] = {cv::Point2f(50, 30),
-		                          cv::Point2f(450, 25),
-		                          cv::Point2f(455, 100),
-		                          cv::Point2f(45, 105)};
+		cv::Point2f src_pts[4] = {
+		    cv::Point2f(0, 0), cv::Point2f(499, 0),
+		    cv::Point2f(499, 119), cv::Point2f(0, 119)};
+		cv::Point2f dst_pts[4] = {
+		    cv::Point2f(50, 30), cv::Point2f(450, 25),
+		    cv::Point2f(455, 100), cv::Point2f(45, 105)};
 
-		cv::Mat warp = cv::getPerspectiveTransform(
-		    src_pts, dst_pts);
-		cv::Mat inv = cv::getPerspectiveTransform(
-		    dst_pts, src_pts);
+		cv::Mat warp = cv::getPerspectiveTransform(src_pts, dst_pts);
+		cv::Mat inv = cv::getPerspectiveTransform(dst_pts, src_pts);
 
 		for(const auto& pt: src_pts)
 		{
@@ -452,8 +446,8 @@ namespace
 
 		cv::Mat roi = makeGrayRoi(300, 100);
 		// 画一个暗圆（钢球）
-		cv::circle(roi, cv::Point(150, 50), 18,
-		           cv::Scalar(25, 25, 25), -1);
+		cv::circle(roi, cv::Point(150, 50), 18, cv::Scalar(25, 25, 25),
+		           -1);
 
 		auto c = vp.detectBallCandidates(roi);
 		assert(!c.empty());
@@ -487,8 +481,7 @@ namespace
 		(void)any_passed;
 		assert(!any_passed);
 
-		std::cout
-		    << "[PASS] test_hough_bright_circle_rejected\n";
+		std::cout << "[PASS] test_hough_bright_circle_rejected\n";
 	}
 
 	void test_hough_radius_out_of_range()
@@ -503,8 +496,8 @@ namespace
 
 		cv::Mat roi = makeGrayRoi(300, 120);
 		// 画一个过大半径的圆（60px，超出 max_radius=30）
-		cv::circle(roi, cv::Point(150, 60), 60,
-		           cv::Scalar(25, 25, 25), -1);
+		cv::circle(roi, cv::Point(150, 60), 60, cv::Scalar(25, 25, 25),
+		           -1);
 
 		auto c = vp.detectBallCandidates(roi);
 		// HoughCircles 不会返回这个圆
@@ -515,8 +508,7 @@ namespace
 		(void)has_large;
 		assert(!has_large);
 
-		std::cout
-		    << "[PASS] test_hough_radius_out_of_range\n";
+		std::cout << "[PASS] test_hough_radius_out_of_range\n";
 	}
 
 	void test_hough_edge_y_rejected()
@@ -533,8 +525,8 @@ namespace
 
 		cv::Mat roi = makeGrayRoi(300, 100);
 		// 圆靠近 top（y=5，比例=0.05 < min_ratio=0.20）
-		cv::circle(roi, cv::Point(150, 5), 15,
-		           cv::Scalar(25, 25, 25), -1);
+		cv::circle(roi, cv::Point(150, 5), 15, cv::Scalar(25, 25, 25),
+		           -1);
 
 		auto c = vp.detectBallCandidates(roi);
 		bool any_passed = false;

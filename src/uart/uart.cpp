@@ -862,7 +862,8 @@ namespace etest
 				message.type = UartMessageType::BOOT;
 			}
 			else if(message.tag == "M0001" || message.tag == "M0002"
-			        || message.tag == "M0003" || message.tag == "M0004")
+			        || message.tag == "M0003" || message.tag == "M0004"
+			        || message.tag == "M0005")
 			{
 				message.type = UartMessageType::KEY_EVENT;
 			}

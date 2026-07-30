@@ -1,19 +1,72 @@
 [search]
 
-# 是否在搜索阶段显示摄像头预览窗口。ESC/q 可关闭窗口
+# 是否在搜索阶段显示摄像头预览窗口
 show_preview = true
 
-# 是否启用神经网络检测。关闭后仅显示原始画面
+# 是否启用神经网络检测
 enable_nn = true
 
-# ONNX 模型路径
-model_path = "model/yolov5s.onnx"
+# 检测器选择："traditional" | "yolo"（YOLO ONNX）
+detector = "yolo"
 
-# 类别名文件（可省略，缺失时仅显示 class_id）
-class_names_path = "model/coco.names"
+# ONNX 模型路径
+model_path = "model/best.onnx"
+
+# 类别名文件（单类别 ball 时只包含一行 "ball"）
+class_names_path = "model/classes.txt"
 
 # 置信度阈值，低于该值的检测结果会被过滤
-nn_confidence_threshold = 0.35
+nn_confidence_threshold = 0.45
 
 # NMS (非极大值抑制) 的 IoU 阈值
-nn_nms_threshold = 0.6
+nn_nms_threshold = 0.45
+
+# YOLO 输入尺寸（宽 × 高）
+nn_input_width = 640
+nn_input_height = 640
+
+# ── 原始位置标定 ──
+# 收集多少个有效样本后判断是否稳定
+zero_sample_count = 12
+# 样本 x/y 最大抖动范围（像素），超过则清空重新采集
+zero_max_jitter_px = 5.0
+# 标定阶段最大等待帧数，超时后清空重试
+zero_max_wait_frames = 90
+# 进入原点样本的最低置信度
+zero_min_confidence = 0.55
+
+# ── 跟踪与滤波 ──
+# 跟踪模式下允许的最大帧间中心跳变（像素），超过则拒绝本帧
+max_target_jump_px = 80.0
+# 位置一阶低通滤波系数（越小越平滑但延迟越大）
+position_filter_alpha = 0.45
+# 短暂丢失时最多保持旧位置的帧数
+max_hold_frames = 2
+# 连续丢失多少帧后正式上报 LOST
+lost_confirm_frames = 3
+# 重新检测到球后需连续稳定多少帧才恢复到 OK
+reacquire_confirm_frames = 2
+
+# ── 物理换算 ──
+# 像素到毫米的换算比例（需实测标定）
+mm_per_pixel = 0.52
+# 偏移方向取反（方向不对时直接改这里）
+invert_offset = false
+
+# ── 通信周期 ──
+# BALL 结果发送间隔（ms）
+result_send_interval_ms = 40
+# 标定期间状态上报间隔（ms）
+calib_status_interval_ms = 250
+# VSESSION 重发间隔（ms）
+vsession_retry_interval_ms = 500
+
+# ── 模型恢复 ──
+# 连续推理异常多少次后标记模型 unhealthy
+max_inference_errors = 5
+# 模型重载尝试间隔（ms）
+model_reload_interval_ms = 2000
+
+# ── VSESSION ──
+camera_id = "CAM0"
+nominal_fps = 30

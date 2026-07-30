@@ -22,6 +22,7 @@ add_executable(etest_2026
     src/vision/video_recorder.cpp
     src/vision/vision.cpp
     src/vision/vision_utils.cpp
+    src/vision/yolo_ball.cpp
     src/uart/uart.cpp
     src/uart/protocol.cpp
 )
@@ -55,6 +56,7 @@ add_executable(etest_vision_test
     test/test_vision.cpp
     src/vision/vision.cpp
     src/vision/vision_utils.cpp
+    src/vision/yolo_ball.cpp
     src/core/config.cpp
     src/core/logger.cpp
 )
@@ -68,6 +70,7 @@ add_executable(etest_hsv_test
     test/test_hsv.cpp
     src/vision/vision.cpp
     src/vision/vision_utils.cpp
+    src/vision/yolo_ball.cpp
     src/core/config.cpp
     src/core/logger.cpp
 )
@@ -87,6 +90,7 @@ add_executable(etest_ball_video_test
     test/test_ball_video.cpp
     src/vision/vision.cpp
     src/vision/vision_utils.cpp
+    src/vision/yolo_ball.cpp
     src/core/config.cpp
     src/core/logger.cpp
 )

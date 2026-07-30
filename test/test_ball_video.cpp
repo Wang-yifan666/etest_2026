@@ -63,8 +63,7 @@ namespace
 				++lost_frames;
 				++current_consecutive_lost;
 				if(current_consecutive_lost > max_consecutive_lost)
-					max_consecutive_lost =
-					    current_consecutive_lost;
+					max_consecutive_lost = current_consecutive_lost;
 				prev_valid_x = -1.0;
 			}
 			else if(res.error_code == "ZERO_CALIBRATING")
@@ -144,13 +143,11 @@ int main(int argc, char** argv)
 	cv::VideoCapture cap(video_path);
 	if(!cap.isOpened())
 	{
-		std::cerr << "error: cannot open video: " << video_path
-		          << "\n";
+		std::cerr << "error: cannot open video: " << video_path << "\n";
 		return 2;
 	}
 	int vid_w = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_WIDTH));
-	int vid_h =
-	    static_cast<int>(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
+	int vid_h = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
 	double vid_fps = cap.get(cv::CAP_PROP_FPS);
 	if(vid_fps <= 0.0)
 		vid_fps = 30.0;
@@ -162,8 +159,7 @@ int main(int argc, char** argv)
 	if(!output_path.empty())
 	{
 		auto ext = output_path.rfind('.');
-		if(ext == std::string::npos
-		   || (output_path.size() - ext > 5))
+		if(ext == std::string::npos || (output_path.size() - ext > 5))
 		{
 			output_path += ".mp4";
 		}
@@ -208,8 +204,8 @@ int main(int argc, char** argv)
 					break; // EOF
 			}
 
-			auto result = vp.process(frame,
-			                         etest::vision::VisionMode::Ball);
+			auto result =
+			    vp.process(frame, etest::vision::VisionMode::Ball);
 			stats.record(result);
 
 			if(writer.isOpened())
@@ -237,22 +233,17 @@ int main(int argc, char** argv)
 	}
 
 	auto t1 = std::chrono::steady_clock::now();
-	double elapsed =
-	    std::chrono::duration<double>(t1 - t0).count();
+	double elapsed = std::chrono::duration<double>(t1 - t0).count();
 
 	stats.finish();
 
-	double measurement_rate =
-	    stats.total_frames > 0
-	        ? static_cast<double>(stats.measured_frames)
-	            / stats.total_frames
-	        : 0.0;
-	double fps =
-	    elapsed > 0.0 ? stats.total_frames / elapsed : 0.0;
+	double measurement_rate = stats.total_frames > 0
+	    ? static_cast<double>(stats.measured_frames)
+	        / stats.total_frames
+	    : 0.0;
+	double fps = elapsed > 0.0 ? stats.total_frames / elapsed : 0.0;
 	double avg_conf =
-	    stats.measured_frames > 0
-	        ? stats.average_confidence
-	        : 0.0;
+	    stats.measured_frames > 0 ? stats.average_confidence : 0.0;
 
 	// 输出统计
 	std::cout << "======================================\n";
@@ -264,12 +255,11 @@ int main(int argc, char** argv)
 	std::cout << "total_frames:   " << stats.total_frames << "\n";
 	std::cout << "measured_frames:" << stats.measured_frames << "\n";
 	std::cout << "lost_frames:    " << stats.lost_frames << "\n";
-	std::cout << "calibrating:    " << stats.calibrating_frames
-	          << "\n";
+	std::cout << "calibrating:    " << stats.calibrating_frames << "\n";
 	std::cout << "error_frames:   " << stats.error_frames << "\n";
 	std::cout << "measurement_rate: " << measurement_rate << "\n";
-	std::cout << "max_consecutive_lost: "
-	          << stats.max_consecutive_lost << "\n";
+	std::cout << "max_consecutive_lost: " << stats.max_consecutive_lost
+	          << "\n";
 	std::cout << "avg_confidence: " << avg_conf << "\n";
 	std::cout << "max_position_jump_ratio: "
 	          << stats.max_position_jump_ratio << "\n";
