@@ -7,7 +7,75 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(OpenCV REQUIRED)
 
-# exe
+# ── NCNN 可选支持 ──
+option(ETEST_ENABLE_NCNN "Enable NCNN YOLO backend" ON)
+
+if(ETEST_ENABLE_NCNN)
+    find_package(ncnn QUIET)
+    if(ncnn_FOUND)
+        set(ETEST_HAS_NCNN TRUE)
+        message(STATUS "NCNN found: ${ncnn_VERSION}")
+    else()
+        set(ETEST_HAS_NCNN FALSE)
+        message(WARNING "NCNN not found; building without NCNN backend")
+    endif()
+else()
+    set(ETEST_HAS_NCNN FALSE)
+    message(STATUS "NCNN backend disabled via ETEST_ENABLE_NCNN=OFF")
+endif()
+
+# ── etest_vision_core 静态库 ──
+add_library(etest_vision_core STATIC
+    src/vision/vision.cpp
+    src/vision/vision_utils.cpp
+    src/vision/yolo_ball.cpp
+    src/vision/yolo_detector.cpp
+    src/vision/yolo_backend_opencv.cpp
+)
+
+target_include_directories(
+    etest_vision_core
+    PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(
+    etest_vision_core
+    PUBLIC
+    ${OpenCV_LIBS}
+    pthread
+)
+
+target_compile_options(
+    etest_vision_core
+    PRIVATE
+    -Wall
+    -Wextra
+    -pedantic
+)
+
+# ── NCNN 后端条件编译 ──
+if(ETEST_HAS_NCNN)
+    target_sources(
+        etest_vision_core
+        PRIVATE
+        src/vision/yolo_backend_ncnn.cpp
+    )
+
+    target_link_libraries(
+        etest_vision_core
+        PUBLIC
+        ncnn
+    )
+
+    target_compile_definitions(
+        etest_vision_core
+        PUBLIC
+        ETEST_HAS_NCNN=1
+    )
+endif()
+
+# ── 主可执行文件 ──
 add_executable(etest_2026
     src/main.cpp
     src/core/config.cpp
@@ -21,29 +89,28 @@ add_executable(etest_2026
     src/vision/camera.cpp
     src/vision/latest_frame_capture.cpp
     src/vision/video_recorder.cpp
-    src/vision/vision.cpp
-    src/vision/vision_utils.cpp
-    src/vision/yolo_ball.cpp
     src/uart/uart.cpp
     src/uart/protocol.cpp
 )
 
+target_include_directories(etest_2026 PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(etest_2026 PRIVATE etest_vision_core ${OpenCV_LIBS} pthread)
+target_compile_options(etest_2026 PRIVATE -Wall -Wextra -pedantic)
+
+# ── 协议测试 ──
 add_executable(etest_protocol
     test/test_protocol.cpp
     src/uart/protocol.cpp
     src/uart/uart.cpp
     src/core/logger.cpp
 )
+
 target_include_directories(etest_protocol PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_compile_options(etest_protocol PRIVATE -Wall -Wextra -pedantic)
 target_link_libraries(etest_protocol PRIVATE pthread)
 add_test(NAME protocol_test COMMAND etest_protocol)
 
-target_include_directories(etest_2026 PRIVATE ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(etest_2026 PRIVATE ${OpenCV_LIBS} pthread)
-target_compile_options(etest_2026 PRIVATE -Wall -Wextra -pedantic)
-
-# 测试用exe
+# ── 配置测试 ──
 add_executable(etest_test
     test/test.cpp
     src/core/config.cpp
@@ -51,58 +118,45 @@ add_executable(etest_test
 
 target_include_directories(etest_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_compile_options(etest_test PRIVATE -Wall -Wextra -pedantic)
+add_test(NAME config_test COMMAND etest_test)
 
-# 视觉测试
+# ── 视觉测试 ──
 add_executable(etest_vision_test
     test/test_vision.cpp
-    src/vision/vision.cpp
-    src/vision/vision_utils.cpp
-    src/vision/yolo_ball.cpp
     src/core/config.cpp
     src/core/logger.cpp
 )
 
 target_include_directories(etest_vision_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(etest_vision_test PRIVATE ${OpenCV_LIBS} pthread)
+target_link_libraries(etest_vision_test PRIVATE etest_vision_core ${OpenCV_LIBS} pthread)
 target_compile_options(etest_vision_test PRIVATE -Wall -Wextra -pedantic)
+add_test(NAME vision_test COMMAND etest_vision_test)
 
-# HSV 范围测试
+# ── HSV 测试 ──
 add_executable(etest_hsv_test
     test/test_hsv.cpp
-    src/vision/vision.cpp
-    src/vision/vision_utils.cpp
-    src/vision/yolo_ball.cpp
     src/core/config.cpp
     src/core/logger.cpp
 )
 
 target_include_directories(etest_hsv_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(etest_hsv_test PRIVATE ${OpenCV_LIBS} pthread)
+target_link_libraries(etest_hsv_test PRIVATE etest_vision_core ${OpenCV_LIBS} pthread)
 target_compile_options(etest_hsv_test PRIVATE -Wall -Wextra -pedantic)
-
-enable_testing()
-
-add_test(NAME config_test COMMAND etest_test)
-add_test(NAME vision_test COMMAND etest_vision_test)
 add_test(NAME hsv_test COMMAND etest_hsv_test)
 
-# 视频回归测试
+# ── 视频回归测试 ──
 add_executable(etest_ball_video_test
     test/test_ball_video.cpp
-    src/vision/vision.cpp
-    src/vision/vision_utils.cpp
-    src/vision/yolo_ball.cpp
     src/core/config.cpp
     src/core/logger.cpp
 )
 
 target_include_directories(etest_ball_video_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(etest_ball_video_test PRIVATE ${OpenCV_LIBS} pthread)
+target_link_libraries(etest_ball_video_test PRIVATE etest_vision_core ${OpenCV_LIBS} pthread)
 target_compile_options(etest_ball_video_test PRIVATE -Wall -Wextra -pedantic)
-
 add_test(NAME ball_video_test COMMAND etest_ball_video_test ${CMAKE_SOURCE_DIR}/docs/videos/test5.mp4 ${CMAKE_SOURCE_DIR}/config/vision.toml)
 
-# LatestFrameCapture 单元测试
+# ── LatestFrameCapture 单元测试 ──
 add_executable(etest_latest_frame_capture
     test/test_latest_frame_capture.cpp
     src/vision/latest_frame_capture.cpp
@@ -111,59 +165,59 @@ add_executable(etest_latest_frame_capture
     src/core/logger.cpp
 )
 
-target_include_directories(
-    etest_latest_frame_capture
-    PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-
-target_link_libraries(
-    etest_latest_frame_capture
-    PRIVATE
-    ${OpenCV_LIBS}
-    pthread
-)
-
-target_compile_options(
-    etest_latest_frame_capture
-    PRIVATE
-    -Wall
-    -Wextra
-    -pedantic
-)
-
+target_include_directories(etest_latest_frame_capture PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(etest_latest_frame_capture PRIVATE ${OpenCV_LIBS} pthread)
+target_compile_options(etest_latest_frame_capture PRIVATE -Wall -Wextra -pedantic)
 add_test(NAME latest_frame_capture_test COMMAND etest_latest_frame_capture ${CMAKE_SOURCE_DIR})
 
-# YOLO 性能
+# ── YOLO benchmark ──
 add_executable(etest_yolo_benchmark
     test/test_yolo_benchmark.cpp
-    src/vision/vision.cpp
-    src/vision/vision_utils.cpp
-    src/vision/yolo_ball.cpp
     src/core/config.cpp
     src/core/logger.cpp
 )
 
-target_include_directories(
-    etest_yolo_benchmark
-    PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
+target_include_directories(etest_yolo_benchmark PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(etest_yolo_benchmark PRIVATE etest_vision_core ${OpenCV_LIBS} pthread)
+target_compile_options(etest_yolo_benchmark PRIVATE -Wall -Wextra -pedantic)
+
+# ── YOLO 解码测试 ──
+add_executable(etest_yolo_decode
+    test/test_yolo_decode.cpp
+    src/core/config.cpp
+    src/core/logger.cpp
 )
 
-target_link_libraries(
-    etest_yolo_benchmark
-    PRIVATE
-    ${OpenCV_LIBS}
-    pthread
+target_include_directories(etest_yolo_decode PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(etest_yolo_decode PRIVATE etest_vision_core ${OpenCV_LIBS} pthread)
+target_compile_options(etest_yolo_decode PRIVATE -Wall -Wextra -pedantic)
+
+# ── YOLO 后端一致性测试 ──
+add_executable(etest_yolo_backend_parity
+    test/test_yolo_backend_parity.cpp
+    src/core/config.cpp
+    src/core/logger.cpp
 )
 
-target_compile_options(
-    etest_yolo_benchmark
-    PRIVATE
-    -Wall
-    -Wextra
-    -pedantic
-)
+target_include_directories(etest_yolo_backend_parity PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(etest_yolo_backend_parity PRIVATE etest_vision_core ${OpenCV_LIBS} pthread)
+target_compile_options(etest_yolo_backend_parity PRIVATE -Wall -Wextra -pedantic)
+
+# ── NCNN smoke test ──
+if(ETEST_HAS_NCNN)
+    add_executable(etest_yolo_ncnn_smoke
+        test/test_yolo_ncnn_smoke.cpp
+        src/core/config.cpp
+        src/core/logger.cpp
+    )
+
+    target_include_directories(etest_yolo_ncnn_smoke PRIVATE ${CMAKE_SOURCE_DIR}/include)
+    target_link_libraries(etest_yolo_ncnn_smoke PRIVATE etest_vision_core ${OpenCV_LIBS} pthread ncnn)
+    target_compile_options(etest_yolo_ncnn_smoke PRIVATE -Wall -Wextra -pedantic)
+    add_test(NAME yolo_ncnn_smoke COMMAND etest_yolo_ncnn_smoke)
+endif()
+
+enable_testing()
 
 # WSL 下 OpenCV 依赖附加库
 if(WSL)

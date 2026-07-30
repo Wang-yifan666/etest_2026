@@ -1,4 +1,5 @@
 #include "vision/vision.hpp"
+#include "vision/yolo_detector.hpp"
 #include "core/logger.hpp"
 #include <algorithm>
 #include <array>
@@ -13,6 +14,8 @@ namespace etest::vision
 	config_(std::move(config))
 	{
 	}
+
+	VisionProcessor::~VisionProcessor() = default;
 
 	VisionResult VisionProcessor::process(const cv::Mat& frame,
 	                                      VisionMode mode) noexcept
@@ -923,7 +926,8 @@ warp_and_detect:
 			/* keep ROI-local coords */
 			/* keep ROI-local coords */
 			c.normalized_x = c.center.x
-			    / std::max(1.0, static_cast<double>(inner_roi.width) - 1.0);
+			    / std::max(1.0,
+			               static_cast<double>(inner_roi.width) - 1.0);
 		}
 		debug_ball_candidates_ = candidates;
 		auto now = std::chrono::steady_clock::now();
@@ -1664,6 +1668,29 @@ ratio_zero:
 	VisionProcessor::getLastDetections() const noexcept
 	{
 		return last_detections_;
+	}
+
+	bool VisionProcessor::loadYoloModel(
+	    const SearchConfig& config) noexcept
+	{
+		// 当前过渡阶段：使用旧版 loadNnModel 加载 OpenCV 后端。
+		// 完整 YoloDetector 对接将在第八阶段（配置文件+启动逻辑）实现。
+		return loadNnModel(config.model_path, config.class_names_path,
+		                   config.nn_confidence_threshold,
+		                   config.nn_nms_threshold);
+	}
+
+	bool VisionProcessor::reloadYoloModel(
+	    const SearchConfig& config) noexcept
+	{
+		return loadYoloModel(config);
+	}
+
+	const char* VisionProcessor::yoloBackendName() const noexcept
+	{
+		if(nn_loaded_)
+			return "opencv";
+		return "none";
 	}
 
 } // namespace etest::vision

@@ -832,7 +832,6 @@ namespace
 	                      const RawConfig& raw_config,
 	                      etest::ConfigLoadResult& result)
 	{
-		// ---- [mode] ----
 		config.mode.enabled =
 		    getBool(raw_config, "mode.enabled", config.mode.enabled,
 		            result, &config.mode.source_enabled);
@@ -841,7 +840,6 @@ namespace
 		    getString(raw_config, "mode.name", config.mode.name, false,
 		              result, &config.mode.source_name);
 
-		// ---- [runtime] ----
 		config.runtime.headless = getBool(
 		    raw_config, "runtime.headless", config.runtime.headless,
 		    result, &config.runtime.source_headless);
@@ -871,7 +869,6 @@ namespace
 		    config.runtime.uart_retry_interval_ms, 50, 60000, result,
 		    &config.runtime.source_uart_retry_interval_ms);
 
-		// ---- [logger] ----
 		config.logger.directory = getString(
 		    raw_config, "logger.directory", config.logger.directory,
 		    false, result, &config.logger.source_directory);
@@ -908,7 +905,6 @@ namespace
 		           config.logger.throttle_interval_ms, 0, 60000, result,
 		           &config.logger.source_throttle_interval_ms);
 
-		// ---- [camera] ----
 		config.camera.source =
 		    getString(raw_config, "camera.source", config.camera.source,
 		              false, result, &config.camera.source_source);
@@ -943,7 +939,6 @@ namespace
 		           config.camera.playback_fps, 1, 240, result,
 		           &config.camera.source_playback_fps);
 
-		// ---- [vision] ----
 		config.vision.red_h1_min = getInt(
 		    raw_config, "vision.red_h1_min", config.vision.red_h1_min,
 		    0, 180, result, &config.vision.source_red_h1_min);
@@ -987,7 +982,6 @@ namespace
 		    raw_config, "vision.min_area", config.vision.min_area, 0.0,
 		    1000000000.0, result, &config.vision.source_min_area);
 
-		// ---- [vision.ball] ----
 		{
 			auto& ball = config.vision.ball;
 
@@ -1448,7 +1442,6 @@ namespace
 			              &ball.source_video_output);
 		}
 
-		// ---- [uart] ----
 		config.uart.device =
 		    getString(raw_config, "uart.device", config.uart.device,
 		              false, result, &config.uart.source_device);
@@ -1516,7 +1509,6 @@ namespace
 		           config.uart.protocol_version_minor, 0, 10, result,
 		           &config.uart.source_protocol_version_minor);
 
-		// ---- [record] ----
 		config.record.enabled =
 		    getBool(raw_config, "record.enabled", config.record.enabled,
 		            result, &config.record.source_enabled);
@@ -1546,7 +1538,6 @@ namespace
 		           config.record.segment_seconds, 10, 3600, result,
 		           &config.record.source_segment_seconds);
 
-		// ---- [search] ----
 		config.search.show_preview =
 		    getBool(raw_config, "search.show_preview",
 		            config.search.show_preview, result,

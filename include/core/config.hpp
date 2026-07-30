@@ -254,7 +254,8 @@ namespace etest
 		int reacquire_after_lost_frames = 5;
 
 		// 零点校准
-		std::string zero_mode = "startup"; // "startup" | "fixed" | "ratio"
+		std::string zero_mode =
+		    "startup"; // "startup" | "fixed" | "ratio"
 		double zero_position_px =
 		    240.5; // 轴线投影距离(px), 非图像x坐标
 		double zero_position_ratio = 0.5;

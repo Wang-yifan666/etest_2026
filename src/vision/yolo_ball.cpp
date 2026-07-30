@@ -79,9 +79,14 @@ namespace etest::vision
 	// ── 推理引擎 ──
 
 	std::vector<YoloDetection> VisionProcessor::inferYolo(
-	    const cv::Mat& frame) noexcept
+	    const cv::Mat& frame, YoloTiming* timing) noexcept
 	{
+		using Clock = std::chrono::steady_clock;
+
 		std::vector<YoloDetection> detections;
+
+		YoloTiming local_timing;
+		const auto t_start = Clock::now();
 
 		try
 		{
@@ -100,14 +105,19 @@ namespace etest::vision
 			const int input_width = 640;
 			const int input_height = 640;
 
+			// ── 预处理 ──
 			cv::Mat blob = cv::dnn::blobFromImage(
 			    frame, 1.0 / 255.0, cv::Size(input_width, input_height),
 			    cv::Scalar(), true, false);
+
+			const auto t_after_preprocess = Clock::now();
 
 			nn_net_.setInput(blob);
 
 			std::vector<cv::Mat> outputs;
 			nn_net_.forward(outputs, nn_output_names_);
+
+			const auto t_after_forward = Clock::now();
 
 			if(outputs.empty())
 			{
@@ -163,6 +173,8 @@ namespace etest::vision
 				        + " classes but class_names_file has "
 				        + std::to_string(nn_class_names_.size()));
 			}
+
+			const auto t_before_decode = Clock::now();
 
 			const float scale_x =
 			    static_cast<float>(frame.cols) / input_width;
@@ -227,6 +239,8 @@ namespace etest::vision
 				class_ids.push_back(best_class_id);
 			}
 
+			const auto t_after_decode = Clock::now();
+
 			std::vector<int> kept_indices;
 			cv::dnn::NMSBoxes(
 			    boxes, confidences,
@@ -245,6 +259,28 @@ namespace etest::vision
 			    [](const YoloDetection& a, const YoloDetection& b) {
 				    return a.confidence > b.confidence;
 			    });
+
+			const auto t_end = Clock::now();
+
+			// ── 计时汇总 ──
+			auto to_ms = [](const auto& a, const auto& b) -> double {
+				return std::chrono::duration<double, std::milli>(b - a)
+				    .count();
+			};
+
+			local_timing.preprocess_ms =
+			    to_ms(t_start, t_after_preprocess);
+			local_timing.forward_ms =
+			    to_ms(t_after_preprocess, t_after_forward);
+			local_timing.decode_ms =
+			    to_ms(t_before_decode, t_after_decode);
+			local_timing.nms_ms = to_ms(t_after_decode, t_end);
+			local_timing.total_ms = local_timing.preprocess_ms
+			    + local_timing.forward_ms + local_timing.decode_ms
+			    + local_timing.nms_ms;
+
+			if(timing != nullptr)
+				*timing = local_timing;
 		}
 		catch(const cv::Exception& error)
 		{
@@ -269,14 +305,14 @@ namespace etest::vision
 	// ── 控制结果生成 ──
 
 	VisionResult VisionProcessor::processYoloBall(
-	    const cv::Mat& frame) noexcept
+	    const cv::Mat& frame, YoloTiming* timing) noexcept
 	{
 		VisionResult result;
 		result.target_type = "BALL";
 
 		try
 		{
-			const auto detections = inferYolo(frame);
+			const auto detections = inferYolo(frame, timing);
 			yolo_last_detections_ = detections;
 
 			// 推理异常计数

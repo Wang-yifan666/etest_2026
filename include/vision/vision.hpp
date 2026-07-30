@@ -9,11 +9,14 @@
 #include <chrono>
 #include <cstdint>
 #include <deque>
+#include <memory>
 #include <string>
 #include <vector>
 
 namespace etest::vision
 {
+
+	class YoloDetector;
 
 	enum class VisionMode
 	{
@@ -68,10 +71,19 @@ namespace etest::vision
 
 		cv::Point2f center() const noexcept
 		{
-			return {
-			    box.x + box.width * 0.5F,
-			    box.y + box.height * 0.5F};
+			return {box.x + box.width * 0.5F,
+			        box.y + box.height * 0.5F};
 		}
+	};
+
+	// YOLO 推理各阶段耗时
+	struct YoloTiming
+	{
+		double preprocess_ms = 0.0;
+		double forward_ms = 0.0;
+		double decode_ms = 0.0;
+		double nms_ms = 0.0;
+		double total_ms = 0.0;
 	};
 
 	// Letterbox 预处理信息
@@ -116,6 +128,7 @@ namespace etest::vision
 	{
 	public:
 		explicit VisionProcessor(VisionConfig config = {});
+		~VisionProcessor();
 
 		VisionResult process(const cv::Mat& frame,
 		                     VisionMode mode) noexcept;
@@ -138,8 +151,11 @@ namespace etest::vision
 		// ── YOLO 接口 ──
 		void setVisionEpoch(std::uint64_t epoch_ns) noexcept;
 		std::vector<YoloDetection> inferYolo(
-		    const cv::Mat& frame) noexcept;
-		VisionResult processYoloBall(const cv::Mat& frame) noexcept;
+		    const cv::Mat& frame,
+		    YoloTiming* timing = nullptr) noexcept;
+		VisionResult processYoloBall(
+		    const cv::Mat& frame,
+		    YoloTiming* timing = nullptr) noexcept;
 		void resetYoloSession() noexcept;
 		bool isYoloBallReady() const noexcept;
 		void drawYoloDebugInfo(cv::Mat& frame,
@@ -147,6 +163,12 @@ namespace etest::vision
 		bool tryReloadYoloModel(
 		    const std::string& model_path,
 		    const std::string& class_names_path) noexcept;
+
+		// ── YOLO 后端管理 ──
+		bool loadYoloModel(const struct SearchConfig& config) noexcept;
+		bool reloadYoloModel(
+		    const struct SearchConfig& config) noexcept;
+		const char* yoloBackendName() const noexcept;
 
 	private:
 		VisionResult detectColorTarget(const cv::Mat& frame);
@@ -161,7 +183,8 @@ namespace etest::vision
 
 		static void resizeLetterbox(const cv::Mat& source,
 		                            cv::Mat& destination,
-		                            cv::Scalar bg = cv::Scalar(0, 0, 0));
+		                            cv::Scalar bg = cv::Scalar(0, 0,
+		                                                       0));
 
 	public:
 		bool orderTrackCorners(
@@ -174,8 +197,9 @@ namespace etest::vision
 		    const cv::Mat& warped_roi) noexcept;
 
 	private:
-		static cv::Rect makeInnerRoi(const cv::Rect& track_roi,
-		                             const cv::Size& work_size) noexcept;
+		static cv::Rect makeInnerRoi(
+		    const cv::Rect& track_roi,
+		    const cv::Size& work_size) noexcept;
 
 		VisionConfig config_;
 		bool empty_frame_reported_ = false;
@@ -227,7 +251,8 @@ namespace etest::vision
 		double acquire_candidate_ratio_ = 0.0;
 		std::chrono::steady_clock::time_point tracker_last_time_;
 
-		std::chrono::steady_clock::time_point last_ball_lost_log_time_{};
+		std::chrono::steady_clock::time_point
+		    last_ball_lost_log_time_{};
 		std::chrono::steady_clock::time_point
 		    last_corner_order_error_time_{};
 		std::chrono::steady_clock::time_point
@@ -265,6 +290,9 @@ namespace etest::vision
 		std::chrono::steady_clock::time_point yolo_last_error_time_;
 
 		std::vector<YoloDetection> yolo_last_detections_;
+
+		// ── YOLO 后端检测器 ──
+		std::unique_ptr<YoloDetector> yolo_detector_;
 	};
 
 } // namespace etest::vision

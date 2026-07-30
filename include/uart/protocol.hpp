@@ -71,8 +71,7 @@ namespace etest::uart::protocol
 	// ── V5 协议辅助 ──
 
 	// VSESSION,<session>,MONOTONIC,<fps_x100>,<camera_id>
-	std::string makeVsessionLine(std::uint32_t session_id,
-	                             int fps_x100,
+	std::string makeVsessionLine(std::uint32_t session_id, int fps_x100,
 	                             const std::string& camera_id);
 
 	// 判断是否为 OK,VSESSION,<session>
@@ -108,8 +107,7 @@ namespace etest::uart::protocol
 		std::string result;
 	};
 
-	std::optional<DoneInfo> parseDone(
-	    const UartMessage& msg) noexcept;
+	std::optional<DoneInfo> parseDone(const UartMessage& msg) noexcept;
 
 	// ── M000X 题目编号 ──
 

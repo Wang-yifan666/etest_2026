@@ -11,7 +11,6 @@
 #include "core/config.hpp"
 #include "state/state.hpp"
 
-// 复制 context.cpp 中的纯函数签名用于测试（避免链接 OpenCV）
 // 这些函数的逻辑必须与 src/core/context.cpp 保持一致
 namespace etest
 {
