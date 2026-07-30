@@ -290,6 +290,7 @@ namespace etest::vision
 		std::chrono::steady_clock::time_point yolo_last_error_time_;
 
 		std::vector<YoloDetection> yolo_last_detections_;
+		double yolo_last_valid_confidence_ = 0.0;
 
 		// ── YOLO 后端检测器 ──
 		std::unique_ptr<YoloDetector> yolo_detector_;

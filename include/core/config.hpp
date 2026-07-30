@@ -471,9 +471,15 @@ namespace etest
 		// ── 检测器选择 ──
 		std::string detector = "traditional"; // "traditional" | "yolo"
 
+		// ── YOLO 后端选择 ──
+		std::string yolo_backend = "opencv"; // "opencv" | "ncnn"
+
 		// ── 模型路径 ──
 		std::string model_path = "model/yolov5s.onnx";
 		std::string class_names_path = "model/coco.names";
+
+		// ── NCNN 模型路径（仅 yolo_backend = "ncnn"）──
+		std::string ncnn_param_path = "model/ncnn_640x640/best_640x640_fp32.ncnn.param";
 
 		double nn_confidence_threshold = 0.5;
 		double nn_nms_threshold = 0.4;
@@ -481,6 +487,14 @@ namespace etest
 		// ── YOLO 输入尺寸 ──
 		int nn_input_width = 640;
 		int nn_input_height = 640;
+		int nn_threads = 4;
+
+		// ── NCNN 高级选项 ──
+		bool ncnn_use_fp16_storage = false;
+		bool ncnn_use_fp16_arithmetic = false;
+		bool ncnn_use_vulkan = false;
+		std::string ncnn_input_blob = "in0";
+		std::string ncnn_output_blob = "out0";
 
 		// ── 原点标定 ──
 		int zero_sample_count = 12;
@@ -515,12 +529,20 @@ namespace etest
 		SourceInfo source_show_preview;
 		SourceInfo source_enable_nn;
 		SourceInfo source_detector;
+		SourceInfo source_yolo_backend;
 		SourceInfo source_model_path;
 		SourceInfo source_class_names_path;
+		SourceInfo source_ncnn_param_path;
 		SourceInfo source_nn_confidence_threshold;
 		SourceInfo source_nn_nms_threshold;
 		SourceInfo source_nn_input_width;
 		SourceInfo source_nn_input_height;
+		SourceInfo source_nn_threads;
+		SourceInfo source_ncnn_use_fp16_storage;
+		SourceInfo source_ncnn_use_fp16_arithmetic;
+		SourceInfo source_ncnn_use_vulkan;
+		SourceInfo source_ncnn_input_blob;
+		SourceInfo source_ncnn_output_blob;
 		SourceInfo source_zero_sample_count;
 		SourceInfo source_zero_max_jitter_px;
 		SourceInfo source_zero_max_wait_frames;

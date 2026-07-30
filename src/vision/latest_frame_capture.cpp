@@ -46,11 +46,6 @@ namespace etest::vision
 
 	void LatestFrameCapture::stop() noexcept
 	{
-		if(!running_.load())
-		{
-			return;
-		}
-
 		running_.store(false);
 
 		// 唤醒可能在等待 condition_variable 的采集线程
@@ -59,6 +54,13 @@ namespace etest::vision
 		if(worker_.joinable())
 		{
 			worker_.join();
+		}
+
+		std::lock_guard<std::mutex> lock(mutex_);
+		if(state_ != CaptureWorkerState::CAMERA_ERROR
+		   && state_ != CaptureWorkerState::FILE_EOF)
+		{
+			state_ = CaptureWorkerState::STOPPED;
 		}
 
 		ETEST_LOG_INFO("LATEST_CAPTURE", "capture worker stopped");
@@ -86,8 +88,11 @@ namespace etest::vision
 
 		const bool has_new =
 		    condition_.wait_for(lock, timeout, [this, last_sequence] {
-			    return latest_.sequence != last_sequence
-			        && latest_.sequence != 0;
+			    return (latest_.sequence != last_sequence
+			            && latest_.sequence != 0)
+			        || state_ == CaptureWorkerState::CAMERA_ERROR
+			        || state_ == CaptureWorkerState::FILE_EOF
+			        || !running_.load(std::memory_order_acquire);
 		    });
 
 		if(has_new)

@@ -780,12 +780,20 @@ namespace
 		    "search.show_preview",
 		    "search.enable_nn",
 		    "search.detector",
+		    "search.yolo_backend",
 		    "search.model_path",
 		    "search.class_names_path",
+		    "search.ncnn_param_path",
 		    "search.nn_confidence_threshold",
 		    "search.nn_nms_threshold",
 		    "search.nn_input_width",
 		    "search.nn_input_height",
+		    "search.nn_threads",
+		    "search.ncnn_use_fp16_storage",
+		    "search.ncnn_use_fp16_arithmetic",
+		    "search.ncnn_use_vulkan",
+		    "search.ncnn_input_blob",
+		    "search.ncnn_output_blob",
 		    "search.zero_sample_count",
 		    "search.zero_max_jitter_px",
 		    "search.zero_max_wait_frames",
@@ -1578,6 +1586,54 @@ namespace
 			           "\"yolo\"; keeping \""
 			               + config.search.detector + "\"");
 		}
+
+		// ── YOLO 后端选择 ──
+		config.search.yolo_backend = getString(
+		    raw_config, "search.yolo_backend",
+		    config.search.yolo_backend, false, result,
+		    &config.search.source_yolo_backend);
+		if(config.search.yolo_backend != "opencv"
+		   && config.search.yolo_backend != "ncnn")
+		{
+			addMessage(result, etest::ConfigMessageLevel::ERROR,
+			           "search.yolo_backend must be \"opencv\" or "
+			           "\"ncnn\"; keeping \""
+			               + config.search.yolo_backend + "\"");
+		}
+
+		// ── NCNN 模型路径 ──
+		config.search.ncnn_param_path = getString(
+		    raw_config, "search.ncnn_param_path",
+		    config.search.ncnn_param_path, false, result,
+		    &config.search.source_ncnn_param_path);
+
+		// ── 线程数 ──
+		config.search.nn_threads =
+		    getInt(raw_config, "search.nn_threads",
+		           config.search.nn_threads, 1, 8, result,
+		           &config.search.source_nn_threads);
+
+		// ── NCNN 高级选项 ──
+		config.search.ncnn_use_fp16_storage =
+		    getBool(raw_config, "search.ncnn_use_fp16_storage",
+		            config.search.ncnn_use_fp16_storage, result,
+		            &config.search.source_ncnn_use_fp16_storage);
+		config.search.ncnn_use_fp16_arithmetic =
+		    getBool(raw_config, "search.ncnn_use_fp16_arithmetic",
+		            config.search.ncnn_use_fp16_arithmetic, result,
+		            &config.search.source_ncnn_use_fp16_arithmetic);
+		config.search.ncnn_use_vulkan =
+		    getBool(raw_config, "search.ncnn_use_vulkan",
+		            config.search.ncnn_use_vulkan, result,
+		            &config.search.source_ncnn_use_vulkan);
+		config.search.ncnn_input_blob = getString(
+		    raw_config, "search.ncnn_input_blob",
+		    config.search.ncnn_input_blob, false, result,
+		    &config.search.source_ncnn_input_blob);
+		config.search.ncnn_output_blob = getString(
+		    raw_config, "search.ncnn_output_blob",
+		    config.search.ncnn_output_blob, false, result,
+		    &config.search.source_ncnn_output_blob);
 
 		// ── YOLO 输入尺寸 ──
 		config.search.nn_input_width =

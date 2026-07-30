@@ -1,4 +1,5 @@
 #include "vision/vision.hpp"
+#include "vision/yolo_backend.hpp"
 #include "vision/yolo_detector.hpp"
 #include "core/logger.hpp"
 #include <algorithm>
@@ -1673,23 +1674,123 @@ ratio_zero:
 	bool VisionProcessor::loadYoloModel(
 	    const SearchConfig& config) noexcept
 	{
-		// 当前过渡阶段：使用旧版 loadNnModel 加载 OpenCV 后端。
-		// 完整 YoloDetector 对接将在第八阶段（配置文件+启动逻辑）实现。
-		return loadNnModel(config.model_path, config.class_names_path,
-		                   config.nn_confidence_threshold,
-		                   config.nn_nms_threshold);
+		return reloadYoloModel(config);
 	}
 
 	bool VisionProcessor::reloadYoloModel(
 	    const SearchConfig& config) noexcept
 	{
-		return loadYoloModel(config);
+		auto candidate = std::make_unique<YoloDetector>();
+
+		YoloBackendConfig backend_cfg;
+		backend_cfg.input_width = config.nn_input_width;
+		backend_cfg.input_height = config.nn_input_height;
+		backend_cfg.num_threads = config.nn_threads;
+		backend_cfg.use_fp16_storage = config.ncnn_use_fp16_storage;
+		backend_cfg.use_fp16_arithmetic =
+		    config.ncnn_use_fp16_arithmetic;
+		backend_cfg.use_vulkan = config.ncnn_use_vulkan;
+		backend_cfg.input_blob = config.ncnn_input_blob;
+		backend_cfg.output_blob = config.ncnn_output_blob;
+
+		std::unique_ptr<IYoloBackend> backend;
+		std::string model_label;
+
+		if(config.yolo_backend == "ncnn")
+		{
+#ifdef ETEST_HAS_NCNN
+			const std::string param_path = config.ncnn_param_path;
+			if(param_path.empty())
+			{
+				ETEST_LOG_ERROR(
+				    "VISION",
+				    "ncnn_param_path is empty for NCNN backend");
+				return false;
+			}
+
+			backend = createNcnnBackend(param_path, backend_cfg);
+			if(!backend)
+			{
+				ETEST_LOG_ERROR("VISION",
+				                "failed to create NCNN backend: "
+				                    + param_path);
+				return false;
+			}
+			model_label = "ncnn:" + param_path;
+#else
+			ETEST_LOG_ERROR(
+			    "VISION",
+			    "NCNN backend requested but project was built "
+			    "without NCNN (ETEST_ENABLE_NCNN=OFF)");
+			return false;
+#endif
+		}
+		else
+		{
+			auto ocv = createOpenCvBackend();
+			const std::string model_path = config.model_path;
+			std::string load_err;
+			if(!ocv->load(model_path, backend_cfg, load_err))
+			{
+				ETEST_LOG_ERROR(
+				    "VISION",
+				    "opencv backend load failed: " + load_err);
+				return false;
+			}
+			backend = std::move(ocv);
+			model_label = "opencv:" + model_path;
+		}
+
+		std::vector<std::string> class_names;
+		{
+			std::ifstream f(config.class_names_path);
+			if(!f.is_open())
+			{
+				ETEST_LOG_ERROR(
+				    "VISION",
+				    "cannot open class_names: "
+				        + config.class_names_path);
+				return false;
+			}
+			std::string line;
+			while(std::getline(f, line))
+				if(!line.empty())
+					class_names.push_back(line);
+		}
+
+		std::string err;
+		if(!candidate->initialize(
+		       std::move(backend), backend_cfg,
+		       std::move(class_names),
+		       static_cast<float>(config.nn_confidence_threshold),
+		       static_cast<float>(config.nn_nms_threshold), err))
+		{
+			ETEST_LOG_ERROR("VISION",
+			                "YoloDetector init failed: " + err);
+			return false;
+		}
+
+		yolo_detector_ = std::move(candidate);
+		nn_loaded_ = true;
+		yolo_model_unhealthy_ = false;
+
+		ETEST_LOG_INFO("VISION",
+		               "YOLO model loaded: backend="
+		                   + std::string(yolo_detector_->backendName())
+		                   + "(" + model_label + ") input="
+		                   + std::to_string(backend_cfg.input_width)
+		                   + "x"
+		                   + std::to_string(backend_cfg.input_height)
+		                   + " threads="
+		                   + std::to_string(backend_cfg.num_threads));
+
+		return true;
 	}
 
 	const char* VisionProcessor::yoloBackendName() const noexcept
 	{
-		if(nn_loaded_)
-			return "opencv";
+		if(yolo_detector_)
+			return yolo_detector_->backendName();
 		return "none";
 	}
 

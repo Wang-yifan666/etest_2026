@@ -117,16 +117,16 @@ namespace
 		return true;
 	}
 
-	bool test_with_video_file()
+	bool test_with_video_file(const std::string& video_path)
 	{
 		// 使用测试视频文件验证实际采集
-		const char* video_path = "docs/videos/test5.mp4";
 
 		// 检查文件是否存在
-		FILE* f = std::fopen(video_path, "r");
+		FILE* f = std::fopen(video_path.c_str(), "r");
 		if(f == nullptr)
 		{
-			std::cout << "SKIP: test_with_video_file (no test video)\n";
+			std::cout << "SKIP: test_with_video_file (no test video at "
+			          << video_path << ")\n";
 			return true;
 		}
 		std::fclose(f);
@@ -197,15 +197,22 @@ namespace
 			return false;
 		}
 
-		// 测试不重复处理：用同样的 last_sequence 再调用
+		// 测试不重复处理：用同样的 last_sequence 短时间内再调用，应该拿不到
+		// 给采集线程极短的时间继续跑
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
 		FramePacket output2;
 		got = capture.tryGetLatest(output2, output.sequence);
 		if(got)
 		{
-			// 如果没有新帧产生，不应返回 true
-			// 但由于视频文件很快，可能已经有新帧了，所以这里只是检测不崩溃
-			std::cout << "  second tryGetLatest returned "
-			          << (got ? "true" : "false") << "\n";
+			// 极短间隔内如果有新帧产生，说明 video FPS 很高，不算失败
+			// 但应输出 WARN 提示测试可能不精确
+			std::cout << "  WARN: second tryGetLatest returned true "
+			             "(video fps may be high), seq="
+			          << output2.sequence << "\n";
+		}
+		else
+		{
+			std::cout << "  second tryGetLatest correctly returned false\n";
 		}
 
 		capture.stop();
@@ -214,16 +221,15 @@ namespace
 		return true;
 	}
 
-	bool test_single_slot_overwrite()
+	bool test_single_slot_overwrite(const std::string& video_path)
 	{
 		// 使用视频文件，消费者慢速读取，验证只能拿到最新帧
-		const char* video_path = "docs/videos/test5.mp4";
-
-		FILE* f = std::fopen(video_path, "r");
+		FILE* f = std::fopen(video_path.c_str(), "r");
 		if(f == nullptr)
 		{
 			std::cout
-			    << "SKIP: test_single_slot_overwrite (no test video)\n";
+			    << "SKIP: test_single_slot_overwrite (no test video at "
+			    << video_path << ")\n";
 			return true;
 		}
 		std::fclose(f);
@@ -311,8 +317,19 @@ namespace
 
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
+	// 从命令行获取源码根目录
+	if(argc < 2)
+	{
+		std::cerr << "usage: test_latest_frame_capture <source-root>\n";
+		return 2;
+	}
+
+	const std::string source_root = argv[1];
+	const std::string video_path =
+	    source_root + "/docs/videos/test5.mp4";
+
 	// 初始化最小日志配置
 	LoggerConfig log_cfg;
 	log_cfg.terminal = false;
@@ -327,8 +344,8 @@ int main()
 	all_pass &= test_try_get_latest_empty();
 	all_pass &= test_state_initial();
 	all_pass &= test_double_start();
-	all_pass &= test_with_video_file();
-	all_pass &= test_single_slot_overwrite();
+	all_pass &= test_with_video_file(video_path);
+	all_pass &= test_single_slot_overwrite(video_path);
 
 	std::cout << "\n=== "
 	          << (all_pass ? "ALL TESTS PASSED" : "SOME TESTS FAILED")

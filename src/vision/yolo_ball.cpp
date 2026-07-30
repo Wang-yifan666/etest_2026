@@ -40,6 +40,7 @@ namespace etest::vision
 		yolo_filtered_x_ = 0.0;
 		yolo_consecutive_errors_ = 0;
 		yolo_last_detections_.clear();
+		yolo_last_valid_confidence_ = 0.0;
 		// 不重置 model_unhealthy_, shape_logged, epoch
 	}
 
@@ -315,12 +316,6 @@ namespace etest::vision
 			const auto detections = inferYolo(frame, timing);
 			yolo_last_detections_ = detections;
 
-			// 推理异常计数
-			if(detections.empty() && !frame.empty() && nn_loaded_)
-			{
-				// 空检测不一定是异常，由调用方根据连续帧判断
-			}
-
 			if(!nn_loaded_ || yolo_model_unhealthy_)
 			{
 				result.error_code = "MODEL_NOT_READY";
@@ -330,11 +325,7 @@ namespace etest::vision
 			// ── 选球 ──
 			const YoloDetection* best = nullptr;
 
-			if(detections.empty())
-			{
-				++yolo_lost_frames_;
-			}
-			else
+			if(!detections.empty())
 			{
 				if(!yolo_tracking_initialized_)
 				{
@@ -388,14 +379,13 @@ namespace etest::vision
 				}
 				else if(yolo_tracking_initialized_)
 				{
-					// 短暂保持
+					// 短暂保持：使用上一次有效检测的置信度
 					result.valid = true;
 					result.calibrated = yolo_zero_locked_;
 					result.x = yolo_last_center_.x;
 					result.y = yolo_last_center_.y;
-					result.confidence = yolo_last_detections_.empty()
-					    ? 0.0
-					    : yolo_last_detections_[0].confidence * 0.5;
+					result.confidence =
+					    yolo_last_valid_confidence_ * 0.5;
 				}
 				else
 				{
@@ -407,6 +397,8 @@ namespace etest::vision
 
 			// ── 检测到球 ──
 			yolo_lost_frames_ = 0;
+			yolo_last_valid_confidence_ =
+			    static_cast<double>(best->confidence);
 			cv::Point2f center = best->center();
 			yolo_last_center_ = center;
 

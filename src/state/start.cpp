@@ -585,12 +585,17 @@ namespace etest::state
 		// 6. 加载 YOLO 模型（detector=yolo 时）
 		if(search_cfg.detector == "yolo")
 		{
-			ETEST_LOG_INFO("STATE_START", "loading YOLO model...");
+			ETEST_LOG_INFO(
+			    "STATE_START",
+			    "loading YOLO model: backend="
+			        + search_cfg.yolo_backend
+			        + " input="
+			        + std::to_string(search_cfg.nn_input_width) + "x"
+			        + std::to_string(search_cfg.nn_input_height)
+			        + " threads="
+			        + std::to_string(search_cfg.nn_threads));
 
-			if(!ctx.vision.loadNnModel(
-			       search_cfg.model_path, search_cfg.class_names_path,
-			       search_cfg.nn_confidence_threshold,
-			       search_cfg.nn_nms_threshold))
+			if(!ctx.vision.loadYoloModel(search_cfg))
 			{
 				ETEST_LOG_ERROR(
 				    "STATE_START",
@@ -598,8 +603,11 @@ namespace etest::state
 			}
 			else
 			{
-				ETEST_LOG_INFO("STATE_START",
-				               "YOLO model loaded successfully");
+				ETEST_LOG_INFO(
+				    "STATE_START",
+				    "YOLO model loaded: backend="
+				        + std::string(
+				            ctx.vision.yoloBackendName()));
 			}
 
 			// 初始化会话 ID 和时间零点
