@@ -4,14 +4,17 @@
 #include "core/logger.hpp"
 #include "uart/protocol.hpp"
 #include "uart/uart.hpp"
+#include "vision/latest_frame_capture.hpp"
 #include "vision/vision.hpp"
 
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <limits>
 #include <string>
 #include <thread>
 
@@ -63,9 +66,19 @@ namespace etest::state
 		auto last_throttle_time = std::chrono::steady_clock::now()
 		    - std::chrono::milliseconds(throttle_ms + 1);
 
+		// ── 性能基线统计 ──
+		const auto perf_interval = std::chrono::milliseconds(1000);
+		auto last_perf_log = std::chrono::steady_clock::now();
+		int perf_vision_calls = 0;
+		std::int64_t perf_vision_total_us = 0;
+		std::int64_t perf_loop_total_us = 0;
+		std::uint64_t dropped_frames_total = 0;
+		std::uint64_t last_perf_captured = 0;
+		std::uint64_t last_perf_processed = 0;
+
 		uint64_t frame_count = 0;
 
-		// 帧率控制
+		// 帧率控制（仅文件源）
 		const bool is_file = ctx.camera.isFileSource();
 		const bool realtime_playback = ctx.camera.realtimePlayback();
 		const int playback_fps = ctx.camera.playbackFps();
@@ -124,6 +137,27 @@ namespace etest::state
 		// DONE 标记
 		bool done_received = false;
 
+		// ── 最新帧采集（仅实时摄像头）──
+		const bool use_latest_capture = !is_file;
+		vision::LatestFrameCapture capture(ctx.camera);
+
+		if(use_latest_capture)
+		{
+			if(!capture.start())
+			{
+				ETEST_LOG_ERROR(
+				    "SEARCH",
+				    "failed to start latest-frame capture worker");
+				ctx.last_fault = {FaultSource::CAMERA,
+				                  RecoveryAction::REOPEN_CAMERA,
+				                  "CAPTURE_THREAD_START",
+				                  "failed to start capture worker"};
+				return State::ERROR;
+			}
+		}
+
+		std::uint64_t last_processed_sequence = 0;
+
 		while(ctx.running)
 		{
 			if(ctx.shutdown_flag != nullptr
@@ -136,49 +170,7 @@ namespace etest::state
 			++frame_count;
 			const auto loop_start = std::chrono::steady_clock::now();
 
-			// 帧率控制
-			if(frame_interval.count() > 0)
-			{
-				const auto since_last = std::chrono::duration_cast<
-				    std::chrono::milliseconds>(loop_start
-				                               - last_frame_time);
-				if(since_last < frame_interval)
-					std::this_thread::sleep_for(frame_interval
-					                            - since_last);
-			}
-
-			// 1) 读取帧
-			if(!ctx.camera.read(ctx.frame))
-			{
-				++frame_failures;
-				if(ctx.camera.getState()
-				   == vision::CameraState::FILE_EOF)
-				{
-					ETEST_LOG_INFO("SEARCH",
-					               "file source ended; exiting search");
-					break;
-				}
-
-				if(frame_failures >= 3)
-				{
-					ETEST_LOG_ERROR(
-					    "SEARCH",
-					    "camera failed for 3 consecutive frames");
-					ctx.last_fault = {
-					    FaultSource::CAMERA,
-					    RecoveryAction::REOPEN_CAMERA,
-					    "SEARCH_FRAME_READ",
-					    "camera failed for 3 consecutive frames"};
-					return State::ERROR;
-				}
-				std::this_thread::sleep_for(
-				    std::chrono::milliseconds(20));
-				continue;
-			}
-			frame_failures = 0;
-			last_frame_time = std::chrono::steady_clock::now();
-
-			// 2) UART 消息处理
+			// ── 2) UART 消息处理（移到帧读取之前，确保及时处理）──
 			{
 				UartMessage msg;
 				int processed = 0;
@@ -224,6 +216,10 @@ namespace etest::state
 						    ctx.task.vision_epoch_ns);
 						ctx.vision.resetYoloSession();
 						ctx.task.seq = 0;
+
+						// 记录 vision_epoch（steady_clock 时间点）
+						ctx.task.vision_epoch =
+						    std::chrono::steady_clock::now();
 
 						ETEST_LOG_INFO(
 						    "SEARCH",
@@ -387,7 +383,7 @@ namespace etest::state
 				}
 			}
 
-			// 3) 心跳发送与超时
+			// ── 3) 心跳发送与超时 ──
 			{
 				const auto now = std::chrono::steady_clock::now();
 				const auto elapsed =
@@ -460,7 +456,7 @@ namespace etest::state
 				}
 			}
 
-			// 4) VSESSION 握手（仅在收到 M000X 后发送）
+			// ── 4) VSESSION 握手（仅在收到 M000X 后发送）──
 			if(ctx.task.mission_received && !ctx.task.vsession_confirmed
 			   && ctx.uart.isOpen() && link_state == LinkState::ONLINE)
 			{
@@ -480,11 +476,130 @@ namespace etest::state
 				}
 			}
 
-			// 5) 视觉处理 + BALL 发送（仅在收到 M000X 后）
-			if(ctx.task.mission_received && ctx.task.vsession_confirmed)
+			// ── 1) 获取帧 ──
+			vision::FramePacket packet;
+			bool has_new_frame = false;
+
+			if(use_latest_capture)
 			{
+				has_new_frame = capture.tryGetLatest(
+				    packet, last_processed_sequence);
+
+				if(!has_new_frame)
+				{
+					// 检查采集线程是否报错
+					if(capture.state()
+					   == vision::CaptureWorkerState::CAMERA_ERROR)
+					{
+						ETEST_LOG_ERROR(
+						    "SEARCH",
+						    "latest-frame capture worker failed");
+						ctx.last_fault = {FaultSource::CAMERA,
+						                  RecoveryAction::REOPEN_CAMERA,
+						                  "CAPTURE_READ_FAILED",
+						                  "capture worker failed"};
+						return State::ERROR;
+					}
+
+					// 无新帧，短暂休眠后继续（保证 UART/心跳及时）
+					std::this_thread::sleep_for(
+					    std::chrono::milliseconds(1));
+					continue;
+				}
+
+				// 过滤任务开始前采集的旧帧
+				if(ctx.task.mission_received
+				   && packet.received_at < ctx.task.vision_epoch)
+				{
+					last_processed_sequence = packet.sequence;
+					continue;
+				}
+			}
+			else
+			{
+				// 文件源：保留原有同步读取逻辑
+
+				// 帧率控制
+				if(frame_interval.count() > 0)
+				{
+					const auto since_last = std::chrono::duration_cast<
+					    std::chrono::milliseconds>(loop_start
+					                               - last_frame_time);
+					if(since_last < frame_interval)
+						std::this_thread::sleep_for(frame_interval
+						                            - since_last);
+				}
+
+				if(!ctx.camera.read(ctx.frame))
+				{
+					++frame_failures;
+					if(ctx.camera.getState()
+					   == vision::CameraState::FILE_EOF)
+					{
+						ETEST_LOG_INFO(
+						    "SEARCH",
+						    "file source ended; exiting search");
+						break;
+					}
+
+					if(frame_failures >= 3)
+					{
+						ETEST_LOG_ERROR(
+						    "SEARCH",
+						    "camera failed for 3 consecutive frames");
+						ctx.last_fault = {
+						    FaultSource::CAMERA,
+						    RecoveryAction::REOPEN_CAMERA,
+						    "SEARCH_FRAME_READ",
+						    "camera failed for 3 consecutive frames"};
+						return State::ERROR;
+					}
+					std::this_thread::sleep_for(
+					    std::chrono::milliseconds(20));
+					continue;
+				}
+				frame_failures = 0;
+				last_frame_time = std::chrono::steady_clock::now();
+
+				// 将同步读取的帧包装为 FramePacket
+				packet.frame = ctx.frame;
+				packet.received_at = std::chrono::steady_clock::now();
+				packet.sequence = frame_count;
+				has_new_frame = true;
+			}
+
+			// 更新 ctx.frame 和丢帧统计
+			if(has_new_frame)
+			{
+				ctx.frame = packet.frame;
+
+				// 丢帧统计：sequence 跳跃说明有帧被覆盖（仅在最新帧模式下有意义）
+				if(use_latest_capture && last_processed_sequence != 0
+				   && packet.sequence > last_processed_sequence + 1)
+				{
+					dropped_frames_total +=
+					    packet.sequence - last_processed_sequence - 1;
+				}
+
+				last_processed_sequence = packet.sequence;
+			}
+
+			// ── 5) 视觉处理 + BALL 发送（仅在收到 M000X 后）──
+			if(ctx.task.mission_received && ctx.task.vsession_confirmed
+			   && has_new_frame)
+			{
+				const auto vision_start =
+				    std::chrono::steady_clock::now();
 				ctx.vision_result = ctx.vision.process(
 				    ctx.frame, vision::VisionMode::Ball);
+				const auto vision_end =
+				    std::chrono::steady_clock::now();
+				const auto vision_us = std::chrono::duration_cast<
+				                           std::chrono::microseconds>(
+				                           vision_end - vision_start)
+				                           .count();
+				++perf_vision_calls;
+				perf_vision_total_us += vision_us;
 
 				const auto now = std::chrono::steady_clock::now();
 				const auto ball_elapsed =
@@ -495,24 +610,30 @@ namespace etest::state
 				if(ball_elapsed >= search_cfg.result_send_interval_ms
 				   || ctx.task_phase == TaskPhase::CALIBRATING)
 				{
-					// 计算 capture_ms / age_ms
-					uint64_t capture_ns =
-					    ctx.task.vision_epoch_ns
-					    + static_cast<uint64_t>(
-					        std::chrono::duration_cast<
-					            std::chrono::nanoseconds>(
-					            now.time_since_epoch())
-					            .count()
-					        - ctx.task.vision_epoch_ns);
-					uint32_t capture_ms = static_cast<uint32_t>(
-					    (capture_ns - ctx.task.vision_epoch_ns)
-					    / 1'000'000u);
-					uint32_t age_ms = static_cast<uint32_t>(
+					// ── 修正后的 capture_ms / age_ms ──
+					// capture_ms: 帧采集时刻相对于视觉会话开始的时间（毫秒）
+					// age_ms: 帧从采集到发送 BALL 的延迟（毫秒）
+
+					// 使用 packet.received_at（采集线程打的时间戳）代替 now
+					const auto capture_ms_64 =
 					    std::chrono::duration_cast<
 					        std::chrono::milliseconds>(
-					        now.time_since_epoch())
-					        .count()
-					    - capture_ms);
+					        packet.received_at - ctx.task.vision_epoch)
+					        .count();
+					const auto age_ms_64 =
+					    std::chrono::duration_cast<
+					        std::chrono::milliseconds>(
+					        now - packet.received_at)
+					        .count();
+
+					const std::uint32_t capture_ms = static_cast<
+					    std::uint32_t>(std::clamp<std::int64_t>(
+					    capture_ms_64, 0,
+					    std::numeric_limits<std::uint32_t>::max()));
+					const std::uint32_t age_ms = static_cast<
+					    std::uint32_t>(std::clamp<std::int64_t>(
+					    age_ms_64, 0,
+					    std::numeric_limits<std::uint32_t>::max()));
 
 					std::string status;
 					int pos = 0;
@@ -573,7 +694,6 @@ namespace etest::state
 				   && ctx.task_phase == TaskPhase::CALIBRATING
 				   && ctx.vision_result.calibrated)
 				{
-					// 如果球在等待期间大幅移动，重新标定
 					if(ctx.vision_result.position_0p1mm != 0
 					   && std::abs(ctx.vision_result.position_0p1mm)
 					       > 200)
@@ -624,7 +744,61 @@ namespace etest::state
 				               "CONTESTSTOP sent; recalibrating");
 			}
 
-			// 10) 节流日志
+			// 10) 性能统计日志
+			{
+				const auto now = std::chrono::steady_clock::now();
+				const auto loop_us =
+				    std::chrono::duration_cast<
+				        std::chrono::microseconds>(now - loop_start)
+				        .count();
+				perf_loop_total_us += loop_us;
+
+				const auto perf_elapsed = std::chrono::duration_cast<
+				    std::chrono::milliseconds>(now - last_perf_log);
+				if(perf_elapsed >= perf_interval)
+				{
+					const auto avg_vision_ms = perf_vision_calls > 0
+					    ? (static_cast<double>(perf_vision_total_us)
+					       / perf_vision_calls / 1000.0)
+					    : 0.0;
+					const auto avg_loop_us = perf_vision_calls > 0
+					    ? (perf_loop_total_us
+					       / std::max<std::int64_t>(1,
+					                                perf_vision_calls))
+					    : std::int64_t{0};
+
+					const auto now_captured = use_latest_capture
+					    ? capture.capturedFrames()
+					    : frame_count;
+
+					ETEST_LOG_INFO(
+					    "PERF",
+					    "vision_ms="
+					        + std::to_string(
+					            static_cast<int>(avg_vision_ms))
+					        + " loop_us="
+					        + std::to_string(
+					            static_cast<int>(avg_loop_us))
+					        + " frames=" + std::to_string(frame_count)
+					        + " captured="
+					        + std::to_string(now_captured) + " dropped="
+					        + std::to_string(dropped_frames_total)
+					        + " read_fail="
+					        + std::to_string(
+					            use_latest_capture
+					                ? capture.readFailures()
+					                : 0));
+
+					last_perf_log = now;
+					last_perf_captured = now_captured;
+					last_perf_processed = last_processed_sequence;
+					perf_vision_calls = 0;
+					perf_vision_total_us = 0;
+					perf_loop_total_us = 0;
+				}
+			}
+
+			// 11) 节流日志
 			{
 				const auto now = std::chrono::steady_clock::now();
 				const auto elapsed = std::chrono::duration_cast<
@@ -684,8 +858,8 @@ namespace etest::state
 				}
 			}
 
-			// 11) 预览绘制
-			if(can_show_preview)
+			// 12) 预览绘制
+			if(can_show_preview && has_new_frame)
 			{
 				cv::Mat display = ctx.frame.clone();
 				ctx.vision.drawDebugInfo(display, ctx.vision_result);
@@ -709,6 +883,18 @@ namespace etest::state
 					break;
 				}
 			}
+			else if(can_show_preview)
+			{
+				// 无新帧时仍处理窗口事件
+				const int key = cv::waitKey(1) & 0xFF;
+				if(allow_keyboard_exit
+				   && (key == 27 || key == 'q' || key == 'Q'))
+				{
+					ETEST_LOG_INFO("SEARCH",
+					               "exit requested via keyboard");
+					break;
+				}
+			}
 			else
 			{
 				std::this_thread::sleep_for(
@@ -719,6 +905,7 @@ namespace etest::state
 		if(can_show_preview && preview_open)
 			cv::destroyAllWindows();
 
+		// LatestFrameCapture 在此析构，自动 stop + join
 		ETEST_LOG_INFO("SEARCH", "exiting search loop");
 		return State::END;
 	}

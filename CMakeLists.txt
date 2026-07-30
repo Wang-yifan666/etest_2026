@@ -19,6 +19,7 @@ add_executable(etest_2026
     src/state/end.cpp
     src/state/error.cpp
     src/vision/camera.cpp
+    src/vision/latest_frame_capture.cpp
     src/vision/video_recorder.cpp
     src/vision/vision.cpp
     src/vision/vision_utils.cpp
@@ -100,6 +101,69 @@ target_link_libraries(etest_ball_video_test PRIVATE ${OpenCV_LIBS} pthread)
 target_compile_options(etest_ball_video_test PRIVATE -Wall -Wextra -pedantic)
 
 add_test(NAME ball_video_test COMMAND etest_ball_video_test ${CMAKE_SOURCE_DIR}/docs/videos/test5.mp4 ${CMAKE_SOURCE_DIR}/config/vision.toml)
+
+# LatestFrameCapture 单元测试
+add_executable(etest_latest_frame_capture
+    test/test_latest_frame_capture.cpp
+    src/vision/latest_frame_capture.cpp
+    src/vision/camera.cpp
+    src/core/config.cpp
+    src/core/logger.cpp
+)
+
+target_include_directories(
+    etest_latest_frame_capture
+    PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(
+    etest_latest_frame_capture
+    PRIVATE
+    ${OpenCV_LIBS}
+    pthread
+)
+
+target_compile_options(
+    etest_latest_frame_capture
+    PRIVATE
+    -Wall
+    -Wextra
+    -pedantic
+)
+
+add_test(NAME latest_frame_capture_test COMMAND etest_latest_frame_capture ${CMAKE_SOURCE_DIR})
+
+# YOLO 性能
+add_executable(etest_yolo_benchmark
+    test/test_yolo_benchmark.cpp
+    src/vision/vision.cpp
+    src/vision/vision_utils.cpp
+    src/vision/yolo_ball.cpp
+    src/core/config.cpp
+    src/core/logger.cpp
+)
+
+target_include_directories(
+    etest_yolo_benchmark
+    PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(
+    etest_yolo_benchmark
+    PRIVATE
+    ${OpenCV_LIBS}
+    pthread
+)
+
+target_compile_options(
+    etest_yolo_benchmark
+    PRIVATE
+    -Wall
+    -Wextra
+    -pedantic
+)
 
 # WSL 下 OpenCV 依赖附加库
 if(WSL)

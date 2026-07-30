@@ -26,22 +26,25 @@ namespace etest
 		CALIBRATING, // 标定原点中，发送 BALL CALIB
 		RUNNING,     // 标定完成，等待发送 CONTESTSTART
 		CONTEST,     // 比赛进行中，收到 CONTESTSTART ACK 后
-		STOPPING     // 收到 DONE，等待发送 CONTESTSTOP 后回到 RUNNING
+		STOPPING // 收到 DONE，等待发送 CONTESTSTOP 后回到 RUNNING
 	};
 
 	// 任务会话
 	struct TaskSession
 	{
-		std::uint32_t session_id = 0;         // 视觉会话 ID
-		std::uint64_t vision_epoch_ns = 0;    // 会话零点（单调时钟）
-		std::uint32_t seq = 0;                // BALL 序号
-		bool vsession_confirmed = false;      // VSESSION 握手完成
-		std::string active_mode;              // 当前比赛模式
-		int command = 0;                      // 任务命令号 1~5
-		int problem_number = 0;               // 题目编号 2~6
-		bool mission_received = false;        // 是否收到 M000X 选题
-		bool contest_start_sent = false;      // CONTESTSTART 已发送
-		bool contest_start_acked = false;     // CONTESTSTART 已确认
+		std::uint32_t session_id = 0; // 视觉会话 ID
+		std::uint64_t vision_epoch_ns =
+		    0; // 会话零点纳秒（单调时钟 time_since_epoch）
+		std::chrono::steady_clock::time_point
+		    vision_epoch{};               // 会话零点时间点
+		std::uint32_t seq = 0;            // BALL 序号
+		bool vsession_confirmed = false;  // VSESSION 握手完成
+		std::string active_mode;          // 当前比赛模式
+		int command = 0;                  // 任务命令号 1~5
+		int problem_number = 0;           // 题目编号 2~6
+		bool mission_received = false;    // 是否收到 M000X 选题
+		bool contest_start_sent = false;  // CONTESTSTART 已发送
+		bool contest_start_acked = false; // CONTESTSTART 已确认
 		std::chrono::steady_clock::time_point phase_since{};
 	};
 

@@ -16,399 +16,410 @@
 namespace etest::vision
 {
 
-namespace
-{
-
-bool isInteger(const std::string& text)
-{
-	if(text.empty())
+	namespace
 	{
-		return false;
+
+		bool isInteger(const std::string& text)
+		{
+			if(text.empty())
+			{
+				return false;
+			}
+
+			return std::all_of(text.begin(), text.end(),
+			                   [](unsigned char ch) {
+				                   return std::isdigit(ch) != 0;
+			                   });
+		}
+
+		bool isDevicePath(const std::string& source)
+		{
+			return source.rfind("/dev/", 0) == 0;
+		}
+
+		bool isFileExtension(const std::string& source)
+		{
+			// 常见视频文件扩展名
+			const std::string lower = [&] {
+				std::string s = source;
+				std::transform(
+				    s.begin(), s.end(), s.begin(),
+				    [](unsigned char ch) {
+					    return static_cast<char>(std::tolower(ch));
+				    });
+				return s;
+			}();
+
+			return lower.find(".mp4") != std::string::npos
+			    || lower.find(".avi") != std::string::npos
+			    || lower.find(".mov") != std::string::npos
+			    || lower.find(".mkv") != std::string::npos
+			    || lower.find(".jpg") != std::string::npos
+			    || lower.find(".png") != std::string::npos
+			    || lower.find(".bmp") != std::string::npos;
+		}
+
+	} // namespace
+
+	Camera::Camera(CameraConfig config, int retry_interval_ms):
+	config_(std::move(config)), retry_interval_ms_(retry_interval_ms)
+	{
+		// 判断是否是文件源
+		file_source_ = !isInteger(config_.source)
+		    && !isDevicePath(config_.source)
+		    && isFileExtension(config_.source);
 	}
 
-	return std::all_of(text.begin(), text.end(),
-	                   [](unsigned char ch) {
-		                   return std::isdigit(ch) != 0;
-	                   });
-}
-
-bool isDevicePath(const std::string& source)
-{
-	return source.rfind("/dev/", 0) == 0;
-}
-
-bool isFileExtension(const std::string& source)
-{
-	// 常见视频文件扩展名
-	const std::string lower = [&] {
-		std::string s = source;
-		std::transform(s.begin(), s.end(), s.begin(),
-		               [](unsigned char ch) {
-			               return static_cast<char>(
-			                   std::tolower(ch));
-		               });
-		return s;
-	}();
-
-	return lower.find(".mp4") != std::string::npos
-	       || lower.find(".avi") != std::string::npos
-	       || lower.find(".mov") != std::string::npos
-	       || lower.find(".mkv") != std::string::npos
-	       || lower.find(".jpg") != std::string::npos
-	       || lower.find(".png") != std::string::npos
-	       || lower.find(".bmp") != std::string::npos;
-}
-
-} // namespace
-
-Camera::Camera(CameraConfig config, int retry_interval_ms)
-    : config_(std::move(config))
-    , retry_interval_ms_(retry_interval_ms)
-{
-	// 判断是否是文件源
-	file_source_ =
-	    !isInteger(config_.source) && !isDevicePath(config_.source)
-	    && isFileExtension(config_.source);
-}
-
-bool Camera::loopVideo() const noexcept
-{
-	return config_.loop_video;
-}
-
-bool Camera::open() noexcept
-{
-	try
+	bool Camera::loopVideo() const noexcept
 	{
-		if(cap_.isOpened())
+		return config_.loop_video;
+	}
+
+	bool Camera::open() noexcept
+	{
+		try
 		{
-			cap_.release();
-		}
-
-		bool success = false;
-		const bool numeric_source = isInteger(config_.source);
-
-		const bool device_path = isDevicePath(config_.source);
-
-		if(numeric_source)
-		{
-			const int camera_id = std::stoi(config_.source);
-
-			success = cap_.open(camera_id, cv::CAP_ANY);
-		}
-		else if(device_path)
-		{
-			// Linux / WSL / Raspberry Pi 上优先使用 V4L2。
-			// 解析符号链接（如 /dev/v4l/by-id/... → /dev/video0），
-			// 因为 OpenCV 的 V4L2 后端无法直接打开 by-id 路径。
-			std::string resolved_path = config_.source;
-			char real_path[PATH_MAX] = {};
-			if(::realpath(config_.source.c_str(), real_path) != nullptr)
+			if(cap_.isOpened())
 			{
-				resolved_path = real_path;
+				cap_.release();
 			}
-			success = cap_.open(resolved_path, cv::CAP_V4L2);
+
+			bool success = false;
+			const bool numeric_source = isInteger(config_.source);
+
+			const bool device_path = isDevicePath(config_.source);
+
+			if(numeric_source)
+			{
+				const int camera_id = std::stoi(config_.source);
+
+				success = cap_.open(camera_id, cv::CAP_ANY);
+			}
+			else if(device_path)
+			{
+				// Linux / WSL / Raspberry Pi 上优先使用 V4L2。
+				// 解析符号链接（如 /dev/v4l/by-id/... → /dev/video0），
+				// 因为 OpenCV 的 V4L2 后端无法直接打开 by-id 路径。
+				std::string resolved_path = config_.source;
+				char real_path[PATH_MAX] = {};
+				if(::realpath(config_.source.c_str(), real_path)
+				   != nullptr)
+				{
+					resolved_path = real_path;
+				}
+				success = cap_.open(resolved_path, cv::CAP_V4L2);
+
+				if(!success)
+				{
+					ETEST_LOG_WARN(
+					    "CAMERA",
+					    "V4L2 backend failed; retrying with CAP_ANY");
+
+					success = cap_.open(config_.source, cv::CAP_ANY);
+				}
+			}
+			else
+			{
+				success = cap_.open(config_.source, cv::CAP_ANY);
+			}
 
 			if(!success)
 			{
-				ETEST_LOG_WARN(
+				ETEST_LOG_ERROR(
 				    "CAMERA",
-				    "V4L2 backend failed; retrying with CAP_ANY");
+				    "failed to open source: " + config_.source);
 
-				success = cap_.open(config_.source, cv::CAP_ANY);
+				state_ = CameraState::ERROR;
+				return false;
 			}
-		}
-		else
-		{
-			success = cap_.open(config_.source, cv::CAP_ANY);
-		}
 
-		if(!success)
+			if(numeric_source || device_path)
+			{
+				if(config_.fourcc.size() == 4)
+				{
+					if(!cap_.set(
+					       cv::CAP_PROP_FOURCC,
+					       cv::VideoWriter::fourcc(
+					           config_.fourcc[0], config_.fourcc[1],
+					           config_.fourcc[2], config_.fourcc[3])))
+					{
+						ETEST_LOG_WARN("CAMERA",
+						               "driver rejected requested "
+						               "FOURCC "
+						                   + config_.fourcc);
+					}
+				}
+
+				if(!cap_.set(cv::CAP_PROP_FRAME_WIDTH, config_.width))
+				{
+					ETEST_LOG_WARN("CAMERA",
+					               "driver rejected requested width "
+					                   + std::to_string(config_.width));
+				}
+
+				if(!cap_.set(cv::CAP_PROP_FRAME_HEIGHT, config_.height))
+				{
+					ETEST_LOG_WARN(
+					    "CAMERA",
+					    "driver rejected requested height "
+					        + std::to_string(config_.height));
+				}
+
+				if(!cap_.set(cv::CAP_PROP_FPS, config_.fps))
+				{
+					ETEST_LOG_WARN("CAMERA",
+					               "driver rejected requested FPS "
+					                   + std::to_string(config_.fps));
+				}
+
+				// 请求驱动侧缓冲区为 1，减少驱动内部积帧
+				if(!cap_.set(cv::CAP_PROP_BUFFERSIZE, 1))
+				{
+					ETEST_LOG_WARN("CAMERA",
+					               "backend rejected "
+					               "CAP_PROP_BUFFERSIZE=1");
+				}
+			}
+
+			std::ostringstream description;
+
+			description << "opened source=" << config_.source
+			            << ", actual_width="
+			            << cap_.get(cv::CAP_PROP_FRAME_WIDTH)
+			            << ", actual_height="
+			            << cap_.get(cv::CAP_PROP_FRAME_HEIGHT)
+			            << ", actual_fps=" << cap_.get(cv::CAP_PROP_FPS)
+			            << ", requested_buffer_size=1"
+			            << ", actual_buffer_size="
+			            << cap_.get(cv::CAP_PROP_BUFFERSIZE)
+			            << ", is_file="
+			            << (file_source_ ? "true" : "false");
+
+			ETEST_LOG_INFO("CAMERA", description.str());
+
+			consecutive_failures_ = 0;
+			read_error_reported_ = false;
+			state_ = CameraState::OK;
+			return true;
+		}
+		catch(const cv::Exception& error)
 		{
 			ETEST_LOG_ERROR(
 			    "CAMERA",
-			    "failed to open source: " + config_.source);
+			    std::string("OpenCV open exception: ") + error.what());
 
 			state_ = CameraState::ERROR;
 			return false;
 		}
-
-		if(numeric_source || device_path)
+		catch(const std::exception& error)
 		{
-			if(config_.fourcc.size() == 4)
-			{
-				if(!cap_.set(
-				       cv::CAP_PROP_FOURCC,
-				       cv::VideoWriter::fourcc(
-				           config_.fourcc[0], config_.fourcc[1],
-				           config_.fourcc[2], config_.fourcc[3])))
-				{
-					ETEST_LOG_WARN("CAMERA",
-					               "driver rejected requested "
-					               "FOURCC "
-					                   + config_.fourcc);
-				}
-			}
+			ETEST_LOG_ERROR(
+			    "CAMERA",
+			    std::string("open exception: ") + error.what());
 
-			if(!cap_.set(cv::CAP_PROP_FRAME_WIDTH, config_.width))
-			{
-				ETEST_LOG_WARN("CAMERA",
-				               "driver rejected requested width "
-				                   + std::to_string(config_.width));
-			}
-
-			if(!cap_.set(cv::CAP_PROP_FRAME_HEIGHT, config_.height))
-			{
-				ETEST_LOG_WARN(
-				    "CAMERA",
-				    "driver rejected requested height "
-				        + std::to_string(config_.height));
-			}
-
-			if(!cap_.set(cv::CAP_PROP_FPS, config_.fps))
-			{
-				ETEST_LOG_WARN("CAMERA",
-				               "driver rejected requested FPS "
-				                   + std::to_string(config_.fps));
-			}
+			state_ = CameraState::ERROR;
+			return false;
 		}
+		catch(...)
+		{
+			ETEST_LOG_ERROR("CAMERA", "unknown open exception");
 
-		std::ostringstream description;
-
-		description << "opened source=" << config_.source
-		            << ", actual_width="
-		            << cap_.get(cv::CAP_PROP_FRAME_WIDTH)
-		            << ", actual_height="
-		            << cap_.get(cv::CAP_PROP_FRAME_HEIGHT)
-		            << ", actual_fps="
-		            << cap_.get(cv::CAP_PROP_FPS)
-		            << ", is_file=" << (file_source_ ? "true" : "false");
-
-		ETEST_LOG_INFO("CAMERA", description.str());
-
-		consecutive_failures_ = 0;
-		read_error_reported_ = false;
-		state_ = CameraState::OK;
-		return true;
+			state_ = CameraState::ERROR;
+			return false;
+		}
 	}
-	catch(const cv::Exception& error)
-	{
-		ETEST_LOG_ERROR(
-		    "CAMERA",
-		    std::string("OpenCV open exception: ") + error.what());
 
-		state_ = CameraState::ERROR;
-		return false;
-	}
-	catch(const std::exception& error)
+	bool Camera::read(cv::Mat& frame) noexcept
 	{
-		ETEST_LOG_ERROR(
-		    "CAMERA",
-		    std::string("open exception: ") + error.what());
+		try
+		{
+			if(!cap_.isOpened())
+			{
+				if(!read_error_reported_)
+				{
+					ETEST_LOG_ERROR(
+					    "CAMERA",
+					    "read requested while camera is not open");
 
-		state_ = CameraState::ERROR;
-		return false;
-	}
-	catch(...)
-	{
-		ETEST_LOG_ERROR("CAMERA", "unknown open exception");
+					read_error_reported_ = true;
+				}
 
-		state_ = CameraState::ERROR;
-		return false;
-	}
-}
+				state_ = CameraState::ERROR;
+				frame.release();
+				return false;
+			}
 
-bool Camera::read(cv::Mat& frame) noexcept
-{
-	try
-	{
-		if(!cap_.isOpened())
+			const bool success = cap_.read(frame) && !frame.empty();
+
+			if(!success)
+			{
+				++consecutive_failures_;
+
+				// 清除输出帧，禁止使用上一帧
+				frame.release();
+
+				if(!read_error_reported_)
+				{
+					ETEST_LOG_ERROR("CAMERA",
+					                "failed to read a valid frame");
+
+					read_error_reported_ = true;
+				}
+
+				// 仅文件源需要在此处理循环回放和 EOF 检测。
+				// 真实摄像头重连由 ERROR 状态统一负责。
+				if(file_source_
+				   && consecutive_failures_ >= kMaxConsecutiveFailures)
+				{
+					if(config_.loop_video)
+					{
+						ETEST_LOG_INFO(
+						    "CAMERA",
+						    "file source ended; looping back to start");
+
+						cap_.set(cv::CAP_PROP_POS_FRAMES, 0);
+						consecutive_failures_ = 0;
+						state_ = CameraState::OK;
+						return read(frame);
+					}
+
+					ETEST_LOG_INFO(
+					    "CAMERA",
+					    "file source reached end; not reopening");
+
+					state_ = CameraState::FILE_EOF;
+				}
+
+				return false;
+			}
+
+			consecutive_failures_ = 0;
+
+			if(read_error_reported_)
+			{
+				ETEST_LOG_INFO("CAMERA", "frame reading recovered");
+
+				read_error_reported_ = false;
+			}
+
+			// 若实际分辨率与配置不符，缩放到目标尺寸
+			const int target_w = config_.width;
+			const int target_h = config_.height;
+			if(target_w > 0 && target_h > 0
+			   && (frame.cols != target_w || frame.rows != target_h))
+			{
+				cv::resize(frame, frame, cv::Size(target_w, target_h),
+				           0.0, 0.0, cv::INTER_LINEAR);
+			}
+
+			state_ = CameraState::OK;
+			return true;
+		}
+		catch(const cv::Exception& error)
+		{
+			if(!read_error_reported_)
+			{
+				ETEST_LOG_ERROR("CAMERA",
+				                std::string("OpenCV read exception: ")
+				                    + error.what());
+
+				read_error_reported_ = true;
+			}
+
+			frame.release();
+			state_ = CameraState::ERROR;
+			return false;
+		}
+		catch(const std::exception& error)
 		{
 			if(!read_error_reported_)
 			{
 				ETEST_LOG_ERROR(
 				    "CAMERA",
-				    "read requested while camera is not open");
+				    std::string("read exception: ") + error.what());
 
 				read_error_reported_ = true;
 			}
 
-			state_ = CameraState::ERROR;
 			frame.release();
+			state_ = CameraState::ERROR;
 			return false;
 		}
-
-		const bool success = cap_.read(frame) && !frame.empty();
-
-		if(!success)
+		catch(...)
 		{
-			++consecutive_failures_;
-
-			// 清除输出帧，禁止使用上一帧
-			frame.release();
-
 			if(!read_error_reported_)
 			{
-				ETEST_LOG_ERROR("CAMERA",
-				                "failed to read a valid frame");
+				ETEST_LOG_ERROR("CAMERA", "unknown read exception");
 
 				read_error_reported_ = true;
 			}
 
-			// 仅文件源需要在此处理循环回放和 EOF 检测。
-			// 真实摄像头重连由 ERROR 状态统一负责。
-			if(file_source_ && consecutive_failures_ >= kMaxConsecutiveFailures)
-			{
-				if(config_.loop_video)
-				{
-					ETEST_LOG_INFO(
-					    "CAMERA",
-					    "file source ended; looping back to start");
-
-					cap_.set(cv::CAP_PROP_POS_FRAMES, 0);
-					consecutive_failures_ = 0;
-					state_ = CameraState::OK;
-					return read(frame);
-				}
-
-				ETEST_LOG_INFO(
-				    "CAMERA",
-				    "file source reached end; not reopening");
-
-				state_ = CameraState::FILE_EOF;
-			}
-
+			frame.release();
+			state_ = CameraState::ERROR;
 			return false;
 		}
-
-		consecutive_failures_ = 0;
-
-		if(read_error_reported_)
-		{
-			ETEST_LOG_INFO("CAMERA", "frame reading recovered");
-
-			read_error_reported_ = false;
-		}
-
-		// 若实际分辨率与配置不符，缩放到目标尺寸
-		const int target_w = config_.width;
-		const int target_h = config_.height;
-		if(target_w > 0 && target_h > 0
-		   && (frame.cols != target_w || frame.rows != target_h))
-		{
-			cv::resize(frame, frame,
-			           cv::Size(target_w, target_h), 0.0, 0.0,
-			           cv::INTER_LINEAR);
-		}
-
-		state_ = CameraState::OK;
-		return true;
 	}
-	catch(const cv::Exception& error)
+
+	bool Camera::isOpened() const noexcept
 	{
-		if(!read_error_reported_)
+		try
 		{
-			ETEST_LOG_ERROR("CAMERA",
-			                std::string("OpenCV read exception: ")
-			                    + error.what());
-
-			read_error_reported_ = true;
+			return cap_.isOpened();
 		}
-
-		frame.release();
-		state_ = CameraState::ERROR;
-		return false;
+		catch(...)
+		{
+			return false;
+		}
 	}
-	catch(const std::exception& error)
+
+	CameraState Camera::getState() const noexcept
 	{
-		if(!read_error_reported_)
+		return state_;
+	}
+
+	int Camera::consecutiveFailures() const noexcept
+	{
+		return consecutive_failures_;
+	}
+
+	bool Camera::isFileSource() const noexcept
+	{
+		return file_source_;
+	}
+
+	bool Camera::realtimePlayback() const noexcept
+	{
+		return config_.realtime_playback;
+	}
+
+	int Camera::playbackFps() const noexcept
+	{
+		return config_.playback_fps;
+	}
+
+	void Camera::release() noexcept
+	{
+		try
+		{
+			if(cap_.isOpened())
+			{
+				cap_.release();
+
+				ETEST_LOG_INFO("CAMERA", "released");
+			}
+
+			state_ = CameraState::DISCONNECTED;
+		}
+		catch(const cv::Exception& error)
 		{
 			ETEST_LOG_ERROR(
 			    "CAMERA",
-			    std::string("read exception: ") + error.what());
-
-			read_error_reported_ = true;
+			    std::string("release exception: ") + error.what());
 		}
-
-		frame.release();
-		state_ = CameraState::ERROR;
-		return false;
-	}
-	catch(...)
-	{
-		if(!read_error_reported_)
+		catch(...)
 		{
-			ETEST_LOG_ERROR("CAMERA", "unknown read exception");
-
-			read_error_reported_ = true;
+			ETEST_LOG_ERROR("CAMERA", "unknown release exception");
 		}
-
-		frame.release();
-		state_ = CameraState::ERROR;
-		return false;
 	}
-}
-
-bool Camera::isOpened() const noexcept
-{
-	try
-	{
-		return cap_.isOpened();
-	}
-	catch(...)
-	{
-		return false;
-	}
-}
-
-CameraState Camera::getState() const noexcept
-{
-	return state_;
-}
-
-int Camera::consecutiveFailures() const noexcept
-{
-	return consecutive_failures_;
-}
-
-bool Camera::isFileSource() const noexcept
-{
-	return file_source_;
-}
-
-bool Camera::realtimePlayback() const noexcept
-{
-	return config_.realtime_playback;
-}
-
-int Camera::playbackFps() const noexcept
-{
-	return config_.playback_fps;
-}
-
-void Camera::release() noexcept
-{
-	try
-	{
-		if(cap_.isOpened())
-		{
-			cap_.release();
-
-			ETEST_LOG_INFO("CAMERA", "released");
-		}
-
-		state_ = CameraState::DISCONNECTED;
-	}
-	catch(const cv::Exception& error)
-	{
-		ETEST_LOG_ERROR(
-		    "CAMERA",
-		    std::string("release exception: ") + error.what());
-	}
-	catch(...)
-	{
-		ETEST_LOG_ERROR("CAMERA", "unknown release exception");
-	}
-}
 
 } // namespace etest::vision

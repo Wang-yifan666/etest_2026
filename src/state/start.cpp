@@ -611,6 +611,7 @@ namespace etest::state
 			ctx.task.vision_epoch_ns = std::chrono::steady_clock::now()
 			                               .time_since_epoch()
 			                               .count();
+			ctx.task.vision_epoch = std::chrono::steady_clock::now();
 			ctx.vision.setVisionEpoch(ctx.task.vision_epoch_ns);
 
 			ETEST_LOG_INFO("STATE_START",
