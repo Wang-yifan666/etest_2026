@@ -3461,7 +3461,9 @@ class EtestGui:
         if not mode_path.is_file():
             return
 
-        text = mode_path.read_text(encoding="utf-8")
+        with mode_path.open("rb") as f:
+            mode_data = tomllib.load(f)
+
         forbidden = (
             "axis_calibration",
             "calibration_line_x",
@@ -3469,7 +3471,18 @@ class EtestGui:
             "full_roi_x",
             "center_roi_x",
         )
-        conflicts = [key for key in forbidden if key in text]
+
+        def _contains_key(table, key: str) -> bool:
+            """递归检查 table 及其嵌套表中是否包含指定键。"""
+            if isinstance(table, dict):
+                if key in table:
+                    return True
+                for value in table.values():
+                    if _contains_key(value, key):
+                        return True
+            return False
+
+        conflicts = [key for key in forbidden if _contains_key(mode_data, key)]
 
         if conflicts:
             raise OperationError(
