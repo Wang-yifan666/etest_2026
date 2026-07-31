@@ -707,7 +707,14 @@ namespace etest::state
 							    .resetBallNcnnSession();
 							ETEST_LOG_INFO(
 							    "SEARCH",
-							    "CENTER → FULL_REACQUIRE");
+							    "CENTER → FULL_REACQUIRE "
+							    "(model "
+							        + std::to_string(
+							            bn_cfg.full_input_width)
+							        + "×"
+							        + std::to_string(
+							            bn_cfg.full_input_height)
+							        + ")");
 						}
 					}
 					else if(ctx.task.tracking_mode
@@ -736,7 +743,16 @@ namespace etest::state
 								    .resetBallNcnnSession();
 								ETEST_LOG_INFO(
 								    "SEARCH",
-								    "FULL_REACQUIRE → CENTER");
+								    "FULL_REACQUIRE → CENTER "
+								    "(model "
+								        + std::to_string(
+								            bn_cfg
+								                .center_input_width)
+								        + "×"
+								        + std::to_string(
+								            bn_cfg
+								                .center_input_height)
+								        + ")");
 							}
 						}
 						else
@@ -920,22 +936,42 @@ namespace etest::state
 					ctx.task.enterPhase(
 					    ContestTaskPhase::RUNNING);
 
-					if(ctx.task.mode == TaskMode::Q4
-					   || ctx.task.mode == TaskMode::Q5)
-					{
-						ctx.task.tracking_mode =
-						    TrackingMode::CENTER;
-					}
+				const auto& bn_cfg =
+				    ctx.vision.getConfig().ball_ncnn;
 
-					ctx.vision_result.calibrated = true;
-
+				if(ctx.task.mode == TaskMode::Q4
+				   || ctx.task.mode == TaskMode::Q5)
+				{
+					ctx.task.tracking_mode =
+					    TrackingMode::CENTER;
 					ETEST_LOG_INFO(
 					    "SEARCH",
-					    "CALIBRATING → RUNNING, "
-					    "START sent: "
-					        + std::string(mode_name)
-					        + " target="
-					        + std::to_string(target_0p1mm));
+					    "switching to CENTER model "
+					        + std::to_string(
+					            bn_cfg.center_input_width)
+					        + "×"
+					        + std::to_string(
+					            bn_cfg.center_input_height));
+				}
+
+				ctx.vision_result.calibrated = true;
+
+				std::string tracking_label = "FULL";
+				if(ctx.task.tracking_mode
+				   == TrackingMode::CENTER)
+				{
+					tracking_label = "CENTER";
+				}
+
+				ETEST_LOG_INFO(
+				    "SEARCH",
+				    "CALIBRATING → RUNNING, "
+				    "START sent: "
+				        + std::string(mode_name)
+				        + " tracking="
+				        + tracking_label
+				        + " target="
+				        + std::to_string(target_0p1mm));
 				}
 
 				// 标定超时

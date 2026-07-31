@@ -79,17 +79,38 @@ int main(int argc, char** argv)
 	etest::vision::BallNcnnManager manager;
 	std::string error;
 
-	if(!manager.initialize(
-	       load_result.config.vision.ball_ncnn,
-	       error))
+	const auto& bn = load_result.config.vision.ball_ncnn;
+
+	if(!manager.initialize(bn, error))
 	{
 		std::cout << "ERROR\t" << error << "\n" << std::flush;
 		return EXIT_FAILURE;
 	}
 
+	// 向 stderr 输出当前使用的模型配置
+	std::cerr
+	    << "[worker] 模型已加载\n"
+	    << "[worker]   FULL model : "
+	    << bn.full_input_width << "×" << bn.full_input_height
+	    << "  (ROI " << bn.full_src_width << "×"
+	    << bn.full_src_height << " from 1280×640)\n"
+	    << "[worker]   CENTER model: "
+	    << bn.center_input_width << "×" << bn.center_input_height
+	    << "  (ROI " << bn.center_src_width << "×"
+	    << bn.center_src_height << " from 1280×640)\n"
+	    << "[worker]   threads=" << bn.num_threads
+	    << " fp16_storage=" << (bn.use_fp16_storage ? "true" : "false")
+	    << " fp16_arithmetic="
+	    << (bn.use_fp16_arithmetic ? "true" : "false")
+	    << "\n"
+	    << "[worker]   confidence_min=" << bn.minimum_confidence
+	    << "\n"
+	    << std::flush;
+
 	std::cout << "READY\n" << std::flush;
 
 	std::string line;
+	std::string last_mode = "";
 
 	while(std::getline(std::cin, line))
 	{
@@ -107,6 +128,7 @@ int main(int argc, char** argv)
 		{
 			manager.resetTracking();
 			std::cout << "RESET_OK\n" << std::flush;
+			last_mode = "";
 			continue;
 		}
 
@@ -118,6 +140,28 @@ int main(int argc, char** argv)
 			    << "ERROR\t非法命令\n"
 			    << std::flush;
 			continue;
+		}
+
+		// 模式变化时输出日志
+		if(parts[2] != last_mode)
+		{
+			last_mode = parts[2];
+			if(last_mode == "FULL")
+			{
+				std::cerr
+				    << "[worker] mode=FULL ("
+				    << bn.full_input_width << "×"
+				    << bn.full_input_height << ")\n"
+				    << std::flush;
+			}
+			else if(last_mode == "CENTER")
+			{
+				std::cerr
+				    << "[worker] mode=CENTER ("
+				    << bn.center_input_width << "×"
+				    << bn.center_input_height << ")\n"
+				    << std::flush;
+			}
 		}
 
 		cv::Mat frame =
