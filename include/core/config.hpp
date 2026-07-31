@@ -272,7 +272,7 @@ namespace etest
 		double axis_y1 = 230.0;
 		double axis_x2 = 560.0;
 		double axis_y2 = 230.0;
-		double axis_length_cm = 20.0;
+		double axis_length_cm = 19.8;
 
 		// ── 棕色管道 HSV 阈值 ──
 		int brown_h_min = 5;

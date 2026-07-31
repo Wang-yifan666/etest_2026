@@ -151,4 +151,37 @@ namespace etest::vision::roi_utils
 		return static_cast<int>(std::lround(mm * 10.0));
 	}
 
+	AxisPositionResult pixelToMmChecked(
+	    const double pixel_global,
+	    const PipeAxisCalibration& cal) noexcept
+	{
+		AxisPositionResult result;
+
+		const auto& pts = cal.points;
+		if(pts.size() < 2)
+		{
+			return result;
+		}
+
+		if(cal.image_right_sign != -1
+		   && cal.image_right_sign != 1)
+		{
+			return result;
+		}
+
+		// 检查是否在标定点范围内
+		if(pixel_global < pts.front().pixel
+		   || pixel_global > pts.back().pixel)
+		{
+			result.out_of_range = true;
+			return result;
+		}
+
+		result.valid = true;
+		result.position_mm =
+		    pixelToMm(pixel_global, cal);
+
+		return result;
+	}
+
 } // namespace etest::vision::roi_utils

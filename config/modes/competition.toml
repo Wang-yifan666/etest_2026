@@ -1,39 +1,385 @@
-# 比赛模式
+# ============================================================================
+# etest_2026 树莓派比赛模式 — 最高优先级配置覆盖
+# ============================================================================
+#
+# 启用方式：在 config/main.toml 中设置：
+#
+#   [mode]
+#   enabled = true
+#   name = "competition"
+#
+# 本文件以最高优先级覆盖以下基础配置：
+#   runtime.toml, camera.toml, uart.toml, search.toml,
+#   vision.toml, record.toml, logger.toml
+#
+# 当前画面：1280×720，传感器 1280px，1px ≈ 0.1760mm
+# ============================================================================
 
+# ============================================================
+# 运行模式
+# ============================================================
 [runtime]
+
+# systemd 后台运行必须开启无界面模式
 headless = true
+
+# 后台运行没有键盘输入
 allow_keyboard_exit = false
+
+# 启动时执行摄像头、串口、模型等自检
 enable_self_check = true
+
+# 摄像头或串口异常后自动恢复
 enable_auto_recovery = true
 
-[search]
-show_preview = false
-enable_nn = false
+# 摄像头断开后的重试间隔
+camera_retry_interval_ms = 500
 
+# 串口断开后的重试间隔
+uart_retry_interval_ms = 1000
+
+# ============================================================
+# 日志
+# ============================================================
 [logger]
-# 比赛时只写文件，不输出终端
+
+# 相对于项目 WorkingDirectory
+directory = "data/log"
+
+# 写入项目日志文件
 file = true
-terminal = false
-# 每条日志立即刷新，防止掉电丢失
-flush_each_write = true
-# 最低日志等级为 INFO，减少不必要输出
+
+# 输出到标准输出，由 systemd journal 收集
+terminal = true
+
+# 比赛建议 INFO
+# 调试视觉问题时可以临时改为 DEBUG
 min_level = "INFO"
 
-[camera]
-# 树莓派摄像头
-source = "/dev/v4l/by-id/usb-lihappe8_Corp._USB_2.0_Camera-video-index0"
-width = 640
-height = 480
-fps = 30
-fourcc = "MJPG"
-loop_video = false
-realtime_playback = false
+# 每次写日志立即刷新，掉电时更容易保留最后信息
+flush_each_write = true
 
+# 相同高频日志的节流时间
+throttle_interval_ms = 500
+
+# ============================================================
+# 摄像头
+# ============================================================
+[camera]
+
+# 部署前执行：
+#   ls -l /dev/v4l/by-id/
+#   v4l2-ctl --list-devices
+#
+# 推荐使用 /dev/v4l/by-id 下的稳定路径。
+# 如果路径与树莓派实际设备不同，必须修改。
+source = "/dev/v4l/by-id/usb-lihappe8_Corp._USB_2.0_Camera-video-index0"
+
+# 当前 BallNcnn 的原图坐标、Full ROI 和 Center ROI
+# 均按照 1280×720 设计，不能随意改成 640×480。
+width = 1280
+height = 720
+
+fps = 30
+
+# USB 摄像头建议使用 MJPG，降低 USB 带宽压力
+fourcc = "MJPG"
+
+# 摄像头输入不是循环视频
+loop_video = false
+
+# 仅视频文件输入时有意义
+realtime_playback = false
+playback_fps = 30
+
+# ============================================================
+# 串口
+# ============================================================
+[uart]
+
+# STM32 USB CDC 常见为 /dev/ttyACM0
+#
+# 比赛部署更推荐稳定路径，例如：
+#   device = "/dev/serial/by-id/usb-STM32_STM32_Virtual_ComPort_..."
+device = "/dev/ttyACM0"
+
+# 必须与 STM32 固件一致
+baudrate = 115200
+
+# 单次读取超时
+timeout_ms = 50
+
+# 单次写入超时
+write_timeout_ms = 200
+
+# 串口断开后的重连间隔
+reconnect_interval_ms = 1000
+
+# 自动重连
+auto_reconnect = true
+
+# 单行协议数据最大长度
+max_line_length = 512
+
+# 接收队列容量
+queue_capacity = 256
+
+# 握手超时
+handshake_timeout_ms = 1500
+
+# 心跳发送周期
+heartbeat_interval_ms = 500
+
+# 心跳超时时间必须大于 heartbeat_interval_ms
+heartbeat_timeout_ms = 2000
+
+# 必须与 STM32 协议版本一致
+protocol_version_major = 5
+protocol_version_minor = 2
+
+# 兼容旧版本配置字段
+protocol_version = 5
+
+# ============================================================
+# 录像
+# ============================================================
 [record]
-enabled = true
+
+# 正式比赛默认关闭录像，避免增加：
+#   1. CPU 编码负载
+#   2. SD 卡写入
+#   3. 磁盘占用
+#
+# 调试时可以临时改为 true。
+enabled = false
+
+# 保存原始画面
 save_raw = true
+
+# 不保存额外调试画面
 save_debug = false
+
+# 相对于项目 WorkingDirectory
 directory = "data/video"
+
 fourcc = "MJPG"
 fps = 30
+
+# 每 300 秒分割一个视频文件
 segment_seconds = 300
+
+# ============================================================
+# 搜索和任务调度
+# ============================================================
+[search]
+
+# systemd 后台运行必须关闭预览窗口
+show_preview = false
+
+# 这里控制的是旧的通用单模型检测路径。
+#
+# 当前比赛任务使用的是后面的 [vision.ball_ncnn]
+# Full + Center 双模型，因此这里保持 false，
+# 避免额外加载第三个通用模型。
+enable_nn = false
+
+detector = "traditional"
+
+# 保留为 ncnn，供代码中的后端字段读取或后续切换使用
+yolo_backend = "ncnn"
+
+# 物理换算：像素到毫米的比例（1px ≈ 0.1760mm）
+mm_per_pixel = 0.176
+
+# 偏移方向取反
+invert_offset = false
+
+# 向 STM32 发送识别结果的最小间隔
+result_send_interval_ms = 40
+
+# 标定状态发送间隔
+calib_status_interval_ms = 250
+
+# 视觉会话失败后的重试间隔
+vsession_retry_interval_ms = 500
+
+# 连续推理错误超过此值后触发恢复
+max_inference_errors = 5
+
+# 模型重新加载的间隔
+model_reload_interval_ms = 2000
+
+camera_id = "CAM0"
+nominal_fps = 30
+
+# ============================================================
+# 传统视觉模块
+# ============================================================
+[vision.ball]
+
+# 正式比赛禁止传统视觉模块额外写调试视频
+video_output = ""
+
+# ============================================================
+# NCNN 双模型钢球检测
+# ============================================================
+[vision.ball_ncnn]
+
+# 开启比赛 NCNN 双模型
+enabled = true
+
+# ------------------------------------------------------------
+# 模型路径
+# ------------------------------------------------------------
+#
+# 每个 param 文件必须存在对应的同名 .bin 文件。
+# 当前代码根据 param 路径自动推导 bin 路径。
+full_model_param = "model/ncnn_160x640/best_160x640_fp16.ncnn.param"
+center_model_param = "model/ncnn_160x224/best_160x224_fp16.ncnn.param"
+
+# ------------------------------------------------------------
+# NCNN 模型输入尺寸
+# ------------------------------------------------------------
+#
+# 必须与实际导出的 NCNN 模型输入尺寸完全一致。
+full_input_width = 640
+full_input_height = 160
+
+center_input_width = 224
+center_input_height = 160
+
+# ------------------------------------------------------------
+# 原图 ROI 尺寸
+# ------------------------------------------------------------
+#
+# 原始摄像头图像为 1280×720。
+#
+# Full 模型从原图裁剪 1280×320，
+# 再缩放到 640×160 输入模型。
+#
+# Center 模型从原图裁剪 448×320，
+# 再缩放到 224×160 输入模型。
+full_src_width = 1280
+full_src_height = 320
+
+center_src_width = 448
+center_src_height = 320
+
+# ------------------------------------------------------------
+# ROI 位置
+# ------------------------------------------------------------
+#
+# topleft 表示 full_roi_x/full_roi_y 和
+# center_roi_x/center_roi_y 是 ROI 左上角坐标。
+roi_location_mode = "topleft"
+
+# Full ROI:
+#   左上角 (0, 160)
+#   尺寸 1280×320
+#   覆盖原图 y=160 到 y=479
+full_roi_x = 0
+full_roi_y = 160
+
+# Center ROI:
+#   左上角 (416, 160)
+#   尺寸 448×320
+#   覆盖原图 x=416 到 x=863
+center_roi_x = 416
+center_roi_y = 160
+
+# ------------------------------------------------------------
+# 图像和管道参考中心
+# ------------------------------------------------------------
+# 1280×720 图像的水平中心线
+center_line_y = 360
+
+# 管道参考中心
+pipe_center_x = 640
+pipe_center_y = 360
+
+# ------------------------------------------------------------
+# Full / Center 模型切换
+# ------------------------------------------------------------
+#
+# Full 模型负责大范围重新捕获。
+# Center 模型负责中心区域稳定跟踪。
+# 球距离 Center ROI 边缘小于此像素时，
+# 认为靠近边缘，可能切回 Full 模型。
+edge_guard_px = 24
+
+# Center 模式连续丢失多少帧后切回 Full 模式
+lost_frames_to_reacquire = 2
+
+# Full 模式连续稳定识别多少帧后切入 Center 模式
+stable_frames_to_center = 8
+
+# ------------------------------------------------------------
+# 启动标定
+# ------------------------------------------------------------
+# 标定目标线的原图 X 坐标
+calibration_line_x = 640
+
+# 球心距离标定线允许的误差
+calibration_line_tolerance_px = 20
+
+# 标定期间球心最大允许抖动
+calibration_max_jitter_px = 6.0
+
+# 连续满足条件的帧数
+calibration_frames = 8
+
+# 标定超时
+calibration_timeout_ms = 1500
+
+# 初始位置距离中心超过此值时，
+# 可以判定不满足中心启动条件
+initial_center_limit_mm = 15.0
+
+# ------------------------------------------------------------
+# 检测阈值
+# ------------------------------------------------------------
+# 检测置信度阈值
+#
+#   漏检较多时可尝试降到 0.35～0.40。
+#   误检较多时可尝试提高到 0.50～0.60。
+minimum_confidence = 0.45
+
+# ------------------------------------------------------------
+# NCNN 性能
+# ------------------------------------------------------------
+# 树莓派通用起始值。
+#
+#   Raspberry Pi 4 可以先使用 4。
+#   Raspberry Pi 5 实测温度和延迟后可尝试 6 或 8。
+num_threads = 4
+
+# 使用 FP16 存储，通常可以减少内存占用
+use_fp16_storage = true
+
+# 保守设置为 false。
+#
+#   Raspberry Pi 5 上经过精度和稳定性测试后，
+#   可以尝试改成 true。
+use_fp16_arithmetic = false
+
+# ============================================================
+# 像素坐标到物理坐标的标定（全幅三点标定）
+# ============================================================
+[vision.ball_ncnn.axis_calibration]
+
+# 图像 X 增大是否对应物理坐标增大。
+#   1  ：图像向右，物理坐标增大
+#   -1 ：图像向右，物理坐标减小
+image_right_sign = 1
+
+# 全幅三点线性标定（1px ≈ 0.1760mm，画面 1280×720）：
+#
+#   图像左端    0 px →  -112.64 mm
+#   图像中心  640 px →     0.00 mm
+#   图像右端 1279 px →  +112.46 mm
+#
+# 支持添加更多标定点进行分段线性插值，例如：
+#   pixels = "95, 360, 640, 918, 1182"
+#   positions_mm = "-112, -56, 0, 56, 112"
+pixels = "0, 640, 1279"
+positions_mm = "-112.64, 0.0, 112.46"

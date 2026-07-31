@@ -64,4 +64,20 @@ namespace etest::vision::roi_utils
 	int pixelTo0p1mm(double pixel_global,
 	                 const PipeAxisCalibration& cal);
 
+	// ── 越界检测 ──
+
+	/// 带越界状态的像素→毫米换算结果。
+	struct AxisPositionResult
+	{
+		bool valid = false;
+		bool out_of_range = false;
+		double position_mm = 0.0;
+	};
+
+	/// 全局像素 x → 物理毫米（带越界检测）。
+	/// 像素超出标定点范围时 out_of_range=true, valid=false。
+	AxisPositionResult pixelToMmChecked(
+	    double pixel_global,
+	    const PipeAxisCalibration& cal) noexcept;
+
 } // namespace etest::vision::roi_utils

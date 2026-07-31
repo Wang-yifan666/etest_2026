@@ -2,6 +2,7 @@
 
 #include "core/config.hpp"
 #include "core/logger.hpp"
+#include "state/calibration_logic.hpp"
 #include "state/task_session.hpp"
 #include "uart/protocol.hpp"
 #include "uart/uart.hpp"

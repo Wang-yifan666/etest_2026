@@ -88,6 +88,7 @@ add_executable(etest_2026
     src/state/state.cpp
     src/state/start.cpp
     src/state/search.cpp
+    src/state/calibration_logic.cpp
     src/state/end.cpp
     src/state/error.cpp
     src/vision/camera.cpp

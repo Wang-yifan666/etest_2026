@@ -40,7 +40,7 @@ axis_x1 = 80.0
 axis_y1 = 230.0
 axis_x2 = 560.0
 axis_y2 = 230.0
-axis_length_cm = 25.0
+axis_length_cm = 19.8
 
 # ── 棕色管道 HSV 阈值 ──
 brown_h_min = 5

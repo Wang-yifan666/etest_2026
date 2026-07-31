@@ -333,8 +333,25 @@ class RoiCalibration:
 class AxisCalibrationPoint:
     position_mm: float
     pixel_x: float
-    jitter_px: float = 0.0
-    valid_frames: int = 1
+
+    mad_px: float = 0.0
+    peak_to_peak_px: float = 0.0
+    median_confidence: float = 0.0
+
+    valid_frames: int = 0
+    total_frames: int = 0
+
+    @property
+    def valid_ratio(self) -> float:
+        if self.total_frames <= 0:
+            return 0.0
+
+        return self.valid_frames / self.total_frames
+
+    @property
+    def is_historical(self) -> bool:
+        """从 TOML 配置加载的旧数据没有采样质量信息。"""
+        return self.total_frames == 0
 
 
 @dataclass
@@ -346,6 +363,7 @@ class AxisCalibration:
         return sorted(self.points, key=lambda point: point.pixel_x)
 
     def validate(self) -> None:
+        """基础校验（C++ 运行时兼容）：至少 2 点，像素严格递增，位置单调。"""
         if self.image_right_sign not in (-1, 1):
             raise CalibrationValidationError(
                 "image_right_sign 只能是 -1 或 1"
@@ -378,6 +396,91 @@ class AxisCalibration:
             raise CalibrationValidationError(
                 "物理位置必须随像素 X 单调变化"
             )
+
+    def find_zero_point(
+        self,
+        epsilon: float = 1e-6,
+    ) -> AxisCalibrationPoint | None:
+        for point in self.points:
+            if abs(point.position_mm) <= epsilon:
+                return point
+
+        return None
+
+    def replace_or_add(
+        self,
+        point: AxisCalibrationPoint,
+        position_epsilon_mm: float = 0.01,
+    ) -> None:
+        for index, existing in enumerate(self.points):
+            if (
+                abs(existing.position_mm - point.position_mm)
+                <= position_epsilon_mm
+            ):
+                self.points[index] = point
+                return
+
+        self.points.append(point)
+
+    def validate_for_save(
+        self,
+        *,
+        full_roi: RoiRect,
+        require_zero_point: bool = True,
+    ) -> None:
+        """
+        GUI 保存前严格校验。比 C++ 运行时最低要求更严。
+
+        要求：
+        - image_right_sign 为 +1 或 -1
+        - 至少 3 个点（推荐 5 个以上）
+        - 必须包含 0 mm 点（可选关闭）
+        - 相邻标定点像素距离 >= 5 px
+        - 按像素排序后位置值严格递增
+        - 所有标定点像素在 Full ROI 内
+        """
+        if self.image_right_sign not in (-1, 1):
+            raise CalibrationValidationError(
+                "图像方向只能为 +1 或 -1"
+            )
+
+        points = self.sorted_points()
+
+        if len(points) < 3:
+            raise CalibrationValidationError(
+                "位置标定至少需要 3 个点，建议 5 个以上"
+            )
+
+        if require_zero_point and self.find_zero_point() is None:
+            raise CalibrationValidationError(
+                "必须包含一个 0 mm 标定点"
+            )
+
+        for previous, current in zip(points, points[1:]):
+            if current.pixel_x - previous.pixel_x < 5.0:
+                raise CalibrationValidationError(
+                    "相邻标定点像素距离过小"
+                )
+
+            if current.position_mm - previous.position_mm <= 0.0:
+                raise CalibrationValidationError(
+                    "标定点按像素排序后，"
+                    "位置值必须严格递增。\n"
+                    "当前语义：positions_mm 始终从左到右递增，"
+                    "image_right_sign 仅表示画面右方"
+                    "是物理 + 还是 - 方向。"
+                )
+
+        for point in points:
+            if not (
+                full_roi.left
+                <= point.pixel_x
+                < full_roi.right
+            ):
+                raise CalibrationValidationError(
+                    f"{point.position_mm} mm 的像素点"
+                    "不在 Full ROI 内"
+                )
 
     def pixel_to_mm(self, pixel_x: float) -> float:
         """

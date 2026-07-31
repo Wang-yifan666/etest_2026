@@ -51,6 +51,10 @@ from calibration_model import (  # type: ignore[import-untyped]
     robust_sample,
 )
 from calibration_camera import CalibrationCamera  # type: ignore[import-untyped]
+from calibration_worker_client import (  # type: ignore[import-untyped]
+    CalibrationWorkerClient,
+    WorkerMeasurement,
+)
 
 try:
     import cv2
@@ -1745,6 +1749,15 @@ class EtestGui:
         self.roi_create_start: Optional[tuple[float, float]] = None
         self.calib_transform: Optional[CanvasTransform] = None
 
+        # ── 位置标定状态 ──
+        self.axis_calibration = AxisCalibration()
+        self.axis_worker: Optional[CalibrationWorkerClient] = None
+        self.axis_sampling = False
+        self.axis_cancel_event = threading.Event()
+        self.axis_dirty = False
+        self.roi_dirty = False
+        self._axis_control_widgets: list = []
+
         # ── Canvas 绑定 ──
         self.calib_canvas.bind("<ButtonPress-1>", self._calib_on_press)
         self.calib_canvas.bind("<B1-Motion>", self._calib_on_drag)
@@ -2744,22 +2757,875 @@ class EtestGui:
     def _calib_info_var_set(self, text: str) -> None:
         self.calib_info_var.set(text)
 
-    # ── 位置标定子页面（第二阶段占位）──
+    # ── 位置标定子页面 ──
 
     def _build_axis_tab(self) -> None:
-        placeholder = ttk.Label(
-            self.calib_axis_tab,
-            text="位置标定功能将在第二阶段实现。\n\n"
-                 "功能：\n"
-                 "• 输入已知物理位置（如 -100 mm）\n"
-                 "• 调用 NCNN 检测器多帧采样球心像素\n"
-                 "• 计算中位数 / MAD 抖动 / 有效帧数\n"
-                 "• 标定点表格（可添加/删除/重采样）\n"
-                 "• 保存 pixels 与 positions_mm 到 vision.toml",
-            justify=tk.LEFT,
-            font=("", 11),
+        """位置标定页：采样控制 + 标定点表格 + 保存/验证/同步。"""
+        # ── 上半：提示 + 采样控制 ──
+        upper_frame = ttk.Frame(self.calib_axis_tab)
+        upper_frame.pack(fill=tk.X, pady=(0, 8))
+
+        ttk.Label(
+            upper_frame,
+            text="摄像头预览请查看「ROI 配置」页签。",
+            foreground="#666666",
+            font=("", 9),
+        ).pack(anchor=tk.W)
+
+        self.axis_cam_status_var = tk.StringVar(value="摄像头：未启动")
+        ttk.Label(
+            upper_frame,
+            textvariable=self.axis_cam_status_var,
+            foreground="#666666",
+            font=("", 8),
+        ).pack(anchor=tk.W, pady=(2, 6))
+
+        control_frame = ttk.LabelFrame(upper_frame, text="采样控制", padding=8)
+        control_frame.pack(fill=tk.X)
+
+        # 第一行：物理位置 + 采样帧数 + 最低置信度
+        row1 = ttk.Frame(control_frame)
+        row1.pack(fill=tk.X, pady=(0, 4))
+
+        ttk.Label(row1, text="已知物理位置：").pack(side=tk.LEFT)
+        self.axis_position_var = tk.StringVar(value="-50.0")
+        self.axis_position_entry = ttk.Entry(
+            row1, textvariable=self.axis_position_var, width=9,
         )
-        placeholder.pack(expand=True)
+        self.axis_position_entry.pack(side=tk.LEFT, padx=(2, 16))
+        self._axis_control_widgets.append(self.axis_position_entry)
+
+        ttk.Label(row1, text="采样帧数：").pack(side=tk.LEFT)
+        self.axis_total_frames_var = tk.IntVar(value=30)
+        self.axis_total_frames_spin = ttk.Spinbox(
+            row1, from_=10, to=200, textvariable=self.axis_total_frames_var, width=5,
+        )
+        self.axis_total_frames_spin.pack(side=tk.LEFT, padx=(2, 16))
+        self._axis_control_widgets.append(self.axis_total_frames_spin)
+
+        ttk.Label(row1, text="最低置信度：").pack(side=tk.LEFT)
+        self.axis_min_confidence_var = tk.DoubleVar(value=0.55)
+        self.axis_min_confidence_spin = ttk.Spinbox(
+            row1, from_=0.01, to=1.0, increment=0.05,
+            textvariable=self.axis_min_confidence_var, width=5,
+        )
+        self.axis_min_confidence_spin.pack(side=tk.LEFT, padx=(2, 16))
+        self._axis_control_widgets.append(self.axis_min_confidence_spin)
+
+        ttk.Label(row1, text="最大 MAD px：").pack(side=tk.LEFT)
+        self.axis_max_mad_var = tk.DoubleVar(value=1.5)
+        self.axis_max_mad_spin = ttk.Spinbox(
+            row1, from_=0.1, to=10.0, increment=0.1,
+            textvariable=self.axis_max_mad_var, width=5,
+        )
+        self.axis_max_mad_spin.pack(side=tk.LEFT, padx=(2, 0))
+        self._axis_control_widgets.append(self.axis_max_mad_spin)
+
+        # 第二行：模型信息 + 状态 + 按钮
+        row2 = ttk.Frame(control_frame)
+        row2.pack(fill=tk.X)
+
+        self.axis_model_label_var = tk.StringVar(value="检测模型：Full 模型")
+        ttk.Label(row2, textvariable=self.axis_model_label_var).pack(side=tk.LEFT)
+
+        self.axis_status_var = tk.StringVar(value="采样状态：未开始")
+        ttk.Label(
+            row2, textvariable=self.axis_status_var,
+            foreground="#555555",
+        ).pack(side=tk.LEFT, padx=(16, 0))
+
+        ttk.Button(
+            row2, text="开始采样", command=self._axis_start_sampling,
+        ).pack(side=tk.RIGHT, padx=(4, 0))
+        self._axis_control_widgets.append(
+            row2.winfo_children()[-1]
+        )
+
+        ttk.Button(
+            row2, text="取消采样", command=self._axis_cancel_sampling,
+        ).pack(side=tk.RIGHT, padx=(4, 0))
+        self._axis_control_widgets.append(
+            row2.winfo_children()[-1]
+        )
+
+        # ── 下半：标定点表格 ──
+        lower_frame = ttk.Frame(self.calib_axis_tab)
+        lower_frame.pack(fill=tk.BOTH, expand=True)
+
+        columns = ("序号", "位置 mm", "像素 X", "MAD px",
+                   "峰峰值 px", "有效帧", "状态")
+        self.axis_tree = ttk.Treeview(
+            lower_frame, columns=columns, show="headings", height=8,
+        )
+        col_widths = [45, 80, 80, 70, 80, 70, 80]
+        for col, width in zip(columns, col_widths):
+            self.axis_tree.heading(col, text=col)
+            self.axis_tree.column(col, width=width, anchor=tk.CENTER)
+
+        tree_scroll = ttk.Scrollbar(
+            lower_frame, orient=tk.VERTICAL, command=self.axis_tree.yview,
+        )
+        self.axis_tree.configure(yscrollcommand=tree_scroll.set)
+        self.axis_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # ── 按钮行 ──
+        btn_frame = ttk.Frame(lower_frame)
+        btn_frame.pack(fill=tk.X, pady=(6, 2))
+
+        btns_left = ttk.Frame(btn_frame)
+        btns_left.pack(side=tk.LEFT)
+        for text, cmd in [
+            ("删除点", self._axis_delete_point),
+            ("重新采样", self._axis_resample_point),
+            ("清空", self._axis_clear_all),
+        ]:
+            btn = ttk.Button(btns_left, text=text, command=cmd)
+            btn.pack(side=tk.LEFT, padx=2)
+            self._axis_control_widgets.append(btn)
+
+        btns_mid = ttk.Frame(btn_frame)
+        btns_mid.pack(side=tk.LEFT, padx=(20, 0))
+        for text, cmd in [
+            ("用 0 mm 点更新启动线", self._axis_sync_line_to_zero),
+            ("验证当前位置", self._axis_verify_position),
+        ]:
+            btn = ttk.Button(btns_mid, text=text, command=cmd)
+            btn.pack(side=tk.LEFT, padx=2)
+            self._axis_control_widgets.append(btn)
+
+        btn = ttk.Button(
+            btns_mid, text="保存位置标定",
+            command=self._axis_save,
+        )
+        btn.pack(side=tk.LEFT, padx=2)
+        self._axis_control_widgets.append(btn)
+
+        # ── 0 mm 点与启动线关系 ──
+        relation_frame = ttk.Frame(lower_frame)
+        relation_frame.pack(fill=tk.X, pady=(6, 0))
+        self.axis_line_info_var = tk.StringVar(
+            value="0 mm 标定点像素：-  任务启动线 X：-  偏差：-",
+        )
+        ttk.Label(
+            relation_frame,
+            textvariable=self.axis_line_info_var,
+            foreground="#444444",
+            font=("", 9),
+        ).pack(side=tk.LEFT)
+
+        # ── 从配置加载已有标定点 ──
+        self._axis_load_from_config()
+        self._axis_update_cam_status()
+
+    # ── 位置标定：Worker 管理 ──
+
+    def _axis_start_worker(self) -> None:
+        """启动标定 worker 子进程。"""
+        if self.axis_worker is not None:
+            return
+
+        self.axis_worker = CalibrationWorkerClient(
+            CONFIG_DIR,
+            PROJECT_ROOT,
+        )
+        self.axis_worker.start()
+        self.set_notice("标定 worker 已启动")
+
+    def _axis_stop_worker(self) -> None:
+        """停止标定 worker。"""
+        if self.axis_worker is not None:
+            self.axis_worker.stop()
+            self.axis_worker = None
+
+    # ── 位置标定：配置加载 ──
+
+    @staticmethod
+    def _parse_float_list(text: str) -> list[float]:
+        """解析逗号分隔的浮点数列表。"""
+        if not text or not text.strip():
+            return []
+        result = []
+        for part in text.split(","):
+            part = part.strip()
+            if part:
+                result.append(float(part))
+        return result
+
+    def _axis_load_from_config(self) -> None:
+        """从 vision.toml 加载已有的轴标定点。"""
+        vision_path = CONFIG_DIR / "vision.toml"
+        if not vision_path.is_file() or tomllib is None:
+            return
+
+        try:
+            with vision_path.open("rb") as f:
+                data = tomllib.load(f)
+
+            table = (
+                data.get("vision", {})
+                .get("ball_ncnn", {})
+                .get("axis_calibration", {})
+            )
+            pixels = self._parse_float_list(table.get("pixels", ""))
+            positions = self._parse_float_list(table.get("positions_mm", ""))
+
+            if len(pixels) != len(positions):
+                raise OperationError(
+                    "pixels 和 positions_mm 数量不一致"
+                )
+
+            self.axis_calibration = AxisCalibration(
+                image_right_sign=int(
+                    table.get("image_right_sign", 1)
+                ),
+                points=[
+                    AxisCalibrationPoint(
+                        position_mm=pos,
+                        pixel_x=pix,
+                    )
+                    for pix, pos in zip(pixels, positions)
+                ],
+            )
+            self._axis_refresh_table()
+            self._axis_update_line_info()
+            LOGGER.info(
+                "加载了 %d 个历史标定点",
+                len(self.axis_calibration.points),
+            )
+        except Exception:
+            LOGGER.warning("加载轴标定点失败", exc_info=True)
+
+    # ── 位置标定：采样 ──
+
+    def _axis_check_prerequisites(self) -> None:
+        """采样前五项检查。"""
+        if not self.calib_running or self.calib_camera is None:
+            raise OperationError(
+                "请先在「ROI 配置」页打开摄像头"
+            )
+        if self.roi_dirty:
+            raise OperationError(
+                "请先保存 ROI。位置采样必须使用与正式程序相同的 ROI。"
+            )
+        self._roi_calibration.validate()
+        try:
+            float(self.axis_position_var.get())
+        except (ValueError, tk.TclError):
+            raise OperationError("请输入有效的已知物理位置（数字）")
+
+    def _axis_start_sampling(self) -> None:
+        """按钮回调：启动后台采样线程。"""
+        if self.axis_sampling:
+            self.set_notice("已在采样中")
+            return
+
+        try:
+            self._axis_check_prerequisites()
+        except OperationError as exc:
+            self.set_notice(f"无法开始采样：{exc}", error=True)
+            messagebox.showerror("无法开始采样", str(exc), parent=self.root)
+            return
+
+        # 确保 worker 已启动
+        if self.axis_worker is None:
+            try:
+                self._axis_start_worker()
+            except Exception as exc:
+                self.set_notice(f"worker 启动失败：{exc}", error=True)
+                messagebox.showerror("Worker 启动失败", str(exc), parent=self.root)
+                return
+
+        self.axis_sampling = True
+        self.axis_cancel_event.clear()
+        self._set_axis_controls_enabled(False)
+
+        position_mm = float(self.axis_position_var.get())
+        total_frames = self.axis_total_frames_var.get()
+        min_confidence = self.axis_min_confidence_var.get()
+        max_mad = self.axis_max_mad_var.get()
+
+        self.axis_status_var.set("采样状态：采样中…")
+
+        threading.Thread(
+            target=self._axis_sample_worker,
+            args=(position_mm, total_frames, min_confidence, max_mad),
+            daemon=True,
+            name="axis-calibration-sampling",
+        ).start()
+
+    def _axis_cancel_sampling(self) -> None:
+        """取消当前采样。"""
+        if not self.axis_sampling:
+            return
+        self.axis_cancel_event.set()
+        self.axis_status_var.set("采样状态：已取消")
+
+    def _axis_sample_worker(
+        self,
+        position_mm: float,
+        total_frames: int,
+        min_confidence: float,
+        max_mad: float,
+    ) -> None:
+        """采样工作线程（不在主线程中运行）。"""
+        try:
+            # 1. 重置检测器
+            self.axis_worker.reset_tracking()
+
+            # 2. 丢弃前 3 帧
+            for _ in range(3):
+                if self.axis_cancel_event.is_set():
+                    self.post_ui(self._axis_sampling_cleanup, "已取消")
+                    return
+                frame = self.calib_camera.latest_frame()
+                if frame is not None:
+                    self.axis_worker.infer(frame, mode="FULL", timeout_s=2.0)
+
+            # 3. 正式采集
+            x_samples: list[float] = []
+            confidences: list[float] = []
+
+            for i in range(total_frames):
+                if self.axis_cancel_event.is_set():
+                    self.post_ui(self._axis_sampling_cleanup, "已取消")
+                    return
+
+                frame = self.calib_camera.latest_frame()
+                if frame is None:
+                    continue
+
+                measurement = self.axis_worker.infer(
+                    frame, mode="FULL", timeout_s=2.0,
+                )
+                if (
+                    measurement.valid
+                    and measurement.confidence >= min_confidence
+                ):
+                    x_samples.append(measurement.global_x)
+                    confidences.append(measurement.confidence)
+
+                self.post_ui(
+                    self._axis_update_progress,
+                    i + 1, total_frames,
+                    len(x_samples),
+                )
+                time.sleep(0.05)
+
+            # 4. 异常值过滤
+            if len(x_samples) < 3:
+                self.post_ui(
+                    self._axis_sampling_failed,
+                    f"有效帧 {len(x_samples)}/{total_frames}，"
+                    "低于最低要求 3 帧",
+                )
+                return
+
+            center1, mad1 = robust_sample(x_samples)
+            threshold = max(3.0 * mad1, 1.5)
+            filtered = [
+                v for v in x_samples
+                if abs(v - center1) <= threshold
+            ]
+
+            if len(filtered) < 3:
+                self.post_ui(
+                    self._axis_sampling_failed,
+                    "异常值过滤后有效帧不足（<3）",
+                )
+                return
+
+            from statistics import median as stat_median
+
+            final_x, final_mad = robust_sample(filtered)
+            peak_to_peak = max(filtered) - min(filtered)
+            median_conf = stat_median(confidences)
+
+            # 5. 合格判断
+            reject_reasons: list[str] = []
+            valid_ratio = len(x_samples) / max(total_frames, 1)
+
+            if valid_ratio < 0.70:
+                reject_reasons.append(
+                    f"有效比例 {len(x_samples)}/"
+                    f"{total_frames} < 0.70"
+                )
+            if len(filtered) < 20:
+                reject_reasons.append(
+                    f"最终有效帧 {len(filtered)} < 20"
+                )
+            if final_mad > max_mad:
+                reject_reasons.append(
+                    f"MAD={final_mad:.2f} px > {max_mad}"
+                )
+            if peak_to_peak > 6.0:
+                reject_reasons.append(
+                    f"峰峰值={peak_to_peak:.2f} px > 6.0"
+                )
+            if median_conf < min_confidence:
+                reject_reasons.append(
+                    f"中位置信度={median_conf:.3f} "
+                    f"< {min_confidence}"
+                )
+
+            if reject_reasons:
+                self.post_ui(
+                    self._axis_sampling_failed,
+                    "采样失败：\n" + "\n".join(reject_reasons),
+                )
+                return
+
+            # 6. 添加到标定点
+            point = AxisCalibrationPoint(
+                position_mm=position_mm,
+                pixel_x=final_x,
+                mad_px=final_mad,
+                peak_to_peak_px=peak_to_peak,
+                median_confidence=median_conf,
+                valid_frames=len(filtered),
+                total_frames=total_frames,
+            )
+            self.post_ui(self._axis_add_point, point)
+            self.post_ui(
+                self._axis_sampling_cleanup,
+                f"采样完成：{position_mm} mm → "
+                f"{final_x:.2f} px (MAD={final_mad:.2f})",
+            )
+
+        except Exception as exc:
+            LOGGER.exception("采样线程异常")
+            self.post_ui(
+                self._axis_sampling_failed,
+                f"采样异常：{exc}",
+            )
+            self.post_ui(self._axis_sampling_cleanup, "异常终止")
+
+    def _axis_update_progress(
+        self,
+        current: int,
+        total: int,
+        valid: int,
+    ) -> None:
+        """主线程：更新采样进度。"""
+        self.axis_status_var.set(
+            f"采样进度：{current}/{total}"
+            f"（有效检测 {valid}）"
+        )
+
+    def _axis_add_point(self, point: AxisCalibrationPoint) -> None:
+        """主线程：添加或替换标定点。"""
+        self.axis_calibration.replace_or_add(point)
+        self.axis_dirty = True
+        self._axis_refresh_table()
+        self._axis_update_line_info()
+
+    def _axis_sampling_failed(self, reason: str) -> None:
+        """主线程：采样失败。"""
+        messagebox.showwarning(
+            "采样不合格",
+            reason,
+            parent=self.root,
+        )
+        self.axis_status_var.set("采样状态：不合格")
+
+    def _axis_sampling_cleanup(self, msg: str = "") -> None:
+        """主线程：采样结束收尾。"""
+        self.axis_sampling = False
+        self._set_axis_controls_enabled(True)
+        if msg:
+            self.axis_status_var.set(f"采样状态：{msg}")
+            self.set_notice(msg)
+
+    # ── 位置标定：表格管理 ──
+
+    def _axis_refresh_table(self) -> None:
+        """刷新标定点 Treeview。"""
+        for row in self.axis_tree.get_children():
+            self.axis_tree.delete(row)
+
+        for i, point in enumerate(
+            self.axis_calibration.sorted_points(),
+            1,
+        ):
+            if point.is_historical:
+                mad_str = "-"
+                pp_str = "-"
+                frames_str = "-"
+                status = "历史数据"
+            else:
+                mad_str = f"{point.mad_px:.2f}"
+                pp_str = f"{point.peak_to_peak_px:.2f}"
+                frames_str = (
+                    f"{point.valid_frames}/"
+                    f"{point.total_frames}"
+                )
+                # 判断是否合格
+                if (
+                    point.valid_ratio >= 0.70
+                    and point.valid_frames >= 20
+                    and point.mad_px <= 1.5
+                    and point.peak_to_peak_px <= 6.0
+                    and point.median_confidence >= 0.55
+                ):
+                    status = "合格"
+                else:
+                    status = "不合格"
+
+            self.axis_tree.insert(
+                "",
+                tk.END,
+                values=(
+                    i,
+                    f"{point.position_mm:.3f}",
+                    f"{point.pixel_x:.3f}",
+                    mad_str,
+                    pp_str,
+                    frames_str,
+                    status,
+                ),
+            )
+
+    def _axis_get_selected_point(
+        self,
+    ) -> AxisCalibrationPoint | None:
+        """返回当前选中行对应的标定点。"""
+        selection = self.axis_tree.selection()
+        if not selection:
+            raise OperationError("请先在表格中选择一个标定点")
+
+        values = self.axis_tree.item(selection[0], "values")
+        try:
+            position_mm = float(values[1])
+        except (IndexError, ValueError):
+            raise OperationError("无法解析选中行的位置")
+
+        for point in self.axis_calibration.points:
+            if abs(point.position_mm - position_mm) < 0.001:
+                return point
+
+        raise OperationError("找不到选中的标定点")
+
+    @ui_guard("删除标定点")
+    def _axis_delete_point(self) -> None:
+        point = self._axis_get_selected_point()
+        self.axis_calibration.points.remove(point)
+        self.axis_dirty = True
+        self._axis_refresh_table()
+        self._axis_update_line_info()
+        self.set_notice(
+            f"已删除 {point.position_mm} mm 标定点"
+        )
+
+    @ui_guard("重新采样")
+    def _axis_resample_point(self) -> None:
+        """删除选中点并填入其物理位置，让用户重新采样。"""
+        point = self._axis_get_selected_point()
+        self.axis_position_var.set(f"{point.position_mm:.1f}")
+        self.axis_calibration.points.remove(point)
+        self.axis_dirty = True
+        self._axis_refresh_table()
+        self._axis_update_line_info()
+        self.set_notice(
+            f"已删除 {point.position_mm} mm 的旧数据，"
+            "请点击「开始采样」重新采集"
+        )
+
+    @ui_guard("清空标定点")
+    def _axis_clear_all(self) -> None:
+        if not self.axis_calibration.points:
+            return
+
+        ok = messagebox.askyesno(
+            "确认清空",
+            "确定清空所有位置标定点吗？此操作不可恢复。",
+            parent=self.root,
+        )
+        if not ok:
+            return
+        self.axis_calibration.points.clear()
+        self.axis_dirty = True
+        self._axis_refresh_table()
+        self._axis_update_line_info()
+        self.set_notice("已清空所有标定点")
+
+    # ── 位置标定：保存 ──
+
+    @ui_guard("保存位置标定")
+    def _axis_save(self) -> None:
+        """保存轴标定点到 vision.toml。"""
+        if tomlkit is None:
+            raise OperationError(
+                "保存需要 tomlkit。"
+                "运行：python3 -m pip install tomlkit"
+            )
+
+        calibration = self.axis_calibration
+        if not calibration.points:
+            raise OperationError("没有标定点可保存")
+
+        rc = self._roi_calibration
+        calibration.validate_for_save(full_roi=rc.full_roi)
+
+        # 检查模式文件覆盖
+        self._axis_check_mode_override()
+
+        # 检查 0mm 点与启动线关系
+        zero = calibration.find_zero_point()
+        if zero is not None:
+            line_error = abs(
+                zero.pixel_x - rc.calibration_line_x
+            )
+            if line_error > rc.calibration_line_tolerance_px:
+                raise OperationError(
+                    f"0 mm 标定点不在任务启动线容差带内。\n"
+                    f"0mm 点像素={zero.pixel_x:.1f}，"
+                    f"启动线={rc.calibration_line_x}，\n"
+                    f"偏差={line_error:.1f} px > "
+                    f"容差={rc.calibration_line_tolerance_px} px。\n"
+                    "请更新启动线，或重新采样 0 mm 点。"
+                )
+
+        points = calibration.sorted_points()
+        pixels_text = ",".join(
+            f"{p.pixel_x:.3f}" for p in points
+        )
+        positions_text = ",".join(
+            f"{p.position_mm:.3f}" for p in points
+        )
+
+        vision_path = CONFIG_DIR / "vision.toml"
+        text = vision_path.read_text(encoding="utf-8")
+        document = tomlkit.parse(text)
+
+        axis = (
+            document.get("vision", {})
+            .get("ball_ncnn", {})
+            .get("axis_calibration")
+        )
+        if axis is None:
+            raise OperationError(
+                "vision.toml 中缺少 "
+                "[vision.ball_ncnn.axis_calibration] 节"
+            )
+
+        axis["image_right_sign"] = calibration.image_right_sign
+        axis["pixels"] = pixels_text
+        axis["positions_mm"] = positions_text
+
+        rendered = tomlkit.dumps(document)
+
+        # 二次解析验证
+        if tomllib is not None:
+            try:
+                tomllib.loads(rendered)
+            except Exception as exc:
+                raise OperationError(
+                    f"保存后 TOML 解析失败：{exc}"
+                ) from exc
+
+        atomic_write_text(vision_path, rendered, make_backup=True)
+
+        self.axis_dirty = False
+        self.set_notice(
+            "位置标定已保存。请重启主程序使新标定生效。"
+        )
+        LOGGER.info(
+            "轴标定已保存：%d 个点",
+            len(points),
+        )
+
+        # 重启 worker 使新配置生效
+        if self.axis_worker is not None:
+            self.axis_worker.restart()
+
+        # 刷新配置页
+        if self.current_config_rel == "vision.toml":
+            self.load_config_file("vision.toml")
+
+    def _axis_check_mode_override(self) -> None:
+        """检查活动模式文件是否覆盖了标定参数。"""
+        main_path = CONFIG_DIR / "main.toml"
+        if not main_path.is_file() or tomllib is None:
+            return
+
+        with main_path.open("rb") as f:
+            main_data = tomllib.load(f)
+
+        mode_name = (
+            main_data.get("mode", {}).get("name", "competition")
+        )
+        mode_path = CONFIG_DIR / "modes" / f"{mode_name}.toml"
+        if not mode_path.is_file():
+            return
+
+        text = mode_path.read_text(encoding="utf-8")
+        forbidden = (
+            "axis_calibration",
+            "calibration_line_x",
+            "calibration_line_tolerance_px",
+            "full_roi_x",
+            "center_roi_x",
+        )
+        conflicts = [key for key in forbidden if key in text]
+
+        if conflicts:
+            raise OperationError(
+                f"当前模式文件 ({mode_name}.toml) "
+                "覆盖了标定参数："
+                + ", ".join(conflicts)
+                + "\n请先删除模式文件中的这些字段。"
+            )
+
+    # ── 位置标定：0mm 点与启动线同步 ──
+
+    def _axis_update_line_info(self) -> None:
+        """更新 0mm 点与启动线关系显示。"""
+        zero = self.axis_calibration.find_zero_point()
+        if zero is None:
+            self.axis_line_info_var.set(
+                "0 mm 标定点像素：-  "
+                "任务启动线 X：-  偏差：-"
+            )
+            return
+
+        line_x = self._roi_calibration.calibration_line_x
+        deviation = zero.pixel_x - line_x
+        self.axis_line_info_var.set(
+            f"0 mm 标定点像素：{zero.pixel_x:.2f}  "
+            f"任务启动线 X：{line_x}  "
+            f"偏差：{deviation:+.2f} px"
+        )
+
+    @ui_guard("更新启动线")
+    def _axis_sync_line_to_zero(self) -> None:
+        """把任务启动线 X 设置为 0mm 标定点的像素值。"""
+        zero = self.axis_calibration.find_zero_point()
+        if zero is None:
+            raise OperationError(
+                "当前标定表没有 0 mm 点。"
+                "请先采样 0 mm 位置。"
+            )
+
+        rc = self._roi_calibration
+        rc.calibration_line_x = round(zero.pixel_x)
+        rc.clamp_all()
+        self.roi_dirty = True
+        self._calib_sync_vars_from_model()
+        self._calib_redraw()
+        self._axis_update_line_info()
+        self.set_notice(
+            f"任务启动线已更新为 {rc.calibration_line_x} "
+            f"（来自 0 mm 点 {zero.pixel_x:.2f} px）"
+        )
+
+    # ── 位置标定：验证模式 ──
+
+    @ui_guard("验证位置")
+    def _axis_verify_position(self) -> None:
+        """验证模式：输入已知位置 → 采样 → 用新标定表换算 → 显示误差。"""
+        if not self.axis_calibration.points:
+            raise OperationError("请先完成至少 3 个标定点采样")
+
+        self._axis_check_prerequisites()
+
+        # 弹窗输入已知位置
+        dialog = tk.Toplevel(self.root)
+        dialog.title("验证位置")
+        dialog.geometry("380x180")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk.Label(
+            dialog, text="输入已知物理位置 (mm)：", font=("", 10),
+        ).pack(pady=(16, 4))
+
+        verify_var = tk.StringVar(value="25.0")
+        ttk.Entry(
+            dialog, textvariable=verify_var, width=14, font=("", 12),
+        ).pack(pady=(0, 12))
+
+        result_var = tk.StringVar(value="")
+
+        def do_verify():
+            try:
+                known_mm = float(verify_var.get())
+            except ValueError:
+                messagebox.showerror(
+                    "输入错误", "请输入有效数字", parent=dialog,
+                )
+                return
+
+            # 确保 worker 运行
+            if self.axis_worker is None:
+                self._axis_start_worker()
+            self.axis_worker.reset_tracking()
+
+            # 丢弃 + 采集 20 帧
+            for _ in range(3):
+                frame = self.calib_camera.latest_frame()
+                if frame is not None:
+                    self.axis_worker.infer(
+                        frame, mode="FULL", timeout_s=2.0,
+                    )
+
+            x_samples: list[float] = []
+            for _ in range(20):
+                frame = self.calib_camera.latest_frame()
+                if frame is None:
+                    continue
+                m = self.axis_worker.infer(
+                    frame, mode="FULL", timeout_s=2.0,
+                )
+                if m.valid and m.confidence >= 0.55:
+                    x_samples.append(m.global_x)
+                time.sleep(0.05)
+
+            if len(x_samples) < 5:
+                result_var.set("有效帧不足，无法验证")
+                return
+
+            center_x, _ = robust_sample(x_samples)
+            predicted_mm = self.axis_calibration.pixel_to_mm(
+                center_x
+            )
+            error_mm = predicted_mm - known_mm
+
+            result_var.set(
+                f"已知：{known_mm:.3f} mm\n"
+                f"检测像素：{center_x:.2f} px\n"
+                f"预测：{predicted_mm:.3f} mm\n"
+                f"误差：{error_mm:+.3f} mm"
+            )
+
+        ttk.Button(
+            dialog, text="开始验证", command=do_verify,
+        ).pack(pady=(0, 8))
+
+        ttk.Label(
+            dialog, textvariable=result_var,
+            justify=tk.LEFT, font=("", 10),
+        ).pack()
+
+    # ── 位置标定：辅助 ──
+
+    def _axis_update_cam_status(self) -> None:
+        """定时更新摄像头状态显示。"""
+        if self.closed:
+            return
+        if self.calib_running:
+            self.axis_cam_status_var.set("摄像头：运行中")
+        else:
+            self.axis_cam_status_var.set("摄像头：未启动")
+        self.root.after(2000, self._axis_update_cam_status)
+
+    def _set_axis_controls_enabled(self, enabled: bool) -> None:
+        """启用/禁用位置标定页的所有交互控件。"""
+        state = tk.NORMAL if enabled else tk.DISABLED
+        for widget in self._axis_control_widgets:
+            try:
+                widget.configure(state=state)
+            except tk.TclError:
+                pass
 
     # ── 辅助 ──
 
