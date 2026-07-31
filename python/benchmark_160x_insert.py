@@ -7,6 +7,7 @@
 import subprocess
 import re
 import sys
+import argparse
 from pathlib import Path
 
 BENCHMARK = "./build/etest_yolo_benchmark"
@@ -14,7 +15,6 @@ CLASSES = "model/onnx_640_640/classes.txt"
 WARMUP = 30
 ITERATIONS = 200
 THREADS = 4
-OUTPUT_MD = "model/test_rate_pc.md"
 
 MODELS = [
     ("NCNN 160×160 FP16", "model/ncnn_160x160/best_160x160_fp16.ncnn.param", 160, 160, True, True),
@@ -66,6 +66,13 @@ def fmt_row(idx, label, entry):
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="将 160× 模型数据插入到 test_rate_pc.md 或 test_rate_pi.md")
+    parser.add_argument("--output", "-o", choices=["pc", "pi"], default="pc",
+                        help="输出目标: pc -> test_rate_pc.md, pi -> test_rate_pi.md (默认: pc)")
+    args = parser.parse_args()
+    OUTPUT_MD = f"model/test_rate_{args.output}.md"
+
     images = sorted(Path("data/images").glob("test*.jpg"))
     img_names = [p.name for p in images]
 
