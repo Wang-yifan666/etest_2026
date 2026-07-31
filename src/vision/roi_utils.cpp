@@ -8,44 +8,43 @@ namespace etest::vision::roi_utils
 {
 
 	cv::Rect makeFullRoi(const cv::Size& frame_size,
+	                     int roi_width, int roi_height,
 	                     int pipe_center_y)
 	{
-		constexpr int kRoiWidth = 1280;
-		constexpr int kRoiHeight = 320;
-
 		const int y = std::clamp(
-		    pipe_center_y - kRoiHeight / 2,
+		    pipe_center_y - roi_height / 2,
 		    0,
-		    std::max(0, frame_size.height - kRoiHeight));
+		    std::max(0, frame_size.height - roi_height));
 
-		return {0, y, kRoiWidth, kRoiHeight};
+		return {0, y, roi_width, roi_height};
 	}
 
 	cv::Rect makeCenterRoi(const cv::Size& frame_size,
+	                       int roi_width, int roi_height,
 	                       int pipe_center_x,
 	                       int pipe_center_y)
 	{
-		constexpr int kRoiWidth = 448;
-		constexpr int kRoiHeight = 320;
-
 		const int x = std::clamp(
-		    pipe_center_x - kRoiWidth / 2,
+		    pipe_center_x - roi_width / 2,
 		    0,
-		    std::max(0, frame_size.width - kRoiWidth));
+		    std::max(0, frame_size.width - roi_width));
 
 		const int y = std::clamp(
-		    pipe_center_y - kRoiHeight / 2,
+		    pipe_center_y - roi_height / 2,
 		    0,
-		    std::max(0, frame_size.height - kRoiHeight));
+		    std::max(0, frame_size.height - roi_height));
 
-		return {x, y, kRoiWidth, kRoiHeight};
+		return {x, y, roi_width, roi_height};
 	}
 
 	InferenceRoi getFullInferenceRoi(const cv::Size& frame_size,
 	                                 const BallNcnnConfig& config)
 	{
 		InferenceRoi roi;
-		roi.rect = makeFullRoi(frame_size, config.pipe_center_y);
+		roi.rect = makeFullRoi(frame_size,
+		                       config.full_src_width,
+		                       config.full_src_height,
+		                       config.pipe_center_y);
 		roi.model_input_size = cv::Size(config.full_input_width,
 		                                config.full_input_height);
 		roi.pipe_center_x = config.pipe_center_x;
@@ -58,7 +57,10 @@ namespace etest::vision::roi_utils
 	    const BallNcnnConfig& config)
 	{
 		InferenceRoi roi;
-		roi.rect = makeCenterRoi(frame_size, config.pipe_center_x,
+		roi.rect = makeCenterRoi(frame_size,
+		                         config.center_src_width,
+		                         config.center_src_height,
+		                         config.pipe_center_x,
 		                         config.pipe_center_y);
 		roi.model_input_size = cv::Size(config.center_input_width,
 		                                config.center_input_height);

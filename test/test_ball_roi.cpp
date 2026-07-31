@@ -26,7 +26,7 @@ namespace
 	{
 		cv::Size frame(1280, 640);
 		cv::Rect roi =
-		    etest::vision::roi_utils::makeFullRoi(frame, 320);
+		    etest::vision::roi_utils::makeFullRoi(frame, 1280, 320, 320);
 		check("full roi x=0", roi.x == 0);
 		check("full roi width=1280", roi.width == 1280);
 		check("full roi height=320", roi.height == 320);
@@ -43,7 +43,7 @@ namespace
 		cv::Size frame(1280, 640);
 		// pipe_center_y=100 → y = 100-160 = -60 → clamp to 0
 		cv::Rect roi =
-		    etest::vision::roi_utils::makeFullRoi(frame, 100);
+		    etest::vision::roi_utils::makeFullRoi(frame, 1280, 320, 100);
 		check("full roi top edge y=0", roi.y == 0);
 		check("full roi top edge within bounds",
 		      roi.y >= 0 && roi.y + roi.height <= frame.height);
@@ -55,17 +55,28 @@ namespace
 		// pipe_center_y=600 → y = 600-160 = 440, but 440+320=760 > 640
 		// → clamp to 640-320=320
 		cv::Rect roi =
-		    etest::vision::roi_utils::makeFullRoi(frame, 600);
+		    etest::vision::roi_utils::makeFullRoi(frame, 1280, 320, 600);
 		check("full roi bottom edge y=320", roi.y == 320);
 		check("full roi bottom edge within bounds",
 		      roi.y >= 0 && roi.y + roi.height <= frame.height);
+	}
+
+	void test_full_roi_custom_size()
+	{
+		// 验证可配置尺寸：640×160 → 配置改变时生效
+		cv::Size frame(1280, 640);
+		cv::Rect roi =
+		    etest::vision::roi_utils::makeFullRoi(frame, 640, 160, 320);
+		check("custom full roi width=640", roi.width == 640);
+		check("custom full roi height=160", roi.height == 160);
+		check("custom full roi y=240", roi.y == 240);
 	}
 
 	void test_center_roi_normal()
 	{
 		cv::Size frame(1280, 640);
 		cv::Rect roi = etest::vision::roi_utils::makeCenterRoi(
-		    frame, 640, 320);
+		    frame, 448, 320, 640, 320);
 		// 640-224=416
 		check("center roi x=416", roi.x == 416);
 		check("center roi width=448", roi.width == 448);
@@ -82,7 +93,7 @@ namespace
 		cv::Size frame(1280, 640);
 		// pipe_center_x=100 → x=100-224=-124 → clamp to 0
 		cv::Rect roi = etest::vision::roi_utils::makeCenterRoi(
-		    frame, 100, 320);
+		    frame, 448, 320, 100, 320);
 		check("center roi left edge x=0", roi.x == 0);
 		check("center roi left edge width=448", roi.width == 448);
 		check("center roi left edge within bounds",
@@ -96,12 +107,24 @@ namespace
 		cv::Size frame(1280, 640);
 		// pipe_center_x=1200 → x=1200-224=976, clamp: 1280-448=832
 		cv::Rect roi = etest::vision::roi_utils::makeCenterRoi(
-		    frame, 1200, 320);
+		    frame, 448, 320, 1200, 320);
 		check("center roi right edge x=832", roi.x == 832);
 		check("center roi right edge within bounds",
 		      roi.x >= 0 && roi.y >= 0
 		          && roi.x + roi.width <= frame.width
 		          && roi.y + roi.height <= frame.height);
+	}
+
+	void test_center_roi_custom_size()
+	{
+		// 验证可配置尺寸：224×160
+		cv::Size frame(1280, 640);
+		cv::Rect roi = etest::vision::roi_utils::makeCenterRoi(
+		    frame, 224, 160, 640, 320);
+		check("custom center roi width=224", roi.width == 224);
+		check("custom center roi height=160", roi.height == 160);
+		check("custom center roi x=528", roi.x == 528);
+		check("custom center roi y=240", roi.y == 240);
 	}
 
 	void test_local_to_global()
@@ -135,9 +158,11 @@ int main()
 	test_full_roi_centered();
 	test_full_roi_top_edge();
 	test_full_roi_bottom_edge();
+	test_full_roi_custom_size();
 	test_center_roi_normal();
 	test_center_roi_left_edge();
 	test_center_roi_right_edge();
+	test_center_roi_custom_size();
 	test_local_to_global();
 
 	if(failures > 0)

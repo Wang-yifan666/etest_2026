@@ -16,17 +16,20 @@ namespace etest::vision::roi_utils
 		int pipe_center_y;         // 物理中心 O 的全局像素 y
 	};
 
-	// 构建完整水管 ROI（1280×320）
+	// 构建完整水管 ROI
 	// frame_size: 原始帧尺寸（1280×640）
+	// roi_width, roi_height: 从 BallNcnnConfig::full_src_* 读取
 	// pipe_center_y: 物理中心 O 的 y 坐标
 	cv::Rect makeFullRoi(const cv::Size& frame_size,
+	                     int roi_width, int roi_height,
 	                     int pipe_center_y);
 
-	// 构建中心水管 ROI（448×320）
+	// 构建中心水管 ROI
 	// frame_size: 原始帧尺寸（1280×640）
-	// pipe_center_x: 物理中心 O 的 x 坐标
-	// pipe_center_y: 物理中心 O 的 y 坐标
+	// roi_width, roi_height: 从 BallNcnnConfig::center_src_* 读取
+	// pipe_center_x, pipe_center_y: 物理中心 O 的坐标
 	cv::Rect makeCenterRoi(const cv::Size& frame_size,
+	                       int roi_width, int roi_height,
 	                       int pipe_center_x,
 	                       int pipe_center_y);
 
