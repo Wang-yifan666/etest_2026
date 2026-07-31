@@ -45,6 +45,10 @@ namespace etest::uart::protocol
 	// 注意：UartMessage 的 fields 不包含 tag，tag 是单独存储的
 	bool isBootOk(const UartMessage& message) noexcept;
 
+	// 判断是否为 POWEROFF 消息（下位机关机指令）
+	// 大小写不敏感：tag=="POWEROFF" 或 tag=="poweroff"
+	bool isPoweroff(const UartMessage& message) noexcept;
+
 	// 严格判断是否为 PING 响应：OK,PING
 	// type 必须为 OK，且 fields[0] 必须完全等于 "PING"
 	bool isPingResponse(const UartMessage& message) noexcept;

@@ -65,6 +65,11 @@ namespace etest::uart::protocol
 		return message.fields[0] == "OK";
 	}
 
+	bool isPoweroff(const UartMessage& message) noexcept
+	{
+		return message.tag == "POWEROFF" || message.tag == "poweroff";
+	}
+
 	bool isPingResponse(const UartMessage& message) noexcept
 	{
 		if(message.type != UartMessageType::OK)

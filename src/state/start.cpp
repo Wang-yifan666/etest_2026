@@ -318,6 +318,15 @@ namespace etest::state
 
 					if(ctx.uart.waitPop(msg, 100))
 					{
+						if(uart::protocol::isPoweroff(msg))
+						{
+							ETEST_LOG_INFO("STATE_START",
+							               "POWEROFF received during BOOT wait; shutting down");
+							ctx.exit_reason = ExitReason::NORMAL;
+							ctx.running = false;
+							return State::END;
+						}
+
 						if(uart::protocol::isBootOk(msg))
 						{
 							ETEST_LOG_INFO(
@@ -360,6 +369,15 @@ namespace etest::state
 
 					if(ctx.uart.waitPop(msg, 100))
 					{
+						if(uart::protocol::isPoweroff(msg))
+						{
+							ETEST_LOG_INFO("STATE_START",
+							               "POWEROFF received during PING wait; shutting down");
+							ctx.exit_reason = ExitReason::NORMAL;
+							ctx.running = false;
+							return State::END;
+						}
+
 						if(uart::protocol::isPingResponse(msg))
 						{
 							ping_ok = true;
@@ -412,6 +430,15 @@ namespace etest::state
 
 					if(ctx.uart.waitPop(msg, 100))
 					{
+						if(uart::protocol::isPoweroff(msg))
+						{
+							ETEST_LOG_INFO("STATE_START",
+							               "POWEROFF received during PROTO wait; shutting down");
+							ctx.exit_reason = ExitReason::NORMAL;
+							ctx.running = false;
+							return State::END;
+						}
+
 						if(msg.type == UartMessageType::PROTOCOL)
 						{
 							auto major =
@@ -507,6 +534,15 @@ namespace etest::state
 
 					if(ctx.uart.waitPop(msg, 100))
 					{
+						if(uart::protocol::isPoweroff(msg))
+						{
+							ETEST_LOG_INFO("STATE_START",
+							               "POWEROFF received during CAPS wait; shutting down");
+							ctx.exit_reason = ExitReason::NORMAL;
+							ctx.running = false;
+							return State::END;
+						}
+
 						if(uart::protocol::isCapsResponse(msg))
 						{
 							caps_ok = true;

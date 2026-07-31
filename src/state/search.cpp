@@ -375,6 +375,16 @@ namespace etest::state
 				{
 					++processed;
 
+					// POWEROFF → 退出程序
+					if(uart::protocol::isPoweroff(msg))
+					{
+						ETEST_LOG_INFO("SEARCH",
+						               "POWEROFF received from lower machine; shutting down");
+						ctx.exit_reason = ExitReason::NORMAL;
+						ctx.running = false;
+						break;
+					}
+
 					// M000X → 记录题目
 					if(uart::protocol::isMissionCode(msg))
 					{
