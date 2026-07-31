@@ -2024,10 +2024,29 @@ class EtestGui:
             self.set_notice("摄像头已在运行")
             return
 
-        self.calib_camera = CalibrationCamera(0)
+        rc = self._roi_calibration
+
+        self.calib_camera = CalibrationCamera(
+            0,
+            width=rc.frame_width,
+            height=rc.frame_height,
+            fps=30,
+            fourcc="MJPG",
+            strict_size=True,
+        )
+
         self.calib_camera.start()
+
         self.calib_running = True
-        self._calib_info_var_set("摄像头已启动 — 拖动/框选/输入框调整参数")
+
+        actual_w, actual_h = self.calib_camera.actual_size
+
+        self._calib_info_var_set(
+            "摄像头已启动："
+            f"{actual_w}×{actual_h}；"
+            "可拖动、缩放或重新框选 ROI"
+        )
+
         self._calib_update_preview()
 
     @ui_guard("停止摄像头")
@@ -2083,13 +2102,20 @@ class EtestGui:
     def _calib_render_frame(self, frame) -> None:
         frame_h, frame_w = frame.shape[:2]
 
-        # 动态更新画面尺寸
         rc = self._roi_calibration
-        if rc.frame_width != frame_w or rc.frame_height != frame_h:
-            rc.frame_width = frame_w
-            rc.frame_height = frame_h
-            rc.clamp_all()
-            self._calib_sync_vars_from_model()
+
+        # 只检查，绝对不能修改配置坐标系。
+        if (
+            frame_w != rc.frame_width
+            or frame_h != rc.frame_height
+        ):
+            self._calib_info_var_set(
+                "预览帧尺寸不匹配："
+                f"实际 {frame_w}×{frame_h}，"
+                f"标定坐标系 {rc.frame_width}"
+                f"×{rc.frame_height}"
+            )
+            return
 
         transform = self._calib_make_transform(frame_h, frame_w)
         self.calib_transform = transform

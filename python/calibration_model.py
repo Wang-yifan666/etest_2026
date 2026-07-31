@@ -98,18 +98,14 @@ class RoiRect:
         )
 
     def clamp_to_frame(self, frame_width: int, frame_height: int) -> None:
-        if self.width <= 0 or self.height <= 0:
-            raise CalibrationValidationError("ROI 宽高必须大于 0")
+        if frame_width <= 0 or frame_height <= 0:
+            raise CalibrationValidationError("画面宽高必须大于 0")
 
-        if self.width > frame_width:
-            raise CalibrationValidationError(
-                f"ROI 宽度 {self.width} 超过画面宽度 {frame_width}"
-            )
+        minimum_width = min(self.MIN_WIDTH, frame_width)
+        minimum_height = min(self.MIN_HEIGHT, frame_height)
 
-        if self.height > frame_height:
-            raise CalibrationValidationError(
-                f"ROI 高度 {self.height} 超过画面高度 {frame_height}"
-            )
+        self.width = clamp(self.width, minimum_width, frame_width)
+        self.height = clamp(self.height, minimum_height, frame_height)
 
         self.x = clamp(self.x, 0, frame_width - self.width)
         self.y = clamp(self.y, 0, frame_height - self.height)
