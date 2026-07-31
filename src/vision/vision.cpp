@@ -1,4 +1,5 @@
 #include "vision/vision.hpp"
+#include "vision/ball_ncnn_manager.hpp"
 #include "vision/yolo_backend.hpp"
 #include "vision/yolo_detector.hpp"
 #include "core/logger.hpp"
@@ -1792,6 +1793,57 @@ ratio_zero:
 		if(yolo_detector_)
 			return yolo_detector_->backendName();
 		return "none";
+	}
+
+	// ── BallNcnn 双模型薄包装 ──
+
+	bool VisionProcessor::initializeBallNcnn(
+	    const BallNcnnConfig& config, std::string& error) noexcept
+	{
+		try
+		{
+			ball_ncnn_manager_ = std::make_unique<BallNcnnManager>();
+			return ball_ncnn_manager_->initialize(config, error);
+		}
+		catch(const std::exception& e)
+		{
+			error = std::string("exception: ") + e.what();
+			ball_ncnn_manager_.reset();
+			return false;
+		}
+		catch(...)
+		{
+			error = "unknown exception";
+			ball_ncnn_manager_.reset();
+			return false;
+		}
+	}
+
+	BallMeasurement VisionProcessor::processBallNcnn(
+	    const cv::Mat& raw_frame, TrackingMode tracking_mode,
+	    YoloTiming* timing) noexcept
+	{
+		if(!ball_ncnn_manager_)
+		{
+			BallMeasurement r;
+			r.status = "ERROR";
+			return r;
+		}
+		return ball_ncnn_manager_->process(raw_frame, tracking_mode,
+		                                   timing);
+	}
+
+	void VisionProcessor::resetBallNcnnSession() noexcept
+	{
+		if(ball_ncnn_manager_)
+			ball_ncnn_manager_->resetTracking();
+	}
+
+	bool VisionProcessor::isBallNcnnReady() const noexcept
+	{
+		return ball_ncnn_manager_
+		    && ball_ncnn_manager_->fullModelReady()
+		    && ball_ncnn_manager_->centerModelReady();
 	}
 
 } // namespace etest::vision

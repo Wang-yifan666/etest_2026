@@ -97,6 +97,10 @@ struct TaskSession
 	std::chrono::steady_clock::time_point
 	    calibration_start_time{};
 
+	// 会话零点（VSESSION 确认时刻），用于计算 BALL 的 capture_ms
+	std::chrono::steady_clock::time_point
+	    session_start_time{};
+
 	// 跟踪丢失计数
 	int lost_frames = 0;
 

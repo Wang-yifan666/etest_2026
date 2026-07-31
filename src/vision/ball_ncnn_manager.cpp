@@ -279,6 +279,10 @@ namespace etest::vision
 		result.confidence = best->confidence;
 		result.status = "OK";
 
+		// 物理坐标转换（0.1mm 单位）
+		result.position_0p1mm = roi_utils::pixelTo0p1mm(
+		    global_center.x, config_.axis_calibration);
+
 		last_global_center_ = global_center;
 		tracking_initialized_ = true;
 

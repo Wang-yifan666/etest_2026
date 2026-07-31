@@ -101,8 +101,8 @@ namespace etest
 	struct CameraConfig
 	{
 		std::string source = "/dev/video0";
-		int width = 640;
-		int height = 480;
+		int width = 1280;
+		int height = 640;
 		int fps = 30;
 		std::string fourcc = "MJPG";
 		bool loop_video = false;
@@ -167,6 +167,7 @@ namespace etest
 		// ── 标定 ──
 		int calibration_frames = 8;
 		int calibration_timeout_ms = 1500;
+		double initial_center_limit_mm = 15.0;
 		double minimum_confidence = 0.45;
 
 		// ── 坐标标定 ──
@@ -195,6 +196,7 @@ namespace etest
 		SourceInfo source_stable_frames_to_center;
 		SourceInfo source_calibration_frames;
 		SourceInfo source_calibration_timeout_ms;
+		SourceInfo source_initial_center_limit_mm;
 		SourceInfo source_minimum_confidence;
 		SourceInfo source_num_threads;
 		SourceInfo source_use_fp16_storage;

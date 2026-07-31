@@ -810,6 +810,33 @@ namespace
 		    "search.vsession_retry_interval_ms",
 		    "search.max_inference_errors",
 		    "search.model_reload_interval_ms",
+		    "vision.ball_ncnn.enabled",
+		    "vision.ball_ncnn.full_model_param",
+		    "vision.ball_ncnn.center_model_param",
+		    "vision.ball_ncnn.full_input_width",
+		    "vision.ball_ncnn.full_input_height",
+		    "vision.ball_ncnn.center_input_width",
+		    "vision.ball_ncnn.center_input_height",
+		    "vision.ball_ncnn.full_src_width",
+		    "vision.ball_ncnn.full_src_height",
+		    "vision.ball_ncnn.center_src_width",
+		    "vision.ball_ncnn.center_src_height",
+		    "vision.ball_ncnn.pipe_center_x",
+		    "vision.ball_ncnn.pipe_center_y",
+		    "vision.ball_ncnn.edge_guard_px",
+		    "vision.ball_ncnn.lost_frames_to_reacquire",
+		    "vision.ball_ncnn.stable_frames_to_center",
+		    "vision.ball_ncnn.calibration_frames",
+		    "vision.ball_ncnn.calibration_timeout_ms",
+		    "vision.ball_ncnn.initial_center_limit_mm",
+		    "vision.ball_ncnn.minimum_confidence",
+		    "vision.ball_ncnn.num_threads",
+		    "vision.ball_ncnn.use_fp16_storage",
+		    "vision.ball_ncnn.use_fp16_arithmetic",
+		    "vision.ball_ncnn.axis_calibration.image_right_sign",
+		    "vision.ball_ncnn.axis_calibration.pixels",
+		    "vision.ball_ncnn.axis_calibration.positions_mm",
+
 		    "search.camera_id",
 		    "search.nominal_fps",
 		};
@@ -1448,6 +1475,195 @@ namespace
 			    getString(raw_config, "vision.ball.video_output",
 			              ball.video_output, true, result,
 			              &ball.source_video_output);
+		}
+
+		// ── ball_ncnn 双模型配置 ──
+		{
+			auto& bn = config.vision.ball_ncnn;
+
+			bn.enabled = getBool(raw_config, "vision.ball_ncnn.enabled",
+			                     bn.enabled, result, &bn.source_enabled);
+
+			bn.full_model_param = getString(
+			    raw_config, "vision.ball_ncnn.full_model_param",
+			    bn.full_model_param, false, result,
+			    &bn.source_full_model_param);
+
+			bn.center_model_param = getString(
+			    raw_config, "vision.ball_ncnn.center_model_param",
+			    bn.center_model_param, false, result,
+			    &bn.source_center_model_param);
+
+			bn.full_input_width =
+			    getInt(raw_config, "vision.ball_ncnn.full_input_width",
+			           bn.full_input_width, 32, 1920, result,
+			           &bn.source_full_input_width);
+
+			bn.full_input_height =
+			    getInt(raw_config, "vision.ball_ncnn.full_input_height",
+			           bn.full_input_height, 32, 1920, result,
+			           &bn.source_full_input_height);
+
+			bn.center_input_width =
+			    getInt(raw_config,
+			           "vision.ball_ncnn.center_input_width",
+			           bn.center_input_width, 32, 1920, result,
+			           &bn.source_center_input_width);
+
+			bn.center_input_height =
+			    getInt(raw_config,
+			           "vision.ball_ncnn.center_input_height",
+			           bn.center_input_height, 32, 1920, result,
+			           &bn.source_center_input_height);
+
+			bn.full_src_width =
+			    getInt(raw_config, "vision.ball_ncnn.full_src_width",
+			           bn.full_src_width, 1, 4096, result,
+			           &bn.source_full_src_width);
+
+			bn.full_src_height =
+			    getInt(raw_config, "vision.ball_ncnn.full_src_height",
+			           bn.full_src_height, 1, 2160, result,
+			           &bn.source_full_src_height);
+
+			bn.center_src_width =
+			    getInt(raw_config, "vision.ball_ncnn.center_src_width",
+			           bn.center_src_width, 1, 4096, result,
+			           &bn.source_center_src_width);
+
+			bn.center_src_height =
+			    getInt(raw_config, "vision.ball_ncnn.center_src_height",
+			           bn.center_src_height, 1, 2160, result,
+			           &bn.source_center_src_height);
+
+			bn.pipe_center_x =
+			    getInt(raw_config, "vision.ball_ncnn.pipe_center_x",
+			           bn.pipe_center_x, 0, 4096, result,
+			           &bn.source_pipe_center_x);
+
+			bn.pipe_center_y =
+			    getInt(raw_config, "vision.ball_ncnn.pipe_center_y",
+			           bn.pipe_center_y, 0, 2160, result,
+			           &bn.source_pipe_center_y);
+
+			bn.edge_guard_px =
+			    getInt(raw_config, "vision.ball_ncnn.edge_guard_px",
+			           bn.edge_guard_px, 0, 200, result,
+			           &bn.source_edge_guard_px);
+
+			bn.lost_frames_to_reacquire =
+			    getInt(raw_config,
+			           "vision.ball_ncnn.lost_frames_to_reacquire",
+			           bn.lost_frames_to_reacquire, 1, 60, result,
+			           &bn.source_lost_frames_to_reacquire);
+
+			bn.stable_frames_to_center =
+			    getInt(raw_config,
+			           "vision.ball_ncnn.stable_frames_to_center",
+			           bn.stable_frames_to_center, 1, 60, result,
+			           &bn.source_stable_frames_to_center);
+
+			bn.calibration_frames =
+			    getInt(raw_config,
+			           "vision.ball_ncnn.calibration_frames",
+			           bn.calibration_frames, 1, 60, result,
+			           &bn.source_calibration_frames);
+
+			bn.calibration_timeout_ms =
+			    getInt(raw_config,
+			           "vision.ball_ncnn.calibration_timeout_ms",
+			           bn.calibration_timeout_ms, 100, 10000, result,
+			           &bn.source_calibration_timeout_ms);
+
+			bn.initial_center_limit_mm =
+			    getDouble(raw_config,
+			              "vision.ball_ncnn.initial_center_limit_mm",
+			              bn.initial_center_limit_mm, 0.0, 100.0,
+			              result, &bn.source_initial_center_limit_mm);
+
+			bn.minimum_confidence =
+			    getDouble(raw_config,
+			              "vision.ball_ncnn.minimum_confidence",
+			              bn.minimum_confidence, 0.0, 1.0, result,
+			              &bn.source_minimum_confidence);
+
+			bn.num_threads =
+			    getInt(raw_config, "vision.ball_ncnn.num_threads",
+			           bn.num_threads, 1, 8, result,
+			           &bn.source_num_threads);
+
+			bn.use_fp16_storage =
+			    getBool(raw_config,
+			            "vision.ball_ncnn.use_fp16_storage",
+			            bn.use_fp16_storage, result,
+			            &bn.source_use_fp16_storage);
+
+			bn.use_fp16_arithmetic =
+			    getBool(raw_config,
+			            "vision.ball_ncnn.use_fp16_arithmetic",
+			            bn.use_fp16_arithmetic, result,
+			            &bn.source_use_fp16_arithmetic);
+
+			// 轴标定
+			bn.axis_calibration.image_right_sign =
+			    getInt(raw_config,
+			           "vision.ball_ncnn.axis_calibration.image_right_sign",
+			           bn.axis_calibration.image_right_sign, -1, 1,
+			           result, nullptr);
+
+			// 标定点：逗号分隔的浮点字符串
+			std::string pixels_str = getString(
+			    raw_config,
+			    "vision.ball_ncnn.axis_calibration.pixels",
+			    "", true, result, nullptr);
+
+			std::string positions_str = getString(
+			    raw_config,
+			    "vision.ball_ncnn.axis_calibration.positions_mm",
+			    "", true, result, nullptr);
+
+			if(!pixels_str.empty() && !positions_str.empty())
+			{
+				// 解析逗号分隔列表
+				auto splitDoubles =
+				    [](const std::string& s) -> std::vector<double> {
+					std::vector<double> out;
+					std::istringstream iss(s);
+					std::string token;
+					while(std::getline(iss, token, ','))
+					{
+						char* end = nullptr;
+						double v = std::strtod(token.c_str(), &end);
+						if(end != token.c_str()
+						   && std::isfinite(v))
+							out.push_back(v);
+					}
+					return out;
+				};
+
+				auto pixels = splitDoubles(pixels_str);
+				auto positions = splitDoubles(positions_str);
+
+				std::size_t count =
+				    std::min(pixels.size(), positions.size());
+
+				if(count >= 2)
+				{
+					bn.axis_calibration.points.clear();
+					for(std::size_t i = 0; i < count; ++i)
+					{
+						bn.axis_calibration.points.push_back(
+						    {pixels[i], positions[i]});
+					}
+				}
+				else if(!pixels_str.empty() || !positions_str.empty())
+				{
+					addMessage(
+					    result, etest::ConfigMessageLevel::ERROR,
+					    "axis_calibration.pixels and positions_mm "
+					    "need at least 2 points; keeping defaults");
+				}
+			}
 		}
 
 		config.uart.device =

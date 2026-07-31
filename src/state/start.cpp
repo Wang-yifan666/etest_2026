@@ -617,6 +617,39 @@ namespace etest::state
 			                   + std::to_string(ctx.task.session_id));
 		}
 
+		// 7. 初始化 BallNcnn 双模型
+		{
+			const auto& ncnn_cfg = ctx.vision.getConfig().ball_ncnn;
+			std::string ncnn_error;
+			if(!ctx.vision.initializeBallNcnn(ncnn_cfg, ncnn_error))
+			{
+				ETEST_LOG_ERROR("STATE_START",
+				                "BallNcnn init failed: " + ncnn_error);
+			}
+			else
+			{
+				ETEST_LOG_INFO("STATE_START",
+				               "BallNcnn dual models initialized ok");
+			}
+		}
+
+		// 8. 帧尺寸自检（首次读取后校验）
+		{
+			cv::Mat check_frame;
+			if(ctx.camera.read(check_frame) && !check_frame.empty())
+			{
+				if(check_frame.cols != 1280
+				   || check_frame.rows != 640)
+				{
+					ETEST_LOG_WARN(
+					    "STATE_START",
+					    "frame size mismatch: expected 1280x640, got "
+					        + std::to_string(check_frame.cols) + "x"
+					        + std::to_string(check_frame.rows));
+				}
+			}
+		}
+
 		ETEST_LOG_INFO("STATE_START",
 		               "self-check complete; entering SEARCH state");
 

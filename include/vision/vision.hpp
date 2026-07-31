@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/config.hpp"
+#include "state/task_session.hpp"
 
 #include <opencv2/core.hpp>
 #include <opencv2/dnn.hpp>
@@ -17,6 +18,7 @@ namespace etest::vision
 {
 
 	class YoloDetector;
+	class BallNcnnManager;
 
 	enum class VisionMode
 	{
@@ -170,6 +172,21 @@ namespace etest::vision
 		    const struct SearchConfig& config) noexcept;
 		const char* yoloBackendName() const noexcept;
 
+		// ── BallNcnn 双模型接口 ──
+		bool initializeBallNcnn(const BallNcnnConfig& config,
+		                        std::string& error) noexcept;
+		BallMeasurement processBallNcnn(
+		    const cv::Mat& raw_frame, TrackingMode tracking_mode,
+		    YoloTiming* timing = nullptr) noexcept;
+		void resetBallNcnnSession() noexcept;
+		bool isBallNcnnReady() const noexcept;
+
+		// 配置访问
+		const VisionConfig& getConfig() const noexcept
+		{
+			return config_;
+		}
+
 	private:
 		VisionResult detectColorTarget(const cv::Mat& frame);
 		VisionResult detectBall(const cv::Mat& frame);
@@ -294,6 +311,9 @@ namespace etest::vision
 
 		// ── YOLO 后端检测器 ──
 		std::unique_ptr<YoloDetector> yolo_detector_;
+
+		// ── BallNcnn 双模型管理器 ──
+		std::unique_ptr<BallNcnnManager> ball_ncnn_manager_;
 	};
 
 } // namespace etest::vision

@@ -135,3 +135,49 @@ filter_alpha = 0.35
 
 # ── 测试用视频输出（空=不保存，写入路径则保存调试视频）──
 video_output = "data/output.mp4"
+
+# ── BallNcnn 双模型配置 ──
+[vision.ball_ncnn]
+enabled = true
+
+# 双模型路径（.param，.bin 自动推导）
+full_model_param = "model/ncnn_160x640/best_160x640_fp16.ncnn.param"
+center_model_param = "model/ncnn_160x224/best_160x224_fp16.ncnn.param"
+
+# 输入尺寸
+full_input_width = 640
+full_input_height = 160
+center_input_width = 224
+center_input_height = 160
+
+# ROI 原始尺寸
+full_src_width = 1280
+full_src_height = 320
+center_src_width = 448
+center_src_height = 320
+
+# 物理中心 O（全局像素坐标，1280×640 原图）
+pipe_center_x = 640
+pipe_center_y = 320
+
+# 跟踪阈值
+edge_guard_px = 24
+lost_frames_to_reacquire = 2
+stable_frames_to_center = 8
+
+# 标定
+calibration_frames = 8
+calibration_timeout_ms = 1500
+initial_center_limit_mm = 15.0
+minimum_confidence = 0.45
+
+# NCNN 选项
+num_threads = 4
+use_fp16_storage = true
+use_fp16_arithmetic = true
+
+# 坐标标定（分段线性插值：像素 ↔ 毫米）
+[vision.ball_ncnn.axis_calibration]
+image_right_sign = 1
+pixels = "392.0,640.0,887.0"
+positions_mm = "-50.0,0.0,50.0"

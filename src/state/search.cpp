@@ -373,6 +373,8 @@ namespace etest::state
 					       msg, ctx.task.session_id))
 					{
 						ctx.task.vsession_confirmed = true;
+						ctx.task.session_start_time =
+						    std::chrono::steady_clock::now();
 						ETEST_LOG_INFO("SEARCH",
 						               "VSESSION confirmed: session="
 						                   + std::to_string(
@@ -561,6 +563,9 @@ namespace etest::state
 				++received_frames;
 				ctx.frame = packet.frame;
 
+				// 录像：完整原始画面异步写入
+				ctx.recorder.writeRaw(ctx.frame);
+
 				if(use_latest_capture && last_processed_sequence != 0
 				   && packet.sequence > last_processed_sequence + 1)
 				{
@@ -596,14 +601,24 @@ namespace etest::state
 				}
 			}
 
-			// ── 5) 按需执行视觉推理 ──
+			// ── 5) 按需执行视觉推理（BallNcnn 双模型）──
 			if(isMissionActive(ctx.task) && ctx.task.vision_enabled
 			   && has_new_frame)
 			{
 				const auto vision_start =
 				    std::chrono::steady_clock::now();
-				ctx.vision_result = ctx.vision.process(
-				    ctx.frame, vision::VisionMode::Ball);
+
+				// 标定阶段强制 FULL，RUNNING 阶段按 tracking_mode
+				TrackingMode effective_mode =
+				    ctx.task.tracking_mode;
+				if(ctx.task.phase == ContestTaskPhase::CALIBRATING)
+				{
+					effective_mode = TrackingMode::FULL;
+				}
+
+				auto measurement =
+				    ctx.vision.processBallNcnn(ctx.frame,
+				                               effective_mode);
 				const auto vision_end =
 				    std::chrono::steady_clock::now();
 				const auto vision_us = std::chrono::duration_cast<
@@ -613,11 +628,118 @@ namespace etest::state
 				++perf_vision_calls;
 				perf_vision_total_us += vision_us;
 				++processed_frames;
+
+				// 同步测量结果到 task session
+				ctx.task.last_confidence =
+				    static_cast<double>(measurement.confidence);
+				if(measurement.valid
+				   && measurement.status == "OK")
+				{
+					ctx.task.current_position_mm =
+					    measurement.position_0p1mm / 10.0;
+					ctx.task.last_global_center =
+					    measurement.global_center;
+					ctx.task.measurement_valid = true;
+					ctx.task.lost_frames = 0;
+				}
+				else
+				{
+					ctx.task.measurement_valid = false;
+					if(!measurement.valid
+					   || measurement.status == "LOST")
+					{
+						ctx.task.lost_frames++;
+					}
+				}
+
+				// ── CENTER / FULL_REACQUIRE 切换（仅 Q4/Q5 RUNNING）──
+				if(ctx.task.phase
+				       == ContestTaskPhase::RUNNING
+				   && (ctx.task.mode == TaskMode::Q4
+				       || ctx.task.mode == TaskMode::Q5))
+				{
+					const auto& bn_cfg =
+					    ctx.vision.getConfig().ball_ncnn;
+					if(ctx.task.tracking_mode
+					   == TrackingMode::CENTER)
+					{
+						bool near_edge =
+						    !measurement.valid
+						    || measurement.local_center.x
+						        < static_cast<float>(
+						            bn_cfg.edge_guard_px)
+						    || measurement.local_center.x
+						        > static_cast<float>(
+						            bn_cfg.center_input_width
+						            - bn_cfg.edge_guard_px);
+						if(near_edge
+						   || ctx.task.lost_frames
+						       >= bn_cfg.lost_frames_to_reacquire)
+						{
+							ctx.task.tracking_mode =
+							    TrackingMode::FULL_REACQUIRE;
+							ctx.task.center_stable_frames = 0;
+							ctx.vision
+							    .resetBallNcnnSession();
+							ETEST_LOG_INFO(
+							    "SEARCH",
+							    "CENTER → FULL_REACQUIRE");
+						}
+					}
+					else if(ctx.task.tracking_mode
+					        == TrackingMode::FULL_REACQUIRE)
+					{
+						if(measurement.valid
+						   && measurement.status == "OK"
+						   && measurement.local_center.x
+						       >= static_cast<float>(
+						           bn_cfg.edge_guard_px
+						           + 10)
+						   && measurement.local_center.x
+						       <= static_cast<float>(
+						           bn_cfg.center_input_width
+						           - bn_cfg.edge_guard_px
+						           - 10))
+						{
+							ctx.task.center_stable_frames++;
+							if(ctx.task.center_stable_frames
+							   >= bn_cfg
+							          .stable_frames_to_center)
+							{
+								ctx.task.tracking_mode =
+								    TrackingMode::CENTER;
+								ctx.vision
+								    .resetBallNcnnSession();
+								ETEST_LOG_INFO(
+								    "SEARCH",
+								    "FULL_REACQUIRE → CENTER");
+							}
+						}
+						else
+						{
+							ctx.task.center_stable_frames = 0;
+						}
+					}
+				}
+
+				// 填充 ctx.vision_result 以兼容旧的度量
+				ctx.vision_result.valid = measurement.valid;
+				ctx.vision_result.confidence =
+				    static_cast<double>(measurement.confidence);
+				ctx.vision_result.position_0p1mm =
+				    measurement.position_0p1mm;
+				ctx.vision_result.x =
+				    static_cast<double>(
+				        measurement.global_center.x);
+				ctx.vision_result.y =
+				    static_cast<double>(
+				        measurement.global_center.y);
 			}
 
 			// ── 6) 限频发送任务输出 ──
 			if(isMissionActive(ctx.task)
-			   && ctx.task.vision_enabled)
+			   && ctx.task.vision_enabled
+			   && ctx.task.vsession_confirmed)
 			{
 				const auto now = std::chrono::steady_clock::now();
 				const auto ball_elapsed =
@@ -665,9 +787,31 @@ namespace etest::state
 						ctx.task.last_confidence = conf;
 					}
 
+					// 计算 capture_ms / age_ms
+					std::uint32_t capture_ms = 0;
+					std::uint32_t age_ms = 0;
+					if(has_new_frame
+					   && ctx.task.session_start_time
+					          .time_since_epoch()
+					          .count()
+					      > 0)
+					{
+						capture_ms = static_cast<std::uint32_t>(
+						    std::chrono::duration_cast<
+						        std::chrono::milliseconds>(
+						        packet.received_at
+						        - ctx.task.session_start_time)
+						        .count());
+						age_ms = static_cast<std::uint32_t>(
+						    std::chrono::duration_cast<
+						        std::chrono::milliseconds>(
+						        now - packet.received_at)
+						        .count());
+					}
+
 					auto line = uart::protocol::makeBallLineV5Simple(
 					    ctx.task.session_id, ctx.task.seq++,
-					    0, 0, pos, conf, status);
+					    capture_ms, age_ms, pos, conf, status);
 					if(line.has_value())
 					{
 						ctx.uart.sendLine(*line);
@@ -675,12 +819,36 @@ namespace etest::state
 					}
 				}
 
-				// 标定完成 → 发送 CONTESTSTART（M0002～M0005）
+				// 标定中积累有效帧
 				if(ctx.task.phase
 				       == ContestTaskPhase::CALIBRATING
-				   && ctx.vision_result.calibrated
+				   && ctx.task.measurement_valid
+				   && has_new_frame)
+				{
+					const auto& bn_cfg =
+					    ctx.vision.getConfig().ball_ncnn;
+					int limit_0p1mm = static_cast<int>(
+					    bn_cfg.initial_center_limit_mm * 10.0);
+					int pos = ctx.vision_result.position_0p1mm;
+
+					if(std::abs(pos) <= limit_0p1mm)
+					{
+						ctx.task.calibration_valid_frames++;
+					}
+					else
+					{
+						ctx.task.calibration_valid_frames = 0;
+					}
+				}
+
+				// 标定完成 → 发送 START（M0002～M0005）
+				if(ctx.task.phase
+				       == ContestTaskPhase::CALIBRATING
 				   && !ctx.task.start_sent
-				   && ctx.task.vsession_confirmed)
+				   && ctx.task.vsession_confirmed
+				   && ctx.task.calibration_valid_frames
+				       >= ctx.vision.getConfig()
+				              .ball_ncnn.calibration_frames)
 				{
 					int target_0p1mm = 0;
 					if(ctx.task.mode == TaskMode::Q6)
@@ -694,9 +862,21 @@ namespace etest::state
 
 					const char* mode_name =
 					    TaskSession::modeName(ctx.task.mode);
-					ctx.uart.sendLine(
-					    uart::protocol::makeContestStartLine(
-					        mode_name));
+					if(ctx.task.mode == TaskMode::Q6)
+					{
+						// M0005 使用带 target 的 START
+						auto start_line =
+						    uart::protocol::makeStartLine(
+						        ctx.task.command_tag,
+						        target_0p1mm);
+						ctx.uart.sendLine(start_line);
+					}
+					else
+					{
+						ctx.uart.sendLine(
+						    uart::protocol::makeContestStartLine(
+						        mode_name));
+					}
 					ctx.task.start_sent = true;
 					ctx.task.enterPhase(
 					    ContestTaskPhase::RUNNING);
@@ -708,13 +888,39 @@ namespace etest::state
 						    TrackingMode::CENTER;
 					}
 
+					ctx.vision_result.calibrated = true;
+
 					ETEST_LOG_INFO(
 					    "SEARCH",
 					    "CALIBRATING → RUNNING, "
-					    "CONTESTSTART sent: "
+					    "START sent: "
 					        + std::string(mode_name)
 					        + " target="
 					        + std::to_string(target_0p1mm));
+				}
+
+				// 标定超时
+				if(ctx.task.phase
+				       == ContestTaskPhase::CALIBRATING
+				   && !ctx.task.start_sent)
+				{
+					const auto now =
+					    std::chrono::steady_clock::now();
+					const auto elapsed =
+					    std::chrono::duration_cast<
+					        std::chrono::milliseconds>(
+					        now
+					        - ctx.task.calibration_start_time);
+					if(elapsed.count()
+					   > ctx.vision.getConfig()
+					          .ball_ncnn.calibration_timeout_ms)
+					{
+						ETEST_LOG_WARN(
+						    "SEARCH",
+						    "calibration timeout, resetting");
+						ctx.task.calibration_valid_frames = 0;
+						ctx.task.calibration_start_time = now;
+					}
 				}
 			}
 
