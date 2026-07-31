@@ -188,28 +188,10 @@ namespace etest::state
 						TaskMode new_mode =
 						    TaskSession::modeFromTag(new_tag);
 
-						// 重复同一指令处理
+						// 重复同一指令处理（不发送额外报文，MCU 已知道当前模式）
 						if(isMissionActive(ctx.task)
 						   && ctx.task.command_tag == new_tag)
 						{
-							if(ctx.task.phase
-							   == ContestTaskPhase::CALIBRATING)
-							{
-								ctx.uart.sendLine(
-								    uart::protocol::makeModeAckLine(
-								        new_tag));
-							}
-							else if(ctx.task.phase
-							        == ContestTaskPhase::RUNNING)
-							{
-								ctx.uart.sendLine(
-								    uart::protocol::makeStartLine(
-								        new_tag,
-								        static_cast<int>(std::lround(
-								            ctx.task
-								                .target_position_mm
-								            * 10.0))));
-							}
 							continue;
 						}
 
@@ -226,11 +208,6 @@ namespace etest::state
 						        + " session_id="
 						        + std::to_string(
 						            ctx.task.session_id));
-
-						// 发送 ACK
-						ctx.uart.sendLine(
-						    uart::protocol::makeModeAckLine(
-						        new_tag));
 
 						// M0001: PREPARING
 						if(new_tag == "M0001")
