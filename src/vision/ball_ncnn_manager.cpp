@@ -179,16 +179,35 @@ namespace etest::vision
 		BallMeasurement result;
 		result.status = "LOST";
 
-		// 裁剪 ROI
-		cv::Rect clamped = roi.rect
-		    & cv::Rect(0, 0, raw_frame.cols, raw_frame.rows);
+		// 裁剪 ROI：拒绝静默裁剪，确保 GUI 配置与运行时完全一致
+		const cv::Rect frame_rect(0, 0, raw_frame.cols, raw_frame.rows);
+		const cv::Rect clamped = roi.rect & frame_rect;
+
 		if(clamped.empty())
 		{
 			result.status = "ERROR";
 			return result;
 		}
 
-		cv::Mat roi_frame = raw_frame(clamped);
+		if(clamped != roi.rect)
+		{
+			ETEST_LOG_ERROR(
+			    "BALL_NCNN",
+			    "Configured ROI exceeds frame boundary: "
+			    "roi=("
+			        + std::to_string(roi.rect.x) + ","
+			        + std::to_string(roi.rect.y) + ","
+			        + std::to_string(roi.rect.width) + ","
+			        + std::to_string(roi.rect.height)
+			        + "), frame=("
+			        + std::to_string(raw_frame.cols) + ","
+			        + std::to_string(raw_frame.rows) + ")");
+
+			result.status = "ERROR";
+			return result;
+		}
+
+		cv::Mat roi_frame = raw_frame(roi.rect);
 
 		// 推理
 		YoloTiming local_timing;

@@ -2806,6 +2806,57 @@ namespace etest
 			warn("logger.file and logger.terminal are both false");
 		}
 
+		// ── 校验 BallNcnn ROI 不超出摄像头边界 ──
+		{
+			const auto& bn = config.vision.ball_ncnn;
+
+			if(bn.enabled && bn.roi_location_mode == "topleft")
+			{
+				int cam_w = config.camera.width;
+				int cam_h = config.camera.height;
+
+				// 若摄像头宽高无效则跳过（已有其他校验报错）
+				if(cam_w > 0 && cam_h > 0)
+				{
+					auto validateRoi =
+					    [&](const std::string& name, int x, int y,
+					        int w, int h) {
+						    if(x < 0 || y < 0 || w <= 0 || h <= 0)
+						    {
+							    err(name
+							        + " has invalid position "
+							          "or size");
+							    return;
+						    }
+
+						    if(x + w > cam_w || y + h > cam_h)
+						    {
+							    err(name
+							        + " (x=" + std::to_string(x)
+							        + ", y=" + std::to_string(y)
+							        + ", w=" + std::to_string(w)
+							        + ", h=" + std::to_string(h)
+							        + ") exceeds camera frame ("
+							        + std::to_string(cam_w)
+							        + "x"
+							        + std::to_string(cam_h)
+							        + ")");
+						    }
+					    };
+
+					validateRoi("vision.ball_ncnn.full_roi",
+					            bn.full_roi_x, bn.full_roi_y,
+					            bn.full_src_width,
+					            bn.full_src_height);
+
+					validateRoi("vision.ball_ncnn.center_roi",
+					            bn.center_roi_x, bn.center_roi_y,
+					            bn.center_src_width,
+					            bn.center_src_height);
+				}
+			}
+		}
+
 		return valid;
 	}
 

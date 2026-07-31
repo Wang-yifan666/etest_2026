@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from statistics import median
 from typing import Iterable
 
@@ -19,6 +20,22 @@ def clamp(value: int, minimum: int, maximum: int) -> int:
     return max(minimum, min(value, maximum))
 
 
+# ── ROI 操作句柄 ──
+
+class RoiHandle(str, Enum):
+    NONE = "none"
+    MOVE = "move"
+
+    NORTH_WEST = "nw"
+    NORTH = "n"
+    NORTH_EAST = "ne"
+    EAST = "e"
+    SOUTH_EAST = "se"
+    SOUTH = "s"
+    SOUTH_WEST = "sw"
+    WEST = "w"
+
+
 # ── ROI ──
 
 @dataclass
@@ -27,6 +44,58 @@ class RoiRect:
     y: int
     width: int
     height: int
+
+    MIN_WIDTH = 32
+    MIN_HEIGHT = 32
+
+    @property
+    def left(self) -> int:
+        return self.x
+
+    @property
+    def top(self) -> int:
+        return self.y
+
+    @property
+    def right(self) -> int:
+        return self.x + self.width
+
+    @property
+    def bottom(self) -> int:
+        return self.y + self.height
+
+    def copy(self) -> "RoiRect":
+        return RoiRect(
+            self.x,
+            self.y,
+            self.width,
+            self.height,
+        )
+
+    def contains(self, px: float, py: float) -> bool:
+        return (
+            self.left <= px <= self.right
+            and self.top <= py <= self.bottom
+        )
+
+    def move_to(
+        self,
+        new_x: int,
+        new_y: int,
+        frame_width: int,
+        frame_height: int,
+    ) -> None:
+        self.x = clamp(
+            new_x,
+            0,
+            frame_width - self.width,
+        )
+
+        self.y = clamp(
+            new_y,
+            0,
+            frame_height - self.height,
+        )
 
     def clamp_to_frame(self, frame_width: int, frame_height: int) -> None:
         if self.width <= 0 or self.height <= 0:
@@ -58,6 +127,63 @@ class RoiRect:
         if self.y + self.height > frame_height:
             raise CalibrationValidationError("ROI 超出画面下边界")
 
+    @classmethod
+    def from_drag(
+        cls,
+        start_x: float,
+        start_y: float,
+        current_x: float,
+        current_y: float,
+        aspect_ratio: float,
+    ) -> "RoiRect":
+        """按锁定宽高比从拖拽起点/当前点构造 ROI。"""
+        direction_x = 1 if current_x >= start_x else -1
+        direction_y = 1 if current_y >= start_y else -1
+
+        width = max(cls.MIN_WIDTH, abs(current_x - start_x))
+        height = width / aspect_ratio
+
+        # 鼠标纵向移动更明显时，以高度为基准
+        requested_height = abs(current_y - start_y)
+
+        if requested_height > height:
+            height = max(cls.MIN_HEIGHT, requested_height)
+            width = height * aspect_ratio
+
+        end_x = start_x + direction_x * width
+        end_y = start_y + direction_y * height
+
+        left = round(min(start_x, end_x))
+        top = round(min(start_y, end_y))
+        right = round(max(start_x, end_x))
+        bottom = round(max(start_y, end_y))
+
+        return cls(
+            x=left,
+            y=top,
+            width=max(cls.MIN_WIDTH, right - left),
+            height=max(cls.MIN_HEIGHT, bottom - top),
+        )
+
+
+# ── 模型区域描述 ──
+
+@dataclass
+class DetectorRegion:
+    """描述一个检测模型对应的 ROI 区域及其输入尺寸。"""
+
+    model_id: str
+    display_name: str
+
+    roi: RoiRect
+
+    input_width: int
+    input_height: int
+
+    @property
+    def aspect_ratio(self) -> float:
+        return self.input_width / self.input_height
+
 
 @dataclass
 class RoiCalibration:
@@ -73,6 +199,35 @@ class RoiCalibration:
     )
 
     center_line_y: int = 320
+
+    full_input_size: tuple[int, int] = (640, 160)
+    center_input_size: tuple[int, int] = (224, 160)
+
+    def active_region(self, model_id: str) -> DetectorRegion:
+        """返回指定模型的 DetectorRegion 描述。"""
+        if model_id == "full":
+            return DetectorRegion(
+                model_id="full",
+                display_name="Full 模型",
+                roi=self.full_roi,
+                input_width=self.full_input_size[0],
+                input_height=self.full_input_size[1],
+            )
+
+        if model_id == "center":
+            return DetectorRegion(
+                model_id="center",
+                display_name="Center 模型",
+                roi=self.center_roi,
+                input_width=self.center_input_size[0],
+                input_height=self.center_input_size[1],
+            )
+
+        raise KeyError(model_id)
+
+    def active_roi(self, model_id: str) -> RoiRect:
+        """返回指定模型的 ROI 矩形引用。"""
+        return self.active_region(model_id).roi
 
     def clamp_all(self) -> None:
         self.full_roi.clamp_to_frame(

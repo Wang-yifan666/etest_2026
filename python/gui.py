@@ -41,7 +41,9 @@ except ImportError:
 from calibration_model import (  # type: ignore[import-untyped]
     CalibrationValidationError,
     CanvasTransform,
+    DetectorRegion,
     RoiCalibration,
+    RoiHandle,
     RoiRect,
     AxisCalibration,
     AxisCalibrationPoint,
@@ -1515,17 +1517,57 @@ class EtestGui:
         toolbar = ttk.Frame(self.calib_roi_tab)
         toolbar.pack(fill=tk.X)
 
-        ttk.Label(toolbar, text="拖动模式：").pack(side=tk.LEFT)
-        self.calib_mode_var = tk.StringVar(value="full_roi")
-        calib_mode_box = ttk.Combobox(
+        ttk.Label(toolbar, text="模型：").pack(side=tk.LEFT)
+        self.calib_model_var = tk.StringVar(value="full")
+        calib_model_box = ttk.Combobox(
             toolbar,
-            textvariable=self.calib_mode_var,
-            values=("full_roi", "center_roi", "center_line"),
+            textvariable=self.calib_model_var,
+            values=("full", "center"),
             state="readonly",
-            width=14,
+            width=12,
         )
-        calib_mode_box.pack(side=tk.LEFT, padx=(4, 8))
-        calib_mode_box.bind("<<ComboboxSelected>>", self._calib_on_mode_changed)
+        calib_model_box.pack(side=tk.LEFT, padx=(4, 12))
+        calib_model_box.bind("<<ComboboxSelected>>", self._calib_on_model_changed)
+
+        ttk.Label(toolbar, text="工具：").pack(side=tk.LEFT)
+        self.calib_tool_var = tk.StringVar(value="select")
+        calib_tool_box = ttk.Combobox(
+            toolbar,
+            textvariable=self.calib_tool_var,
+            values=("select", "draw"),
+            state="readonly",
+            width=10,
+        )
+        calib_tool_box.pack(side=tk.LEFT, padx=(4, 12))
+        calib_tool_box.bind("<<ComboboxSelected>>", self._calib_on_tool_changed)
+
+        self.calib_draw_btn = ttk.Button(
+            toolbar, text="重新框选", command=self._calib_start_draw
+        )
+        self.calib_draw_btn.pack(side=tk.LEFT, padx=3)
+
+        ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=12, pady=2)
+
+        self.calib_lock_aspect_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            toolbar,
+            text="锁定模型宽高比",
+            variable=self.calib_lock_aspect_var,
+        ).pack(side=tk.LEFT, padx=(0, 12))
+
+        ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=12, pady=2)
+
+        ttk.Button(
+            toolbar, text="铺满画面", command=self._calib_fill_frame
+        ).pack(side=tk.LEFT, padx=3)
+
+        ttk.Button(
+            toolbar, text="恢复配置", command=self._calib_reload
+        ).pack(side=tk.LEFT, padx=3)
+
+        ttk.Button(
+            toolbar, text="保存 ROI", command=self._calib_save
+        ).pack(side=tk.LEFT, padx=3)
 
         ttk.Button(
             toolbar, text="打开摄像头", command=self._calib_start_camera
@@ -1533,14 +1575,6 @@ class EtestGui:
 
         ttk.Button(
             toolbar, text="停止摄像头", command=self._calib_stop_camera
-        ).pack(side=tk.LEFT, padx=3)
-
-        ttk.Button(
-            toolbar, text="重新加载配置", command=self._calib_reload
-        ).pack(side=tk.LEFT, padx=3)
-
-        ttk.Button(
-            toolbar, text="保存标定", command=self._calib_save
         ).pack(side=tk.LEFT, padx=3)
 
         self.calib_info_var = tk.StringVar(value="未启动摄像头")
@@ -1565,76 +1599,93 @@ class EtestGui:
         self.calib_canvas.pack(fill=tk.BOTH, expand=True)
 
         # 右侧输入面板
-        input_frame = ttk.LabelFrame(main_frame, text="参数", padding=8)
+        input_frame = ttk.LabelFrame(main_frame, text="当前模型参数", padding=8)
         input_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(8, 0))
 
-        # Full ROI
-        ttk.Label(input_frame, text="Full ROI", font=("", 10, "bold")).grid(
-            row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 4)
+        ttk.Label(input_frame, text="模型：").grid(
+            row=0, column=0, sticky=tk.E, padx=(0, 4)
         )
-        ttk.Label(input_frame, text="X:").grid(row=1, column=0, sticky=tk.E, padx=(0, 4))
-        self.full_roi_x_var = tk.IntVar()
-        ttk.Entry(input_frame, textvariable=self.full_roi_x_var, width=6).grid(
-            row=1, column=1, sticky=tk.W
-        )
-        self.full_roi_x_var.trace_add("write", lambda *_: self._calib_apply_entry_values())
-
-        ttk.Label(input_frame, text="Y:").grid(row=2, column=0, sticky=tk.E, padx=(0, 4))
-        self.full_roi_y_var = tk.IntVar()
-        ttk.Entry(input_frame, textvariable=self.full_roi_y_var, width=6).grid(
-            row=2, column=1, sticky=tk.W
-        )
-        self.full_roi_y_var.trace_add("write", lambda *_: self._calib_apply_entry_values())
-
-        ttk.Label(input_frame, text="W: 1280 (只读)").grid(
-            row=3, column=0, columnspan=2, sticky=tk.W, pady=(0, 2)
-        )
-        ttk.Label(input_frame, text="H: 320 (只读)").grid(
-            row=4, column=0, columnspan=2, sticky=tk.W, pady=(0, 8)
+        self.calib_model_label_var = tk.StringVar(value="Full 模型")
+        ttk.Label(input_frame, textvariable=self.calib_model_label_var, font=("", 10, "bold")).grid(
+            row=0, column=1, sticky=tk.W, pady=(0, 4)
         )
 
-        # Center ROI
-        ttk.Label(input_frame, text="Center ROI", font=("", 10, "bold")).grid(
-            row=5, column=0, columnspan=2, sticky=tk.W, pady=(0, 4)
+        ttk.Label(input_frame, text="ROI 原图坐标", font=("", 10, "bold")).grid(
+            row=1, column=0, columnspan=2, sticky=tk.W, pady=(8, 4)
         )
-        ttk.Label(input_frame, text="X:").grid(row=6, column=0, sticky=tk.E, padx=(0, 4))
-        self.center_roi_x_var = tk.IntVar()
-        ttk.Entry(input_frame, textvariable=self.center_roi_x_var, width=6).grid(
-            row=6, column=1, sticky=tk.W
-        )
-        self.center_roi_x_var.trace_add("write", lambda *_: self._calib_apply_entry_values())
 
-        ttk.Label(input_frame, text="Y:").grid(row=7, column=0, sticky=tk.E, padx=(0, 4))
-        self.center_roi_y_var = tk.IntVar()
-        ttk.Entry(input_frame, textvariable=self.center_roi_y_var, width=6).grid(
-            row=7, column=1, sticky=tk.W
-        )
-        self.center_roi_y_var.trace_add("write", lambda *_: self._calib_apply_entry_values())
+        ttk.Label(input_frame, text="X:").grid(row=2, column=0, sticky=tk.E, padx=(0, 4))
+        self.roi_x_var = tk.IntVar()
+        self.roi_x_entry = ttk.Entry(input_frame, textvariable=self.roi_x_var, width=7)
+        self.roi_x_entry.grid(row=2, column=1, sticky=tk.W)
+        self.roi_x_entry.bind("<Return>", lambda e: self._calib_apply_entry_values())
+        self.roi_x_entry.bind("<FocusOut>", lambda e: self._calib_apply_entry_values())
 
-        ttk.Label(input_frame, text="W: 448 (只读)").grid(
-            row=8, column=0, columnspan=2, sticky=tk.W, pady=(0, 2)
+        ttk.Label(input_frame, text="Y:").grid(row=3, column=0, sticky=tk.E, padx=(0, 4))
+        self.roi_y_var = tk.IntVar()
+        self.roi_y_entry = ttk.Entry(input_frame, textvariable=self.roi_y_var, width=7)
+        self.roi_y_entry.grid(row=3, column=1, sticky=tk.W)
+        self.roi_y_entry.bind("<Return>", lambda e: self._calib_apply_entry_values())
+        self.roi_y_entry.bind("<FocusOut>", lambda e: self._calib_apply_entry_values())
+
+        ttk.Label(input_frame, text="宽度:").grid(row=4, column=0, sticky=tk.E, padx=(0, 4))
+        self.roi_width_var = tk.IntVar()
+        self.roi_width_entry = ttk.Entry(input_frame, textvariable=self.roi_width_var, width=7)
+        self.roi_width_entry.grid(row=4, column=1, sticky=tk.W)
+        self.roi_width_entry.bind("<Return>", lambda e: self._calib_apply_entry_values())
+        self.roi_width_entry.bind("<FocusOut>", lambda e: self._calib_apply_entry_values())
+
+        ttk.Label(input_frame, text="高度:").grid(row=5, column=0, sticky=tk.E, padx=(0, 4))
+        self.roi_height_var = tk.IntVar()
+        self.roi_height_entry = ttk.Entry(input_frame, textvariable=self.roi_height_var, width=7)
+        self.roi_height_entry.grid(row=5, column=1, sticky=tk.W)
+        self.roi_height_entry.bind("<Return>", lambda e: self._calib_apply_entry_values())
+        self.roi_height_entry.bind("<FocusOut>", lambda e: self._calib_apply_entry_values())
+
+        ttk.Button(
+            input_frame, text="应用参数", command=self._calib_apply_entry_values
+        ).grid(row=6, column=0, columnspan=2, pady=(8, 12))
+
+        ttk.Separator(input_frame, orient=tk.HORIZONTAL).grid(
+            row=7, column=0, columnspan=2, sticky=tk.EW, pady=(0, 8)
         )
-        ttk.Label(input_frame, text="H: 320 (只读)").grid(
+
+        ttk.Label(input_frame, text="模型输入尺寸", font=("", 10, "bold")).grid(
+            row=8, column=0, columnspan=2, sticky=tk.W, pady=(0, 4)
+        )
+        self.calib_model_input_var = tk.StringVar(value="640 × 160")
+        ttk.Label(input_frame, textvariable=self.calib_model_input_var).grid(
             row=9, column=0, columnspan=2, sticky=tk.W, pady=(0, 8)
         )
 
-        # 水平参考线
-        ttk.Label(input_frame, text="水平参考线", font=("", 10, "bold")).grid(
+        ttk.Label(input_frame, text="ROI 比例", font=("", 10, "bold")).grid(
             row=10, column=0, columnspan=2, sticky=tk.W, pady=(0, 4)
         )
-        ttk.Label(input_frame, text="Y:").grid(row=11, column=0, sticky=tk.E, padx=(0, 4))
-        self.center_line_y_var = tk.IntVar()
-        ttk.Entry(input_frame, textvariable=self.center_line_y_var, width=6).grid(
-            row=11, column=1, sticky=tk.W
+        self.calib_ratio_var = tk.StringVar(value="4.000")
+        ttk.Label(input_frame, textvariable=self.calib_ratio_var).grid(
+            row=11, column=0, columnspan=2, sticky=tk.W
         )
-        self.center_line_y_var.trace_add("write", lambda *_: self._calib_apply_entry_values())
+
+        # 水平参考线（辅助线，移到右侧面板）
+        ttk.Separator(input_frame, orient=tk.HORIZONTAL).grid(
+            row=12, column=0, columnspan=2, sticky=tk.EW, pady=(12, 8)
+        )
+        ttk.Label(input_frame, text="辅助线", font=("", 10, "bold")).grid(
+            row=13, column=0, columnspan=2, sticky=tk.W, pady=(0, 4)
+        )
+        ttk.Label(input_frame, text="水平参考线 Y:").grid(row=14, column=0, sticky=tk.E, padx=(0, 4))
+        self.center_line_y_var = tk.IntVar()
+        self.center_line_y_entry = ttk.Entry(input_frame, textvariable=self.center_line_y_var, width=7)
+        self.center_line_y_entry.grid(row=14, column=1, sticky=tk.W)
+        self.center_line_y_entry.bind("<Return>", lambda e: self._calib_apply_center_line())
+        self.center_line_y_entry.bind("<FocusOut>", lambda e: self._calib_apply_center_line())
 
         ttk.Label(
             input_frame,
             text="仅用于画面辅助观察\n不参与位置换算",
             foreground="#888888",
             font=("", 8),
-        ).grid(row=12, column=0, columnspan=2, sticky=tk.W, pady=(2, 0))
+        ).grid(row=15, column=0, columnspan=2, sticky=tk.W, pady=(2, 0))
 
         # ── 摄像头（必须在数据模型同步之前初始化，防止 _calib_redraw 访问未定义属性）──
         self.calib_camera: Optional[CalibrationCamera] = None
@@ -1646,13 +1697,19 @@ class EtestGui:
         self._roi_calibration = RoiCalibration()
         self._calib_load_from_config()
 
-        # 同步到输入框（会触发 trace_add → _calib_apply_entry_values → _calib_redraw）
+        # ── 同步保护标志 ──
+        self._calib_syncing = False
+
+        # 同步到输入框
         self._calib_sync_vars_from_model()
 
-        # ── 拖动状态 ──
-        self.calib_drag_item: Optional[str] = None
-        self.calib_drag_offset_x = 0.0
-        self.calib_drag_offset_y = 0.0
+        # ── 拖动/交互状态 ──
+        self.calib_drag_handle: RoiHandle = RoiHandle.NONE
+        self.calib_drag_roi_key: Optional[str] = None
+        self.calib_drag_original: Optional[RoiRect] = None
+        self.calib_drag_start_x = 0.0
+        self.calib_drag_start_y = 0.0
+        self.roi_create_start: Optional[tuple[float, float]] = None
         self.calib_transform: Optional[CanvasTransform] = None
 
         # ── Canvas 绑定 ──
@@ -1668,72 +1725,160 @@ class EtestGui:
         self.calib_canvas.bind("<Down>", lambda e: self._calib_nudge(0, 1, e))
         self.calib_canvas.focus_set()
 
+    # ── ROI 辅助 ──
+
+    def _active_region(self) -> DetectorRegion:
+        model_id = self.calib_model_var.get()
+        return self._roi_calibration.active_region(model_id)
+
+    def _other_region(self) -> DetectorRegion:
+        model_id = self.calib_model_var.get()
+        other = "center" if model_id == "full" else "full"
+        return self._roi_calibration.active_region(other)
+
     # ── 数据模型 ⇄ 输入框 ──
 
     def _calib_sync_vars_from_model(self) -> None:
-        """把数据模型同步到 IntVar 输入框。"""
+        """把当前模型的 ROI 参数同步到输入框。"""
+        if self._calib_syncing:
+            return
+
+        self._calib_syncing = True
+        try:
+            region = self._active_region()
+            roi = region.roi
+
+            self.roi_x_var.set(roi.x)
+            self.roi_y_var.set(roi.y)
+            self.roi_width_var.set(roi.width)
+            self.roi_height_var.set(roi.height)
+
+            self.center_line_y_var.set(self._roi_calibration.center_line_y)
+
+            self.calib_model_label_var.set(region.display_name)
+            self.calib_model_input_var.set(
+                f"{region.input_width} × {region.input_height}"
+            )
+            self.calib_ratio_var.set(f"{region.aspect_ratio:.3f}")
+        finally:
+            self._calib_syncing = False
+
+    def _calib_apply_entry_values(self, *_args) -> None:
+        """把输入框值应用到当前模型 ROI，并进行边界钳制。"""
+        if self._calib_syncing:
+            return
+
         rc = self._roi_calibration
-        self.full_roi_x_var.set(rc.full_roi.x)
-        self.full_roi_y_var.set(rc.full_roi.y)
-        self.center_roi_x_var.set(rc.center_roi.x)
-        self.center_roi_y_var.set(rc.center_roi.y)
-        self.center_line_y_var.set(rc.center_line_y)
+        model_id = self.calib_model_var.get()
+        region = rc.active_region(model_id)
+        roi = region.roi
 
-    def _calib_apply_entry_values(self) -> None:
-        """把 IntVar 值应用到数据模型，并执行边界钳制。"""
+        try:
+            x = self.roi_x_var.get()
+            y = self.roi_y_var.get()
+            width = self.roi_width_var.get()
+            height = self.roi_height_var.get()
+        except tk.TclError:
+            return
+
+        if self.calib_lock_aspect_var.get():
+            # 以宽度为主，自动计算高度
+            height = round(width / region.aspect_ratio)
+            if height < RoiRect.MIN_HEIGHT:
+                height = RoiRect.MIN_HEIGHT
+                width = round(height * region.aspect_ratio)
+
+        if width < RoiRect.MIN_WIDTH:
+            width = RoiRect.MIN_WIDTH
+        if height < RoiRect.MIN_HEIGHT:
+            height = RoiRect.MIN_HEIGHT
+
+        roi.x = x
+        roi.y = y
+        roi.width = width
+        roi.height = height
+
+        rc.clamp_all()
+        self._calib_sync_vars_from_model()
+        self._calib_redraw()
+
+    def _calib_apply_center_line(self, *_args) -> None:
+        """把中心线输入框值应用到数据模型。"""
+        if self._calib_syncing:
+            return
+
         rc = self._roi_calibration
-        try:
-            rc.full_roi.x = self.full_roi_x_var.get()
-        except tk.TclError:
-            pass
-
-        try:
-            rc.full_roi.y = self.full_roi_y_var.get()
-        except tk.TclError:
-            pass
-
-        try:
-            rc.center_roi.x = self.center_roi_x_var.get()
-        except tk.TclError:
-            pass
-
-        try:
-            rc.center_roi.y = self.center_roi_y_var.get()
-        except tk.TclError:
-            pass
-
         try:
             rc.center_line_y = self.center_line_y_var.get()
         except tk.TclError:
-            pass
+            return
 
         rc.clamp_all()
         self._calib_sync_vars_from_model()
         self._calib_redraw()
 
     def _calib_nudge(self, dx: int, dy: int, event: tk.Event) -> None:
-        """方向键微调当前模式的 ROI/参考线位置。"""
+        """方向键微调当前模型的 ROI 位置。"""
         step = 10 if (event.state & 0x0001) else 1  # Shift 键
-        mode = self.calib_mode_var.get()
-        rc = self._roi_calibration
+        roi = self._active_region().roi
+        roi.x += dx * step
+        roi.y += dy * step
 
-        if mode == "full_roi":
-            rc.full_roi.x += dx * step
-            rc.full_roi.y += dy * step
-        elif mode == "center_roi":
-            rc.center_roi.x += dx * step
-            rc.center_roi.y += dy * step
-        elif mode == "center_line":
-            rc.center_line_y += dy * step
+        self._roi_calibration.clamp_all()
+        self._calib_sync_vars_from_model()
+        self._calib_redraw()
+
+    # ── 工具栏操作 ──
+
+    @ui_guard("切换模型")
+    def _calib_on_model_changed(self, _event=None) -> None:
+        self._calib_sync_vars_from_model()
+        self._calib_redraw()
+        self._calib_update_info()
+
+    @ui_guard("切换工具")
+    def _calib_on_tool_changed(self, _event=None) -> None:
+        tool = self.calib_tool_var.get()
+        if tool == "select":
+            self._calib_info_var_set("选择/移动模式 — 拖动矩形内部移动，拖动四角缩放")
+        elif tool == "draw":
+            self._calib_info_var_set("框选模式 — 在画面上拖出新的 ROI")
+
+    def _calib_start_draw(self) -> None:
+        """进入重新框选模式。"""
+        self.calib_tool_var.set("draw")
+        self._calib_info_var_set("框选模式 — 在画面上按住并拖出新的 ROI（松开后自动回到选择模式）")
+
+    def _calib_fill_frame(self) -> None:
+        """将当前 ROI 铺满整个画面（保持宽高比，纵向居中）。"""
+        rc = self._roi_calibration
+        region = self._active_region()
+        roi = region.roi
+
+        frame_w = rc.frame_width
+        frame_h = rc.frame_height
+
+        width = frame_w
+        height = round(width / region.aspect_ratio)
+
+        if height > frame_h:
+            height = frame_h
+            width = round(height * region.aspect_ratio)
+
+        roi.x = (frame_w - width) // 2
+        roi.y = (frame_h - height) // 2
+        roi.width = width
+        roi.height = height
 
         rc.clamp_all()
         self._calib_sync_vars_from_model()
         self._calib_redraw()
+        self._calib_info_var_set(f"已将 {region.display_name} ROI 扩至最大可用范围")
 
     # ── 配置读写 ──
 
     def _calib_load_from_config(self) -> None:
-        """从 config/vision.toml 读取当前标定值。"""
+        """从 config/vision.toml 读取当前标定值（含宽高和输入尺寸）。"""
         vision_path = CONFIG_DIR / "vision.toml"
         try:
             if vision_path.is_file():
@@ -1741,13 +1886,30 @@ class EtestGui:
                     data = tomllib.load(f) if tomllib else {}
                 bn = data.get("vision", {}).get("ball_ncnn", {})
                 rc = self._roi_calibration
+
                 rc.full_roi.x = int(bn.get("full_roi_x", 0))
                 rc.full_roi.y = int(bn.get("full_roi_y", 160))
+                rc.full_roi.width = int(bn.get("full_src_width", 1280))
+                rc.full_roi.height = int(bn.get("full_src_height", 320))
+
                 rc.center_roi.x = int(bn.get("center_roi_x", 416))
                 rc.center_roi.y = int(bn.get("center_roi_y", 160))
+                rc.center_roi.width = int(bn.get("center_src_width", 448))
+                rc.center_roi.height = int(bn.get("center_src_height", 320))
+
                 rc.center_line_y = int(bn.get("center_line_y", 320))
+
+                rc.full_input_size = (
+                    int(bn.get("full_input_width", 640)),
+                    int(bn.get("full_input_height", 160)),
+                )
+                rc.center_input_size = (
+                    int(bn.get("center_input_width", 224)),
+                    int(bn.get("center_input_height", 160)),
+                )
+
                 rc.clamp_all()
-                LOGGER.info("标定参数已从配置加载")
+                LOGGER.info("标定参数已从配置加载（含宽高和输入尺寸）")
         except Exception:
             LOGGER.warning("从配置加载标定参数失败，使用默认值", exc_info=True)
 
@@ -1755,7 +1917,7 @@ class EtestGui:
     def _calib_reload(self) -> None:
         self._calib_load_from_config()
         self._calib_sync_vars_from_model()
-        self.calib_info_var.set("已从配置重新加载标定参数")
+        self._calib_info_var_set("已从配置重新加载标定参数")
         self._calib_redraw()
         self.set_notice("标定参数已重新加载")
 
@@ -1782,11 +1944,44 @@ class EtestGui:
         if ball_ncnn is None:
             raise OperationError("vision.toml 中缺少 [vision.ball_ncnn] 配置节")
 
+        # ── 保存前检查 Full/Center ROI 关系 ──
+        warnings: list[str] = []
+        full = rc.full_roi
+        center = rc.center_roi
+
+        if not (
+            center.x >= full.x
+            and center.y >= full.y
+            and center.right <= full.right
+            and center.bottom <= full.bottom
+        ):
+            warnings.append("Center ROI 不完全位于 Full ROI 内，可能影响重捕获。")
+
+        if full.width < center.width:
+            warnings.append("Full ROI 比 Center ROI 更窄，可能影响重捕获。")
+
+        if warnings:
+            warning_text = "\n".join(warnings)
+            proceed = messagebox.askyesno(
+                "ROI 配置警告",
+                f"以下问题可能影响检测效果：\n\n{warning_text}\n\n"
+                "是否仍然保存？",
+                parent=self.root,
+            )
+            if not proceed:
+                return
+
         ball_ncnn["roi_location_mode"] = "topleft"
         ball_ncnn["full_roi_x"] = rc.full_roi.x
         ball_ncnn["full_roi_y"] = rc.full_roi.y
+        ball_ncnn["full_src_width"] = rc.full_roi.width
+        ball_ncnn["full_src_height"] = rc.full_roi.height
+
         ball_ncnn["center_roi_x"] = rc.center_roi.x
         ball_ncnn["center_roi_y"] = rc.center_roi.y
+        ball_ncnn["center_src_width"] = rc.center_roi.width
+        ball_ncnn["center_src_height"] = rc.center_roi.height
+
         ball_ncnn["center_line_y"] = rc.center_line_y
 
         rendered = tomlkit.dumps(document)
@@ -1805,9 +2000,9 @@ class EtestGui:
             "主程序重启后生效。"
         )
         LOGGER.info(
-            "标定参数已保存: full=(%d,%d) center=(%d,%d) line_y=%d",
-            rc.full_roi.x, rc.full_roi.y,
-            rc.center_roi.x, rc.center_roi.y,
+            "标定参数已保存: full=(%d,%d,%d,%d) center=(%d,%d,%d,%d) line_y=%d",
+            rc.full_roi.x, rc.full_roi.y, rc.full_roi.width, rc.full_roi.height,
+            rc.center_roi.x, rc.center_roi.y, rc.center_roi.width, rc.center_roi.height,
             rc.center_line_y,
         )
 
@@ -1832,7 +2027,7 @@ class EtestGui:
         self.calib_camera = CalibrationCamera(0)
         self.calib_camera.start()
         self.calib_running = True
-        self.calib_info_var.set("摄像头已启动 — 拖动/方向键/输入框调整参数")
+        self._calib_info_var_set("摄像头已启动 — 拖动/框选/输入框调整参数")
         self._calib_update_preview()
 
     @ui_guard("停止摄像头")
@@ -1853,7 +2048,7 @@ class EtestGui:
         self.calib_current_frame = None
         self.calib_transform = None
         self.calib_canvas.delete("all")
-        self.calib_info_var.set("摄像头已停止")
+        self._calib_info_var_set("摄像头已停止")
 
     def _calib_update_preview(self) -> None:
         if not self.calib_running or self.calib_camera is None:
@@ -1887,6 +2082,15 @@ class EtestGui:
 
     def _calib_render_frame(self, frame) -> None:
         frame_h, frame_w = frame.shape[:2]
+
+        # 动态更新画面尺寸
+        rc = self._roi_calibration
+        if rc.frame_width != frame_w or rc.frame_height != frame_h:
+            rc.frame_width = frame_w
+            rc.frame_height = frame_h
+            rc.clamp_all()
+            self._calib_sync_vars_from_model()
+
         transform = self._calib_make_transform(frame_h, frame_w)
         self.calib_transform = transform
 
@@ -1914,80 +2118,204 @@ class EtestGui:
             return
 
         GREEN = "#00ff00"
-        GREEN_LIGHT = "#55ff55"
-        mode = self.calib_mode_var.get()
+        GREEN_DIM = "#338833"
+        OVERLAY_FILL = "#000000"
+        HANDLE_SIZE = 6
+
         rc = self._roi_calibration
+        active_region = self._active_region()
+        other_region = self._other_region()
+        active_roi = active_region.roi
+        other_roi = other_region.roi
 
-        # Full ROI 矩形
-        fx, fy = transform.image_to_canvas(rc.full_roi.x, rc.full_roi.y)
-        fx2, fy2 = transform.image_to_canvas(
-            rc.full_roi.x + rc.full_roi.width,
-            rc.full_roi.y + rc.full_roi.height,
-        )
+        # ── 非活跃 ROI 外区域压暗 ──
+        # 上边
         self.calib_canvas.create_rectangle(
-            fx, fy, fx2, fy2,
-            outline=GREEN, width=2, tags="full_roi",
+            0, 0,
+            self.calib_canvas.winfo_width(),
+            transform.image_to_canvas(0, active_roi.top)[1],
+            fill=OVERLAY_FILL, stipple="gray50", outline="", tags="overlay",
         )
-
-        # Center ROI 矩形
-        cx, cy = transform.image_to_canvas(rc.center_roi.x, rc.center_roi.y)
-        cx2, cy2 = transform.image_to_canvas(
-            rc.center_roi.x + rc.center_roi.width,
-            rc.center_roi.y + rc.center_roi.height,
-        )
+        # 下边
         self.calib_canvas.create_rectangle(
-            cx, cy, cx2, cy2,
-            outline=GREEN_LIGHT, width=2, dash=(6, 3), tags="center_roi",
+            0, transform.image_to_canvas(0, active_roi.bottom)[1],
+            self.calib_canvas.winfo_width(),
+            self.calib_canvas.winfo_height(),
+            fill=OVERLAY_FILL, stipple="gray50", outline="", tags="overlay",
+        )
+        # 左边
+        self.calib_canvas.create_rectangle(
+            0, transform.image_to_canvas(0, active_roi.top)[1],
+            transform.image_to_canvas(active_roi.left, 0)[0],
+            transform.image_to_canvas(0, active_roi.bottom)[1],
+            fill=OVERLAY_FILL, stipple="gray50", outline="", tags="overlay",
+        )
+        # 右边
+        self.calib_canvas.create_rectangle(
+            transform.image_to_canvas(active_roi.right, 0)[0],
+            transform.image_to_canvas(0, active_roi.top)[1],
+            self.calib_canvas.winfo_width(),
+            transform.image_to_canvas(0, active_roi.bottom)[1],
+            fill=OVERLAY_FILL, stipple="gray50", outline="", tags="overlay",
         )
 
-        # 水平参考线（仅在图像区域内绘制）
+        # ── 当前模型 ROI：粗实线 ──
+        ax, ay = transform.image_to_canvas(active_roi.x, active_roi.y)
+        ax2, ay2 = transform.image_to_canvas(active_roi.right, active_roi.bottom)
+        self.calib_canvas.create_rectangle(
+            ax, ay, ax2, ay2,
+            outline=GREEN, width=3, tags="active_roi",
+        )
+
+        # ── 另一个模型 ROI：细虚线 ──
+        ox, oy = transform.image_to_canvas(other_roi.x, other_roi.y)
+        ox2, oy2 = transform.image_to_canvas(other_roi.right, other_roi.bottom)
+        self.calib_canvas.create_rectangle(
+            ox, oy, ox2, oy2,
+            outline=GREEN_DIM, width=1, dash=(8, 4), tags="other_roi",
+        )
+
+        # ── ROI 左上角标签 ──
+        self.calib_canvas.create_text(
+            ax + 4, ay + 4,
+            text=active_region.display_name,
+            anchor=tk.NW,
+            fill=GREEN,
+            font=("", 9, "bold"),
+            tags="roi_label",
+        )
+
+        # ── ROI 尺寸标注 ──
+        info_text = f"{active_roi.x}, {active_roi.y}, {active_roi.width}×{active_roi.height}"
+        self.calib_canvas.create_text(
+            ax, ay - 8,
+            text=info_text,
+            anchor=tk.SW,
+            fill=GREEN,
+            font=("", 8),
+            tags="roi_info",
+        )
+
+        # ── 水平参考线 ──
         line_left, line_y = transform.image_to_canvas(0, rc.center_line_y)
         line_right, _ = transform.image_to_canvas(rc.frame_width, rc.center_line_y)
         self.calib_canvas.create_line(
             line_left, line_y, line_right, line_y,
-            fill=GREEN, width=3, tags="center_line",
+            fill="#00aaff", width=2, dash=(4, 4), tags="center_line",
         )
 
-        # 拖动句柄
-        if mode == "full_roi":
+        # ── 八方向缩放句柄（锁定宽高比时只显示四个角）──
+        lock = self.calib_lock_aspect_var.get()
+        handles = [
+            (RoiHandle.NORTH_WEST, ax, ay),
+            (RoiHandle.NORTH_EAST, ax2, ay),
+            (RoiHandle.SOUTH_WEST, ax, ay2),
+            (RoiHandle.SOUTH_EAST, ax2, ay2),
+        ]
+        if not lock:
+            handles += [
+                (RoiHandle.NORTH, (ax + ax2) / 2, ay),
+                (RoiHandle.SOUTH, (ax + ax2) / 2, ay2),
+                (RoiHandle.WEST, ax, (ay + ay2) / 2),
+                (RoiHandle.EAST, ax2, (ay + ay2) / 2),
+            ]
+
+        for handle, hx, hy in handles:
             self.calib_canvas.create_rectangle(
-                fx - 4, fy - 4, fx + 4, fy + 4,
-                fill=GREEN, outline=GREEN, tags="handle_f",
+                hx - HANDLE_SIZE, hy - HANDLE_SIZE,
+                hx + HANDLE_SIZE, hy + HANDLE_SIZE,
+                fill=GREEN, outline="#004400", tags="roi_handle",
             )
-        elif mode == "center_roi":
-            self.calib_canvas.create_rectangle(
-                cx - 4, cy - 4, cx + 4, cy + 4,
-                fill=GREEN_LIGHT, outline=GREEN_LIGHT, tags="handle_c",
-            )
-        elif mode == "center_line":
-            self.calib_canvas.create_line(
-                line_left, line_y, line_right, line_y,
-                fill=GREEN, width=5, tags="handle_l",
-            )
+
+        # ── 另一个模型的标签 ──
+        self.calib_canvas.create_text(
+            ox + 4, oy + 4,
+            text=other_region.display_name,
+            anchor=tk.NW,
+            fill=GREEN_DIM,
+            font=("", 8),
+            tags="other_label",
+        )
 
     def _calib_redraw(self) -> None:
         """仅重绘叠加层（不清空画面）。"""
         self.calib_canvas.delete(
-            "full_roi", "center_roi", "center_line",
-            "handle_f", "handle_c", "handle_l",
+            "overlay", "active_roi", "other_roi",
+            "roi_label", "roi_info", "other_label",
+            "center_line", "roi_handle",
         )
         if self.calib_current_frame is not None:
             self._calib_draw_overlay()
 
     # ── 鼠标事件 ──
 
-    @ui_guard("拖动模式切换")
-    def _calib_on_mode_changed(self, _event=None) -> None:
-        self._calib_redraw()
-        mode = self.calib_mode_var.get()
-        mode_names = {
-            "full_roi": "Full ROI",
-            "center_roi": "Center ROI",
-            "center_line": "水平参考线",
+    def _calib_hit_test(self, canvas_x: float, canvas_y: float) -> tuple[RoiHandle, Optional[str]]:
+        """检测鼠标命中的 ROI 操作句柄，返回 (句柄类型, roi_key)。"""
+        transform = self.calib_transform
+        if transform is None:
+            return RoiHandle.NONE, None
+
+        image_x, image_y = transform.canvas_to_image(canvas_x, canvas_y)
+
+        # 检测命中区域：当前模型 ROI
+        active_region = self._active_region()
+        active_roi = active_region.roi
+
+        # 检查在哪个 ROI 内部
+        in_active = active_roi.contains(image_x, image_y)
+
+        # 检查句柄命中（当前模型）
+        handle = self._calib_hit_handle(canvas_x, canvas_y, active_roi, active_region.model_id)
+        if handle != RoiHandle.NONE:
+            return handle, active_region.model_id
+
+        # 命中内部 → 移动
+        if in_active:
+            return RoiHandle.MOVE, active_region.model_id
+
+        return RoiHandle.NONE, None
+
+    def _calib_hit_handle(
+        self,
+        canvas_x: float,
+        canvas_y: float,
+        roi: RoiRect,
+        roi_key: str,
+    ) -> RoiHandle:
+        """检测鼠标是否命中指定 ROI 的缩放句柄。"""
+        transform = self.calib_transform
+        if transform is None:
+            return RoiHandle.NONE
+
+        ax, ay = transform.image_to_canvas(roi.x, roi.y)
+        ax2, ay2 = transform.image_to_canvas(roi.right, roi.bottom)
+
+        HIT = 14  # Canvas 像素命中半径
+
+        lock = self.calib_lock_aspect_var.get()
+        corners = {
+            RoiHandle.NORTH_WEST: (ax, ay),
+            RoiHandle.NORTH_EAST: (ax2, ay),
+            RoiHandle.SOUTH_WEST: (ax, ay2),
+            RoiHandle.SOUTH_EAST: (ax2, ay2),
         }
-        self.calib_info_var.set(
-            f"当前拖动：{mode_names.get(mode, mode)}"
-        )
+
+        for handle, (hx, hy) in corners.items():
+            if abs(canvas_x - hx) < HIT and abs(canvas_y - hy) < HIT:
+                return handle
+
+        if not lock:
+            edges = {
+                RoiHandle.NORTH: ((ax + ax2) / 2, ay),
+                RoiHandle.SOUTH: ((ax + ax2) / 2, ay2),
+                RoiHandle.WEST: (ax, (ay + ay2) / 2),
+                RoiHandle.EAST: (ax2, (ay + ay2) / 2),
+            }
+            for handle, (hx, hy) in edges.items():
+                if abs(canvas_x - hx) < HIT and abs(canvas_y - hy) < HIT:
+                    return handle
+
+        return RoiHandle.NONE
 
     def _calib_on_press(self, event: tk.Event) -> None:
         transform = self.calib_transform
@@ -1999,77 +2327,216 @@ class EtestGui:
             return
 
         image_x, image_y = transform.canvas_to_image(event.x, event.y)
-        mode = self.calib_mode_var.get()
-        rc = self._roi_calibration
+        tool = self.calib_tool_var.get()
 
-        if mode == "full_roi":
-            roi = rc.full_roi
-            # 近似的句柄检测：鼠标在 ROI 左上角 12 CV-px 以内
-            handle_cx, handle_cy = transform.image_to_canvas(roi.x, roi.y)
-            if abs(event.x - handle_cx) < 12 and abs(event.y - handle_cy) < 12:
-                self.calib_drag_item = "full_roi"
-                self.calib_drag_offset_x = image_x - roi.x
-                self.calib_drag_offset_y = image_y - roi.y
-
-        elif mode == "center_roi":
-            roi = rc.center_roi
-            handle_cx, handle_cy = transform.image_to_canvas(roi.x, roi.y)
-            if abs(event.x - handle_cx) < 12 and abs(event.y - handle_cy) < 12:
-                self.calib_drag_item = "center_roi"
-                self.calib_drag_offset_x = image_x - roi.x
-                self.calib_drag_offset_y = image_y - roi.y
-
-        elif mode == "center_line":
-            self.calib_drag_item = "center_line"
-            self.calib_drag_offset_y = image_y - rc.center_line_y
-
-    def _calib_on_drag(self, event: tk.Event) -> None:
-        if self.calib_drag_item is None or self.calib_transform is None:
+        if tool == "draw":
+            # 重新框选模式
+            self.roi_create_start = (image_x, image_y)
+            self.calib_drag_handle = RoiHandle.NONE
             return
 
+        # 选择/移动模式：命中测试
+        handle, roi_key = self._calib_hit_test(event.x, event.y)
+        self.calib_drag_handle = handle
+        self.calib_drag_roi_key = roi_key
+
+        if handle == RoiHandle.NONE:
+            return
+
+        self.calib_drag_start_x = image_x
+        self.calib_drag_start_y = image_y
+
+        region = self._active_region()
+        roi = region.roi
+        self.calib_drag_original = roi.copy()
+
+    def _calib_on_drag(self, event: tk.Event) -> None:
         transform = self.calib_transform
+        if transform is None:
+            return
+
         if not transform.contains_canvas_point(event.x, event.y):
             return
 
         image_x, image_y = transform.canvas_to_image(event.x, event.y)
-        rc = self._roi_calibration
+        tool = self.calib_tool_var.get()
 
-        if self.calib_drag_item == "full_roi":
-            rc.full_roi.x = round(image_x - self.calib_drag_offset_x)
-            rc.full_roi.y = round(image_y - self.calib_drag_offset_y)
-        elif self.calib_drag_item == "center_roi":
-            rc.center_roi.x = round(image_x - self.calib_drag_offset_x)
-            rc.center_roi.y = round(image_y - self.calib_drag_offset_y)
-        elif self.calib_drag_item == "center_line":
-            rc.center_line_y = round(image_y - self.calib_drag_offset_y)
+        if tool == "draw" and self.roi_create_start is not None:
+            # 框选模式：用 from_drag 动态创建 ROI
+            start_x, start_y = self.roi_create_start
+            region = self._active_region()
+            aspect = region.aspect_ratio if self.calib_lock_aspect_var.get() else 0.0
+
+            if aspect > 0:
+                region.roi = RoiRect.from_drag(
+                    start_x, start_y, image_x, image_y, aspect,
+                )
+            else:
+                # 自由比例（暂不支持，使用 1:1）
+                region.roi = RoiRect.from_drag(
+                    start_x, start_y, image_x, image_y, 1.0,
+                )
+
+            self._roi_calibration.clamp_all()
+            self._calib_sync_vars_from_model()
+            self._calib_redraw()
+            return
+
+        # 选择/移动模式
+        handle = self.calib_drag_handle
+        if handle == RoiHandle.NONE or self.calib_drag_original is None:
+            return
+
+        rc = self._roi_calibration
+        region = self._active_region()
+        roi = region.roi
+        original = self.calib_drag_original
+        dx = round(image_x - self.calib_drag_start_x)
+        dy = round(image_y - self.calib_drag_start_y)
+        lock = self.calib_lock_aspect_var.get()
+
+        if handle == RoiHandle.MOVE:
+            roi.move_to(
+                original.x + dx,
+                original.y + dy,
+                rc.frame_width,
+                rc.frame_height,
+            )
+        elif handle in (
+            RoiHandle.NORTH_WEST, RoiHandle.NORTH_EAST,
+            RoiHandle.SOUTH_WEST, RoiHandle.SOUTH_EAST,
+        ):
+            self._calib_resize_roi(handle, original, dx, dy, region.aspect_ratio, lock)
+        elif not lock and handle in (
+            RoiHandle.NORTH, RoiHandle.SOUTH,
+            RoiHandle.WEST, RoiHandle.EAST,
+        ):
+            self._calib_resize_edge(handle, original, dx, dy)
 
         rc.clamp_all()
         self._calib_sync_vars_from_model()
         self._calib_redraw()
-        self._calib_update_info()
 
-    def _calib_on_release(self, _event: tk.Event) -> None:
-        self.calib_drag_item = None
+    def _calib_resize_roi(
+        self,
+        handle: RoiHandle,
+        original: RoiRect,
+        dx: int,
+        dy: int,
+        aspect_ratio: float,
+        lock: bool,
+    ) -> None:
+        """从四角等比例缩放 ROI。"""
+        region = self._active_region()
+        roi = region.roi
+
+        if handle == RoiHandle.NORTH_WEST:
+            new_right = original.right
+            new_bottom = original.bottom
+            new_left = original.x + dx
+            new_top = original.y + dy
+        elif handle == RoiHandle.NORTH_EAST:
+            new_left = original.x
+            new_bottom = original.bottom
+            new_right = original.right + dx
+            new_top = original.y + dy
+        elif handle == RoiHandle.SOUTH_WEST:
+            new_right = original.right
+            new_top = original.y
+            new_left = original.x + dx
+            new_bottom = original.bottom + dy
+        elif handle == RoiHandle.SOUTH_EAST:
+            new_left = original.x
+            new_top = original.y
+            new_right = original.right + dx
+            new_bottom = original.bottom + dy
+        else:
+            return
+
+        if lock:
+            # 等比例缩放：取宽高中变化更大的维度
+            raw_w = new_right - new_left
+            raw_h = new_bottom - new_top
+
+            if abs(dx) >= abs(dy) or raw_w / max(aspect_ratio, 0.01) >= raw_h:
+                width = max(RoiRect.MIN_WIDTH, raw_w)
+                height = round(width / aspect_ratio)
+            else:
+                height = max(RoiRect.MIN_HEIGHT, raw_h)
+                width = round(height * aspect_ratio)
+
+            # 根据拖动的角重新计算位置
+            if "WEST" in handle.value:
+                roi.x = new_right - width
+            else:
+                roi.x = new_left
+
+            if "NORTH" in handle.value:
+                roi.y = new_bottom - height
+            else:
+                roi.y = new_top
+
+            roi.width = width
+            roi.height = height
+        else:
+            roi.x = new_left
+            roi.y = new_top
+            roi.width = max(RoiRect.MIN_WIDTH, new_right - new_left)
+            roi.height = max(RoiRect.MIN_HEIGHT, new_bottom - new_top)
+
+    def _calib_resize_edge(
+        self,
+        handle: RoiHandle,
+        original: RoiRect,
+        dx: int,
+        dy: int,
+    ) -> None:
+        """从边中间句柄缩放（仅自由比例模式使用）。"""
+        region = self._active_region()
+        roi = region.roi
+
+        if handle == RoiHandle.NORTH:
+            new_top = original.y + dy
+            new_bottom = original.bottom
+            roi.y = min(new_top, new_bottom - RoiRect.MIN_HEIGHT)
+            roi.height = max(RoiRect.MIN_HEIGHT, new_bottom - roi.y)
+        elif handle == RoiHandle.SOUTH:
+            roi.height = max(RoiRect.MIN_HEIGHT, original.height + dy)
+        elif handle == RoiHandle.WEST:
+            new_left = original.x + dx
+            new_right = original.right
+            roi.x = min(new_left, new_right - RoiRect.MIN_WIDTH)
+            roi.width = max(RoiRect.MIN_WIDTH, new_right - roi.x)
+        elif handle == RoiHandle.EAST:
+            roi.width = max(RoiRect.MIN_WIDTH, original.width + dx)
+
+    def _calib_on_release(self, event: tk.Event) -> None:
+        # 框选完成：自动切回选择模式
+        if self.calib_tool_var.get() == "draw":
+            self.calib_tool_var.set("select")
+            self._calib_info_var_set("框选完成")
+
+        self.calib_drag_handle = RoiHandle.NONE
+        self.calib_drag_roi_key = None
+        self.calib_drag_original = None
+        self.roi_create_start = None
 
     def _calib_on_resize(self, _event: tk.Event) -> None:
         if self.calib_current_frame is not None:
             self._calib_render_frame(self.calib_current_frame)
 
     def _calib_update_info(self) -> None:
-        mode = self.calib_mode_var.get()
-        rc = self._roi_calibration
-        if mode == "full_roi":
-            self.calib_info_var.set(
-                f"Full ROI 左上角: ({rc.full_roi.x}, {rc.full_roi.y})"
-            )
-        elif mode == "center_roi":
-            self.calib_info_var.set(
-                f"Center ROI 左上角: ({rc.center_roi.x}, {rc.center_roi.y})"
-            )
-        elif mode == "center_line":
-            self.calib_info_var.set(
-                f"水平参考线 Y: {rc.center_line_y}"
-            )
+        region = self._active_region()
+        roi = region.roi
+        tool = self.calib_tool_var.get()
+        tool_name = "框选" if tool == "draw" else "选择/移动"
+        self._calib_info_var_set(
+            f"[{tool_name}] {region.display_name}: "
+            f"({roi.x}, {roi.y}) {roi.width}×{roi.height}"
+        )
+
+    def _calib_info_var_set(self, text: str) -> None:
+        self.calib_info_var.set(text)
 
     # ── 位置标定子页面（第二阶段占位）──
 
