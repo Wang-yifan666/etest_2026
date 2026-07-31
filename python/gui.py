@@ -1636,18 +1636,18 @@ class EtestGui:
             font=("", 8),
         ).grid(row=12, column=0, columnspan=2, sticky=tk.W, pady=(2, 0))
 
-        # ── 数据模型 ──
-        self._roi_calibration = RoiCalibration()
-        self._calib_load_from_config()
-
-        # 同步到输入框
-        self._calib_sync_vars_from_model()
-
-        # ── 摄像头 ──
+        # ── 摄像头（必须在数据模型同步之前初始化，防止 _calib_redraw 访问未定义属性）──
         self.calib_camera: Optional[CalibrationCamera] = None
         self.calib_running = False
         self.calib_current_frame = None
         self.calib_after_id: Optional[str] = None
+
+        # ── 数据模型 ──
+        self._roi_calibration = RoiCalibration()
+        self._calib_load_from_config()
+
+        # 同步到输入框（会触发 trace_add → _calib_apply_entry_values → _calib_redraw）
+        self._calib_sync_vars_from_model()
 
         # ── 拖动状态 ──
         self.calib_drag_item: Optional[str] = None
