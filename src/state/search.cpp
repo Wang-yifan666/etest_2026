@@ -241,6 +241,14 @@ namespace etest::state
 							ctx.task.tracking_mode =
 							    TrackingMode::NONE;
 							m0001_frame_received = false;
+
+							// M0001 也发送 VSESSION 声明
+							ctx.uart.sendLine(
+							    uart::protocol::makeVsessionLine(
+							        ctx.task.session_id,
+							        search_cfg.nominal_fps * 100,
+							        search_cfg.camera_id));
+							ctx.task.vsession_confirmed = false;
 						}
 						else
 						{
@@ -250,6 +258,25 @@ namespace etest::state
 							ctx.task.vision_enabled = true;
 							ctx.task.tracking_mode =
 							    TrackingMode::FULL;
+
+							// 发送 VSESSION 声明视觉会话
+							ctx.uart.sendLine(
+							    uart::protocol::makeVsessionLine(
+							        ctx.task.session_id,
+							        search_cfg.nominal_fps * 100,
+							        search_cfg.camera_id));
+							ctx.task.vsession_confirmed = false;
+
+							ETEST_LOG_INFO(
+							    "SEARCH",
+							    "VSESSION sent: session="
+							        + std::to_string(
+							            ctx.task.session_id)
+							        + " fps_x100="
+							        + std::to_string(
+							            search_cfg.nominal_fps * 100)
+							        + " camera="
+							        + search_cfg.camera_id);
 						}
 
 						ctx.vision.resetYoloSession();
@@ -361,6 +388,18 @@ namespace etest::state
 								    std::chrono::steady_clock::now();
 							}
 						}
+						continue;
+					}
+
+					// VSESSION ACK
+					if(uart::protocol::isVsessionAck(
+					       msg, ctx.task.session_id))
+					{
+						ctx.task.vsession_confirmed = true;
+						ETEST_LOG_INFO("SEARCH",
+						               "VSESSION confirmed: session="
+						                   + std::to_string(
+						                       ctx.task.session_id));
 						continue;
 					}
 
@@ -557,13 +596,16 @@ namespace etest::state
 			// ── 4) 推进任务阶段 ──
 			if(has_new_frame)
 			{
-				// M0001: 等待 1 个新帧后立即 START
-				if(ctx.task.phase == ContestTaskPhase::PREPARING)
+				// M0001: VSESSION 确认后发送 CONTESTSTART
+				if(ctx.task.phase == ContestTaskPhase::PREPARING
+				   && ctx.task.vsession_confirmed)
 				{
 					m0001_frame_received = true;
+					const char* mode_name =
+					    TaskSession::modeName(ctx.task.mode);
 					ctx.uart.sendLine(
-					    uart::protocol::makeStartLine(
-					        ctx.task.command_tag, 0));
+					    uart::protocol::makeContestStartLine(
+					        mode_name));
 					ctx.task.start_sent = true;
 					ctx.task.enterPhase(
 					    ContestTaskPhase::RUNNING);
@@ -571,7 +613,9 @@ namespace etest::state
 					ctx.task.tracking_mode = TrackingMode::NONE;
 					ETEST_LOG_INFO(
 					    "SEARCH",
-					    "M0001: PREPARING → RUNNING");
+					    "M0001: PREPARING → RUNNING, "
+					    "CONTESTSTART sent: "
+					        + std::string(mode_name));
 				}
 			}
 
@@ -654,11 +698,12 @@ namespace etest::state
 					}
 				}
 
-				// 标定完成 → 发送 START（M0002～M0005）
+				// 标定完成 → 发送 CONTESTSTART（M0002～M0005）
 				if(ctx.task.phase
 				       == ContestTaskPhase::CALIBRATING
 				   && ctx.vision_result.calibrated
-				   && !ctx.task.start_sent)
+				   && !ctx.task.start_sent
+				   && ctx.task.vsession_confirmed)
 				{
 					int target_0p1mm = 0;
 					if(ctx.task.mode == TaskMode::Q6)
@@ -670,10 +715,11 @@ namespace etest::state
 						    target_0p1mm / 10.0;
 					}
 
+					const char* mode_name =
+					    TaskSession::modeName(ctx.task.mode);
 					ctx.uart.sendLine(
-					    uart::protocol::makeStartLine(
-					        ctx.task.command_tag,
-					        target_0p1mm));
+					    uart::protocol::makeContestStartLine(
+					        mode_name));
 					ctx.task.start_sent = true;
 					ctx.task.enterPhase(
 					    ContestTaskPhase::RUNNING);
@@ -687,7 +733,10 @@ namespace etest::state
 
 					ETEST_LOG_INFO(
 					    "SEARCH",
-					    "CALIBRATING → RUNNING, target="
+					    "CALIBRATING → RUNNING, "
+					    "CONTESTSTART sent: "
+					        + std::string(mode_name)
+					        + " target="
 					        + std::to_string(target_0p1mm));
 				}
 			}
