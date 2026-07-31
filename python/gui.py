@@ -1877,15 +1877,50 @@ class EtestGui:
 
     # ── 配置读写 ──
 
+    def _load_camera_settings(self) -> tuple[int, int, int, str]:
+        """从 config/camera.toml 读取摄像头分辨率、帧率、编码格式。"""
+        camera_path = CONFIG_DIR / "camera.toml"
+
+        width = 1280
+        height = 720
+        fps = 30
+        fourcc = "MJPG"
+
+        if not camera_path.is_file() or tomllib is None:
+            return width, height, fps, fourcc
+
+        with camera_path.open("rb") as file:
+            document = tomllib.load(file)
+
+        camera = document.get("camera", {})
+
+        width = int(camera.get("width", width))
+        height = int(camera.get("height", height))
+        fps = int(camera.get("fps", fps))
+        fourcc = str(camera.get("fourcc", fourcc))
+
+        if width <= 0 or height <= 0:
+            raise OperationError(
+                f"camera.toml 中的画面尺寸非法：{width}×{height}"
+            )
+
+        return width, height, fps, fourcc
+
     def _calib_load_from_config(self) -> None:
-        """从 config/vision.toml 读取当前标定值（含宽高和输入尺寸）。"""
+        """从 camera.toml 和 vision.toml 读取当前的标定坐标系与 ROI 参数。"""
+        rc = self._roi_calibration
+
+        # ROI 的全局坐标系由摄像头配置决定，不是由模型输入尺寸决定。
+        camera_width, camera_height, _, _ = self._load_camera_settings()
+        rc.frame_width = camera_width
+        rc.frame_height = camera_height
+
         vision_path = CONFIG_DIR / "vision.toml"
         try:
             if vision_path.is_file():
                 with vision_path.open("rb") as f:
                     data = tomllib.load(f) if tomllib else {}
                 bn = data.get("vision", {}).get("ball_ncnn", {})
-                rc = self._roi_calibration
 
                 rc.full_roi.x = int(bn.get("full_roi_x", 0))
                 rc.full_roi.y = int(bn.get("full_roi_y", 160))
@@ -1909,9 +1944,20 @@ class EtestGui:
                 )
 
                 rc.clamp_all()
-                LOGGER.info("标定参数已从配置加载（含宽高和输入尺寸）")
+
+                LOGGER.info(
+                    "标定配置加载完成：frame=%dx%d, "
+                    "full=(%d,%d,%d,%d), "
+                    "center=(%d,%d,%d,%d)",
+                    rc.frame_width, rc.frame_height,
+                    rc.full_roi.x, rc.full_roi.y,
+                    rc.full_roi.width, rc.full_roi.height,
+                    rc.center_roi.x, rc.center_roi.y,
+                    rc.center_roi.width, rc.center_roi.height,
+                )
         except Exception:
             LOGGER.warning("从配置加载标定参数失败，使用默认值", exc_info=True)
+            raise
 
     @ui_guard("重新加载标定配置")
     def _calib_reload(self) -> None:
@@ -2024,14 +2070,14 @@ class EtestGui:
             self.set_notice("摄像头已在运行")
             return
 
-        rc = self._roi_calibration
+        width, height, fps, fourcc = self._load_camera_settings()
 
         self.calib_camera = CalibrationCamera(
             0,
-            width=rc.frame_width,
-            height=rc.frame_height,
-            fps=30,
-            fourcc="MJPG",
+            width=width,
+            height=height,
+            fps=fps,
+            fourcc=fourcc,
             strict_size=True,
         )
 

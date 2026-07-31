@@ -208,7 +208,7 @@ class DetectorRegion:
 @dataclass
 class RoiCalibration:
     frame_width: int = 1280
-    frame_height: int = 640
+    frame_height: int = 720
 
     full_roi: RoiRect = field(
         default_factory=lambda: RoiRect(0, 160, 1280, 320)
