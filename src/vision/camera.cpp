@@ -39,7 +39,6 @@ namespace etest::vision
 
 		bool isFileExtension(const std::string& source)
 		{
-			// 常见视频文件扩展名
 			const std::string lower = [&] {
 				std::string s = source;
 				std::transform(
@@ -61,10 +60,13 @@ namespace etest::vision
 
 	} // namespace
 
-	Camera::Camera(CameraConfig config, int retry_interval_ms):
-	config_(std::move(config)), retry_interval_ms_(retry_interval_ms)
+	Camera::Camera(CameraConfig camera_config,
+	               StreamConfig stream_config,
+	               int retry_interval_ms):
+	    config_(std::move(camera_config)),
+	    stream_config_(std::move(stream_config)),
+	    retry_interval_ms_(retry_interval_ms)
 	{
-		// 判断是否是文件源
 		file_source_ = !isInteger(config_.source)
 		    && !isDevicePath(config_.source)
 		    && isFileExtension(config_.source);
@@ -73,6 +75,113 @@ namespace etest::vision
 	bool Camera::loopVideo() const noexcept
 	{
 		return config_.loop_video;
+	}
+
+	bool Camera::streamingActive() const noexcept
+	{
+		return streaming_active_;
+	}
+
+	std::string Camera::buildMjpegStreamPipeline(
+	    const std::string& resolved_device) const
+	{
+		std::ostringstream pipeline;
+
+		pipeline
+		    << "v4l2src "
+		    << "device=" << resolved_device << " "
+		    << "io-mode=mmap "
+		    << "do-timestamp=true "
+
+		    << "! image/jpeg,"
+		    << "width=" << config_.width << ","
+		    << "height=" << config_.height << ","
+		    << "framerate=" << config_.fps << "/1 "
+
+		    << "! jpegparse "
+		    << "! tee name=t "
+
+		    // 图传分支：直接发送摄像头原始 MJPEG
+		    << "t. ! queue "
+		    << "leaky=downstream "
+		    << "max-size-buffers=1 "
+		    << "max-size-bytes=0 "
+		    << "max-size-time=0 "
+		    << "! rtpjpegpay "
+		    << "pt=" << stream_config_.payload_type << " "
+		    << "mtu=" << stream_config_.mtu << " "
+		    << "! udpsink "
+		    << "host=" << stream_config_.host << " "
+		    << "port=" << stream_config_.port << " "
+		    << "sync=false "
+		    << "async=false "
+
+		    // 视觉分支：只在这里解码一次
+		    << "t. ! queue "
+		    << "leaky=downstream "
+		    << "max-size-buffers=1 "
+		    << "max-size-bytes=0 "
+		    << "max-size-time=0 "
+		    << "! jpegdec "
+		    << "! videoconvert "
+		    << "! video/x-raw,"
+		    << "format=BGR,"
+		    << "width=" << config_.width << ","
+		    << "height=" << config_.height << ","
+		    << "framerate=" << config_.fps << "/1 "
+		    << "! appsink "
+		    << "drop=true "
+		    << "max-buffers=1 "
+		    << "sync=false";
+
+		return pipeline.str();
+	}
+
+	bool Camera::openGstreamerPipeline(
+	    const std::string& resolved_device) noexcept
+	{
+		const std::string pipeline =
+		    buildMjpegStreamPipeline(resolved_device);
+
+		ETEST_LOG_INFO(
+		    "CAMERA",
+		    "opening GStreamer MJPEG tee: device="
+		        + resolved_device
+		        + ", receiver=" + stream_config_.host
+		        + ":" + std::to_string(stream_config_.port));
+
+		const bool success = cap_.open(pipeline, cv::CAP_GSTREAMER);
+
+		using_gstreamer_pipeline_ = success;
+		streaming_active_ = success;
+
+		if(!success)
+		{
+			ETEST_LOG_ERROR(
+			    "CAMERA",
+			    "failed to open GStreamer streaming pipeline");
+		}
+
+		return success;
+	}
+
+	bool Camera::openV4l2(const std::string& resolved_device) noexcept
+	{
+		bool success = cap_.open(resolved_device, cv::CAP_V4L2);
+
+		if(!success)
+		{
+			ETEST_LOG_WARN(
+			    "CAMERA",
+			    "V4L2 backend failed; retrying with CAP_ANY");
+
+			success = cap_.open(resolved_device, cv::CAP_ANY);
+		}
+
+		using_gstreamer_pipeline_ = false;
+		streaming_active_ = false;
+
+		return success;
 	}
 
 	bool Camera::open() noexcept
@@ -97,9 +206,6 @@ namespace etest::vision
 			}
 			else if(device_path)
 			{
-				// Linux / WSL / Raspberry Pi 上优先使用 V4L2。
-				// 解析符号链接（如 /dev/v4l/by-id/... → /dev/video0），
-				// 因为 OpenCV 的 V4L2 后端无法直接打开 by-id 路径。
 				std::string resolved_path = config_.source;
 				char real_path[PATH_MAX] = {};
 				if(::realpath(config_.source.c_str(), real_path)
@@ -107,15 +213,26 @@ namespace etest::vision
 				{
 					resolved_path = real_path;
 				}
-				success = cap_.open(resolved_path, cv::CAP_V4L2);
 
-				if(!success)
+				if(stream_config_.enabled)
 				{
-					ETEST_LOG_WARN(
-					    "CAMERA",
-					    "V4L2 backend failed; retrying with CAP_ANY");
+					success =
+					    openGstreamerPipeline(resolved_path);
 
-					success = cap_.open(config_.source, cv::CAP_ANY);
+					if(!success && stream_config_.allow_fallback)
+					{
+						ETEST_LOG_WARN(
+						    "CAMERA",
+						    "streaming unavailable; falling back "
+						    "to V4L2");
+
+						cap_.release();
+						success = openV4l2(resolved_path);
+					}
+				}
+				else
+				{
+					success = openV4l2(resolved_path);
 				}
 			}
 			else
@@ -133,31 +250,39 @@ namespace etest::vision
 				return false;
 			}
 
-			if(numeric_source || device_path)
+			// 使用自定义 GStreamer 管线时，分辨率/FOURCC/FPS
+			// 已由 caps 固定，跳过 cap_.set() 调用。
+			if((numeric_source || device_path)
+			   && !using_gstreamer_pipeline_)
 			{
 				if(config_.fourcc.size() == 4)
 				{
 					if(!cap_.set(
 					       cv::CAP_PROP_FOURCC,
 					       cv::VideoWriter::fourcc(
-					           config_.fourcc[0], config_.fourcc[1],
-					           config_.fourcc[2], config_.fourcc[3])))
+					           config_.fourcc[0],
+					           config_.fourcc[1],
+					           config_.fourcc[2],
+					           config_.fourcc[3])))
 					{
-						ETEST_LOG_WARN("CAMERA",
-						               "driver rejected requested "
-						               "FOURCC "
-						                   + config_.fourcc);
+						ETEST_LOG_WARN(
+						    "CAMERA",
+						    "driver rejected requested FOURCC "
+						        + config_.fourcc);
 					}
 				}
 
-				if(!cap_.set(cv::CAP_PROP_FRAME_WIDTH, config_.width))
+				if(!cap_.set(cv::CAP_PROP_FRAME_WIDTH,
+				             config_.width))
 				{
-					ETEST_LOG_WARN("CAMERA",
-					               "driver rejected requested width "
-					                   + std::to_string(config_.width));
+					ETEST_LOG_WARN(
+					    "CAMERA",
+					    "driver rejected requested width "
+					        + std::to_string(config_.width));
 				}
 
-				if(!cap_.set(cv::CAP_PROP_FRAME_HEIGHT, config_.height))
+				if(!cap_.set(cv::CAP_PROP_FRAME_HEIGHT,
+				             config_.height))
 				{
 					ETEST_LOG_WARN(
 					    "CAMERA",
@@ -167,17 +292,18 @@ namespace etest::vision
 
 				if(!cap_.set(cv::CAP_PROP_FPS, config_.fps))
 				{
-					ETEST_LOG_WARN("CAMERA",
-					               "driver rejected requested FPS "
-					                   + std::to_string(config_.fps));
+					ETEST_LOG_WARN(
+					    "CAMERA",
+					    "driver rejected requested FPS "
+					        + std::to_string(config_.fps));
 				}
 
-				// 请求驱动侧缓冲区为 1，减少驱动内部积帧
 				if(!cap_.set(cv::CAP_PROP_BUFFERSIZE, 1))
 				{
-					ETEST_LOG_WARN("CAMERA",
-					               "backend rejected "
-					               "CAP_PROP_BUFFERSIZE=1");
+					ETEST_LOG_WARN(
+					    "CAMERA",
+					    "backend rejected "
+					    "CAP_PROP_BUFFERSIZE=1");
 				}
 			}
 
@@ -188,12 +314,15 @@ namespace etest::vision
 			            << cap_.get(cv::CAP_PROP_FRAME_WIDTH)
 			            << ", actual_height="
 			            << cap_.get(cv::CAP_PROP_FRAME_HEIGHT)
-			            << ", actual_fps=" << cap_.get(cv::CAP_PROP_FPS)
-			            << ", requested_buffer_size=1"
-			            << ", actual_buffer_size="
-			            << cap_.get(cv::CAP_PROP_BUFFERSIZE)
+			            << ", actual_fps="
+			            << cap_.get(cv::CAP_PROP_FPS)
 			            << ", is_file="
 			            << (file_source_ ? "true" : "false");
+
+			if(using_gstreamer_pipeline_)
+			{
+				description << ", gstreamer_tee=active";
+			}
 
 			ETEST_LOG_INFO("CAMERA", description.str());
 
@@ -206,7 +335,8 @@ namespace etest::vision
 		{
 			ETEST_LOG_ERROR(
 			    "CAMERA",
-			    std::string("OpenCV open exception: ") + error.what());
+			    std::string("OpenCV open exception: ")
+			        + error.what());
 
 			state_ = CameraState::ERROR;
 			return false;
@@ -249,33 +379,34 @@ namespace etest::vision
 				return false;
 			}
 
-			const bool success = cap_.read(frame) && !frame.empty();
+			const bool success =
+			    cap_.read(frame) && !frame.empty();
 
 			if(!success)
 			{
 				++consecutive_failures_;
 
-				// 清除输出帧，禁止使用上一帧
 				frame.release();
 
 				if(!read_error_reported_)
 				{
-					ETEST_LOG_ERROR("CAMERA",
-					                "failed to read a valid frame");
+					ETEST_LOG_ERROR(
+					    "CAMERA",
+					    "failed to read a valid frame");
 
 					read_error_reported_ = true;
 				}
 
-				// 仅文件源需要在此处理循环回放和 EOF 检测。
-				// 真实摄像头重连由 ERROR 状态统一负责。
 				if(file_source_
-				   && consecutive_failures_ >= kMaxConsecutiveFailures)
+				   && consecutive_failures_
+				          >= kMaxConsecutiveFailures)
 				{
 					if(config_.loop_video)
 					{
 						ETEST_LOG_INFO(
 						    "CAMERA",
-						    "file source ended; looping back to start");
+						    "file source ended; looping back "
+						    "to start");
 
 						cap_.set(cv::CAP_PROP_POS_FRAMES, 0);
 						consecutive_failures_ = 0;
@@ -285,7 +416,8 @@ namespace etest::vision
 
 					ETEST_LOG_INFO(
 					    "CAMERA",
-					    "file source reached end; not reopening");
+					    "file source reached end; not "
+					    "reopening");
 
 					state_ = CameraState::FILE_EOF;
 				}
@@ -297,19 +429,23 @@ namespace etest::vision
 
 			if(read_error_reported_)
 			{
-				ETEST_LOG_INFO("CAMERA", "frame reading recovered");
+				ETEST_LOG_INFO("CAMERA",
+				               "frame reading recovered");
 
 				read_error_reported_ = false;
 			}
 
-			// 若实际分辨率与配置不符，缩放到目标尺寸
+			// GStreamer 管线正常情况下已经输出目标尺寸；
+			// 此处只作为后端协商异常时的保险。
 			const int target_w = config_.width;
 			const int target_h = config_.height;
 			if(target_w > 0 && target_h > 0
-			   && (frame.cols != target_w || frame.rows != target_h))
+			   && (frame.cols != target_w
+			       || frame.rows != target_h))
 			{
-				cv::resize(frame, frame, cv::Size(target_w, target_h),
-				           0.0, 0.0, cv::INTER_LINEAR);
+				cv::resize(frame, frame,
+				           cv::Size(target_w, target_h), 0.0,
+				           0.0, cv::INTER_LINEAR);
 			}
 
 			state_ = CameraState::OK;
@@ -319,9 +455,10 @@ namespace etest::vision
 		{
 			if(!read_error_reported_)
 			{
-				ETEST_LOG_ERROR("CAMERA",
-				                std::string("OpenCV read exception: ")
-				                    + error.what());
+				ETEST_LOG_ERROR(
+				    "CAMERA",
+				    std::string("OpenCV read exception: ")
+				        + error.what());
 
 				read_error_reported_ = true;
 			}
@@ -336,7 +473,8 @@ namespace etest::vision
 			{
 				ETEST_LOG_ERROR(
 				    "CAMERA",
-				    std::string("read exception: ") + error.what());
+				    std::string("read exception: ")
+				        + error.what());
 
 				read_error_reported_ = true;
 			}
@@ -349,7 +487,8 @@ namespace etest::vision
 		{
 			if(!read_error_reported_)
 			{
-				ETEST_LOG_ERROR("CAMERA", "unknown read exception");
+				ETEST_LOG_ERROR("CAMERA",
+				                "unknown read exception");
 
 				read_error_reported_ = true;
 			}
@@ -408,17 +547,21 @@ namespace etest::vision
 				ETEST_LOG_INFO("CAMERA", "released");
 			}
 
+			using_gstreamer_pipeline_ = false;
+			streaming_active_ = false;
 			state_ = CameraState::DISCONNECTED;
 		}
 		catch(const cv::Exception& error)
 		{
 			ETEST_LOG_ERROR(
 			    "CAMERA",
-			    std::string("release exception: ") + error.what());
+			    std::string("release exception: ")
+			        + error.what());
 		}
 		catch(...)
 		{
-			ETEST_LOG_ERROR("CAMERA", "unknown release exception");
+			ETEST_LOG_ERROR("CAMERA",
+			                "unknown release exception");
 		}
 	}
 

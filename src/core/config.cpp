@@ -848,6 +848,13 @@ namespace
 
 		    "search.camera_id",
 		    "search.nominal_fps",
+
+		    "stream.enabled",
+		    "stream.host",
+		    "stream.port",
+		    "stream.payload_type",
+		    "stream.mtu",
+		    "stream.allow_fallback",
 		};
 
 		return s;
@@ -982,6 +989,33 @@ namespace
 		    getInt(raw_config, "camera.playback_fps",
 		           config.camera.playback_fps, 1, 240, result,
 		           &config.camera.source_playback_fps);
+
+		config.stream.enabled =
+		    getBool(raw_config, "stream.enabled",
+		            config.stream.enabled, result,
+		            &config.stream.source_enabled);
+
+		config.stream.host =
+		    getString(raw_config, "stream.host", config.stream.host,
+		              false, result, &config.stream.source_host);
+
+		config.stream.port =
+		    getInt(raw_config, "stream.port", config.stream.port, 1,
+		           65535, result, &config.stream.source_port);
+
+		config.stream.payload_type =
+		    getInt(raw_config, "stream.payload_type",
+		           config.stream.payload_type, 0, 127, result,
+		           &config.stream.source_payload_type);
+
+		config.stream.mtu =
+		    getInt(raw_config, "stream.mtu", config.stream.mtu, 576,
+		           9000, result, &config.stream.source_mtu);
+
+		config.stream.allow_fallback =
+		    getBool(raw_config, "stream.allow_fallback",
+		            config.stream.allow_fallback, result,
+		            &config.stream.source_allow_fallback);
 
 		config.vision.red_h1_min = getInt(
 		    raw_config, "vision.red_h1_min", config.vision.red_h1_min,
@@ -2323,16 +2357,19 @@ namespace
 		// 第4层：camera.toml
 		loadFileLayer(config, config_dir + "/camera.toml", result);
 
-		// 第5层：vision.toml
+		// 第5层：stream.toml
+		loadFileLayer(config, config_dir + "/stream.toml", result);
+
+		// 第6层：vision.toml
 		loadFileLayer(config, config_dir + "/vision.toml", result);
 
-		// 第6层：uart.toml
+		// 第7层：uart.toml
 		loadFileLayer(config, config_dir + "/uart.toml", result);
 
-		// 第7层：record.toml
+		// 第8层：record.toml
 		loadFileLayer(config, config_dir + "/record.toml", result);
 
-		// 第8层：search.toml
+		// 第9层：search.toml
 		loadFileLayer(config, config_dir + "/search.toml", result);
 
 		// 模式处理
@@ -2694,6 +2731,16 @@ namespace etest
 		    + ", segment_seconds=" + std::to_string(segment_seconds);
 	}
 
+	std::string StreamConfig::to_string() const
+	{
+		return "enabled=" + std::string(enabled ? "true" : "false")
+		    + ", host=" + host + ", port=" + std::to_string(port)
+		    + ", payload_type=" + std::to_string(payload_type)
+		    + ", mtu=" + std::to_string(mtu)
+		    + ", allow_fallback="
+		    + std::string(allow_fallback ? "true" : "false");
+	}
+
 	std::string SearchConfig::to_string() const
 	{
 		return "show_preview="
@@ -2820,6 +2867,45 @@ namespace etest
 		   || config.uart.heartbeat_timeout_ms > 60000)
 		{
 			err("heartbeat_timeout_ms must be in [300, 60000]");
+		}
+
+		// 校验图传配置
+		if(config.stream.enabled)
+		{
+			if(config.stream.host.empty())
+			{
+				err("stream.host is empty");
+			}
+
+			if(config.stream.port < 1
+			   || config.stream.port > 65535)
+			{
+				err("stream.port out of range");
+			}
+
+			if(config.stream.payload_type < 0
+			   || config.stream.payload_type > 127)
+			{
+				err("stream.payload_type out of range");
+			}
+
+			if(config.stream.mtu < 576
+			   || config.stream.mtu > 9000)
+			{
+				err("stream.mtu out of range");
+			}
+
+			if(config.camera.fourcc != "MJPG"
+			   && config.camera.fourcc != "MJPEG")
+			{
+				warn("stream currently requires camera.fourcc = MJPG");
+			}
+
+			if(config.camera.source.rfind("/dev/", 0) != 0)
+			{
+				warn("stream v1 is intended for a /dev/ V4L2 camera "
+				     "source");
+			}
 		}
 
 		// 校验日志输出

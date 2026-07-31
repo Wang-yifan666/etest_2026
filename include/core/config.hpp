@@ -121,6 +121,33 @@ namespace etest
 		std::string to_string() const;
 	};
 
+	// 子配置：图传
+
+	struct StreamConfig
+	{
+		bool enabled = false;
+
+		// 接收树莓派地址
+		std::string host = "127.0.0.1";
+		int port = 5000;
+
+		// RTP/JPEG 参数
+		int payload_type = 26;
+		int mtu = 1200;
+
+		// 图传初始化失败时，是否退回普通 V4L2 摄像头
+		bool allow_fallback = true;
+
+		SourceInfo source_enabled;
+		SourceInfo source_host;
+		SourceInfo source_port;
+		SourceInfo source_payload_type;
+		SourceInfo source_mtu;
+		SourceInfo source_allow_fallback;
+
+		std::string to_string() const;
+	};
+
 	// 子配置：NCNN 小球检测（定义在 VisionConfig 之前）
 
 	struct AxisPoint
@@ -693,6 +720,7 @@ namespace etest
 		RuntimeConfig runtime;
 		LoggerConfig logger;
 		CameraConfig camera;
+		StreamConfig stream;
 		VisionConfig vision;
 		UartConfig uart;
 		RecordConfig record;

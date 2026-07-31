@@ -182,6 +182,9 @@ namespace
 		        + ", uart.queue_capacity="
 		        + std::to_string(config.uart.queue_capacity));
 
+		ETEST_LOG_INFO("CONFIG",
+		               "stream: " + config.stream.to_string());
+
 		ETEST_LOG_INFO("CONFIG", config.search.to_string());
 	}
 
@@ -302,7 +305,7 @@ int main(int argc, char* argv[])
 	{
 		// 创建摄像头，使用 runtime 的重试间隔
 		etest::vision::Camera camera(
-		    cfg.camera, cfg.runtime.camera_retry_interval_ms);
+		    cfg.camera, cfg.stream, cfg.runtime.camera_retry_interval_ms);
 
 		etest::vision::VisionProcessor vision(cfg.vision);
 

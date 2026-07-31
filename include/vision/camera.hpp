@@ -19,8 +19,8 @@ namespace etest::vision
 	class Camera
 	{
 	public:
-		explicit Camera(CameraConfig config,
-		                int retry_interval_ms = 500);
+		Camera(CameraConfig camera_config, StreamConfig stream_config,
+		       int retry_interval_ms = 500);
 
 		bool open() noexcept;
 		bool read(cv::Mat& frame) noexcept;
@@ -31,10 +31,18 @@ namespace etest::vision
 		bool loopVideo() const noexcept;
 		bool realtimePlayback() const noexcept;
 		int playbackFps() const noexcept;
+		bool streamingActive() const noexcept;
 		void release() noexcept;
 
 	private:
+		std::string buildMjpegStreamPipeline(
+		    const std::string& resolved_device) const;
+		bool openGstreamerPipeline(
+		    const std::string& resolved_device) noexcept;
+		bool openV4l2(const std::string& resolved_device) noexcept;
+
 		CameraConfig config_;
+		StreamConfig stream_config_;
 		int retry_interval_ms_;
 		cv::VideoCapture cap_;
 		bool read_error_reported_ = false;
@@ -42,6 +50,8 @@ namespace etest::vision
 		CameraState state_ = CameraState::OK;
 		static constexpr int kMaxConsecutiveFailures = 20;
 		bool file_source_ = false;
+		bool using_gstreamer_pipeline_ = false;
+		bool streaming_active_ = false;
 	};
 
 } // namespace etest::vision

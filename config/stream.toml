@@ -1,0 +1,18 @@
+[stream]
+
+# 是否启用车载图传
+enabled = true
+
+# 接收树莓派在手机热点中的 IP
+host = "10.178.117.236"
+
+port = 5000
+
+# RTP/JPEG 静态负载类型
+payload_type = 26
+
+# 尽量避免 IP 分片
+mtu = 1200
+
+# 图传管线启动失败时，退回普通摄像头模式
+allow_fallback = true

@@ -19,7 +19,7 @@ namespace
 		// 使用无效源创建一个 Camera 来测试生命周期
 		CameraConfig cfg;
 		cfg.source = "999"; // unlikely valid camera id
-		Camera cam(cfg, 100);
+		Camera cam(cfg, StreamConfig{}, 100);
 
 		LatestFrameCapture capture(cam);
 
@@ -54,7 +54,7 @@ namespace
 	{
 		CameraConfig cfg;
 		cfg.source = "999";
-		Camera cam(cfg, 100);
+		Camera cam(cfg, StreamConfig{}, 100);
 		LatestFrameCapture capture(cam);
 
 		FramePacket output;
@@ -85,7 +85,7 @@ namespace
 	{
 		CameraConfig cfg;
 		cfg.source = "999";
-		Camera cam(cfg, 100);
+		Camera cam(cfg, StreamConfig{}, 100);
 		LatestFrameCapture capture(cam);
 
 		if(capture.state() != CaptureWorkerState::STOPPED)
@@ -102,7 +102,7 @@ namespace
 	{
 		CameraConfig cfg;
 		cfg.source = "999";
-		Camera cam(cfg, 100);
+		Camera cam(cfg, StreamConfig{}, 100);
 		LatestFrameCapture capture(cam);
 
 		// 不能在没有打开 camera 的情况下 start
@@ -137,7 +137,7 @@ namespace
 		cfg.height = 480;
 		cfg.fps = 30;
 
-		Camera cam(cfg, 100);
+		Camera cam(cfg, StreamConfig{}, 100);
 		if(!cam.open())
 		{
 			std::cerr << "FAIL: could not open video file\n";
@@ -212,7 +212,8 @@ namespace
 		}
 		else
 		{
-			std::cout << "  second tryGetLatest correctly returned false\n";
+			std::cout
+			    << "  second tryGetLatest correctly returned false\n";
 		}
 
 		capture.stop();
@@ -240,7 +241,7 @@ namespace
 		cfg.height = 480;
 		cfg.fps = 30;
 
-		Camera cam(cfg, 100);
+		Camera cam(cfg, StreamConfig{}, 100);
 		if(!cam.open())
 		{
 			std::cerr << "FAIL: could not open video file\n";

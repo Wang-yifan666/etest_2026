@@ -259,6 +259,36 @@ if(ETEST_HAS_NCNN)
     target_compile_options(etest_yolo_ncnn_smoke PRIVATE -Wall -Wextra -pedantic)
     add_test(NAME yolo_ncnn_smoke COMMAND etest_yolo_ncnn_smoke)
 
+    # ── 摄像头图传冒烟测试 ──
+    add_executable(
+        etest_camera_stream_test
+        test/test_camera_stream.cpp
+        src/vision/camera.cpp
+        src/core/config.cpp
+        src/core/logger.cpp
+    )
+
+    target_include_directories(
+        etest_camera_stream_test
+        PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(
+        etest_camera_stream_test
+        PRIVATE
+        ${OpenCV_LIBS}
+        pthread
+    )
+
+    target_compile_options(
+        etest_camera_stream_test
+        PRIVATE
+        -Wall
+        -Wextra
+        -pedantic
+    )
+
     # ── 标定采样 worker ──
     add_executable(
         etest_calibration_worker
