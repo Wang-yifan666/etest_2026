@@ -203,7 +203,8 @@ use_fp16_storage = true
 use_fp16_arithmetic = true
 
 # 坐标标定（分段线性插值：像素 ↔ 毫米）
+# 1px ≈ 0.1760mm（1280×720 画面）
 [vision.ball_ncnn.axis_calibration]
 image_right_sign = 1
-pixels = "392.0,640.0,887.0"
-positions_mm = "-50.0,0.0,50.0"
+pixels = "0, 640, 1279"
+positions_mm = "-112.64, 0.0, 112.46"
