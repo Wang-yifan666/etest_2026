@@ -832,10 +832,13 @@ namespace
 		    "vision.ball_ncnn.edge_guard_px",
 		    "vision.ball_ncnn.lost_frames_to_reacquire",
 		    "vision.ball_ncnn.stable_frames_to_center",
-		    "vision.ball_ncnn.calibration_frames",
-		    "vision.ball_ncnn.calibration_timeout_ms",
-		    "vision.ball_ncnn.initial_center_limit_mm",
-		    "vision.ball_ncnn.minimum_confidence",
+	    "vision.ball_ncnn.calibration_line_x",
+	    "vision.ball_ncnn.calibration_line_tolerance_px",
+	    "vision.ball_ncnn.calibration_max_jitter_px",
+	    "vision.ball_ncnn.calibration_frames",
+	    "vision.ball_ncnn.calibration_timeout_ms",
+	    "vision.ball_ncnn.initial_center_limit_mm",
+	    "vision.ball_ncnn.minimum_confidence",
 		    "vision.ball_ncnn.num_threads",
 		    "vision.ball_ncnn.use_fp16_storage",
 		    "vision.ball_ncnn.use_fp16_arithmetic",
@@ -1609,6 +1612,25 @@ namespace
 			           "vision.ball_ncnn.stable_frames_to_center",
 			           bn.stable_frames_to_center, 1, 60, result,
 			           &bn.source_stable_frames_to_center);
+
+			// ── Q3～Q5 启动标定线 ──
+			bn.calibration_line_x =
+			    getInt(raw_config,
+			           "vision.ball_ncnn.calibration_line_x",
+			           bn.calibration_line_x, 0, 4096, result,
+			           &bn.source_calibration_line_x);
+
+			bn.calibration_line_tolerance_px =
+			    getInt(raw_config,
+			           "vision.ball_ncnn.calibration_line_tolerance_px",
+			           bn.calibration_line_tolerance_px, 1, 500, result,
+			           &bn.source_calibration_line_tolerance_px);
+
+			bn.calibration_max_jitter_px =
+			    getDouble(raw_config,
+			              "vision.ball_ncnn.calibration_max_jitter_px",
+			              bn.calibration_max_jitter_px, 0.0, 100.0,
+			              result, &bn.source_calibration_max_jitter_px);
 
 			bn.calibration_frames =
 			    getInt(raw_config,
@@ -2853,6 +2875,54 @@ namespace etest
 					            bn.center_roi_x, bn.center_roi_y,
 					            bn.center_src_width,
 					            bn.center_src_height);
+				}
+
+				// ── 校验标定线有效带完全位于 Full ROI 内 ──
+				if(bn.enabled)
+				{
+					const int line_left =
+					    bn.calibration_line_x
+					    - bn.calibration_line_tolerance_px;
+
+					const int line_right =
+					    bn.calibration_line_x
+					    + bn.calibration_line_tolerance_px;
+
+					const int full_left = bn.full_roi_x;
+					const int full_right =
+					    bn.full_roi_x + bn.full_src_width;
+
+					if(line_left < full_left
+					   || line_right >= full_right)
+					{
+						err("calibration_line_x ± tolerance "
+						    "[" + std::to_string(line_left)
+						    + ", " + std::to_string(line_right)
+						    + "] must be completely inside "
+						      "Full ROI ["
+						    + std::to_string(full_left)
+						    + ", " + std::to_string(full_right)
+						    + ")");
+					}
+
+					// 建议检查是否在 Center ROI 中
+					const int center_left = bn.center_roi_x;
+					const int center_right =
+					    bn.center_roi_x
+					    + bn.center_src_width;
+
+					if(line_left < center_left
+					   || line_right >= center_right)
+					{
+						warn("calibration_line_x ± tolerance ["
+						     + std::to_string(line_left)
+						     + ", " + std::to_string(line_right)
+						     + "] is outside Center ROI ["
+						     + std::to_string(center_left)
+						     + ", " + std::to_string(center_right)
+						     + "); Q4/Q5 may lose the ball "
+						       "immediately after calibration");
+					}
 				}
 			}
 		}

@@ -17,6 +17,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <deque>
 #include <limits>
 #include <string>
 #include <thread>
@@ -91,8 +92,163 @@ namespace etest::state
 			           < static_cast<float>(roi.y + roi.height);
 		}
 
-	} // namespace
+		// ── P2.1: 稳定窗口辅助函数 ──
 
+		void trimCalibrationSamples(
+		    std::deque<float>& samples,
+		    int maximum_count)
+		{
+			while(static_cast<int>(samples.size())
+			      > maximum_count)
+			{
+				samples.pop_front();
+			}
+		}
+
+		bool isSampleWindowStable(
+		    const std::deque<float>& samples,
+		    int required_count,
+		    double maximum_jitter_px)
+		{
+			if(static_cast<int>(samples.size())
+			   < required_count)
+			{
+				return false;
+			}
+
+			const auto [minimum, maximum] =
+			    std::minmax_element(
+			        samples.begin(),
+			        samples.end());
+
+			return static_cast<double>(
+			           *maximum - *minimum)
+			       <= maximum_jitter_px;
+		}
+
+		// ── P0.5: 标定线判断纯函数 ──
+
+		bool requiresCalibrationLine(
+		    const TaskMode mode) noexcept
+		{
+			return mode == TaskMode::Q3
+			    || mode == TaskMode::Q4
+			    || mode == TaskMode::Q5;
+		}
+
+		bool isBallOnCalibrationLine(
+		    const BallMeasurement& measurement,
+		    const BallNcnnConfig& config) noexcept
+		{
+			if(!measurement.valid
+			   || measurement.status != "OK")
+			{
+				return false;
+			}
+
+			const float error_px =
+			    measurement.global_center.x
+			    - static_cast<float>(
+			        config.calibration_line_x);
+
+			return std::abs(error_px)
+			    <= static_cast<float>(
+			           config.calibration_line_tolerance_px);
+		}
+
+		// ── P0.6: 运行时标定叠加绘制 ──
+
+		void drawCalibrationOverlay(
+		    cv::Mat& frame,
+		    const TaskSession& task,
+		    const BallNcnnConfig& config,
+		    const vision::VisionResult& vision_result)
+		{
+			if(frame.empty())
+				return;
+
+			const int line_x = std::clamp(
+			    config.calibration_line_x,
+			    0,
+			    frame.cols - 1);
+
+			const int tolerance =
+			    config.calibration_line_tolerance_px;
+
+			const int left = std::clamp(
+			    line_x - tolerance,
+			    0,
+			    frame.cols - 1);
+
+			const int right = std::clamp(
+			    line_x + tolerance,
+			    0,
+			    frame.cols - 1);
+
+			cv::line(
+			    frame,
+			    {line_x, 0},
+			    {line_x, frame.rows - 1},
+			    {255, 170, 0},
+			    2);
+
+			cv::line(
+			    frame,
+			    {left, 0},
+			    {left, frame.rows - 1},
+			    {180, 100, 0},
+			    1);
+
+			cv::line(
+			    frame,
+			    {right, 0},
+			    {right, frame.rows - 1},
+			    {180, 100, 0},
+			    1);
+
+			if(task.phase
+			   == ContestTaskPhase::CALIBRATING)
+			{
+				const float ball_x =
+				    static_cast<float>(vision_result.x);
+
+				const float error =
+				    ball_x - static_cast<float>(line_x);
+
+				const bool on_line =
+				    vision_result.valid
+				    && std::abs(error)
+				           <= static_cast<float>(tolerance);
+
+				const cv::Scalar color =
+				    on_line
+				    ? cv::Scalar(0, 255, 0)
+				    : cv::Scalar(0, 0, 255);
+
+				const std::string label =
+				    "CALIB XERR="
+				    + std::to_string(
+				        static_cast<int>(
+				            std::lround(error)))
+				    + "px "
+				    + std::to_string(
+				        task.calibration_valid_frames)
+				    + "/"
+				    + std::to_string(
+				        config.calibration_frames);
+
+				cv::putText(
+				    frame,
+				    label,
+				    {20, 60},
+				    cv::FONT_HERSHEY_SIMPLEX,
+				    0.7,
+				    color,
+				    2);
+			}
+		}
+
+	} // namespace
 	State runSearch(AppContext& ctx, const SearchConfig& search_cfg,
 	                const UartConfig& uart_cfg,
 	                bool allow_keyboard_exit)
@@ -945,39 +1101,143 @@ namespace etest::state
 					}
 				}
 
-				// 标定中积累有效帧
+				// 标定中积累有效帧（P0.5: 新逻辑，使用竖直标定线）
 				if(ctx.task.phase
 				       == ContestTaskPhase::CALIBRATING
-				   && ctx.task.measurement_valid
 				   && has_new_frame)
 				{
 					const auto& bn_cfg =
 					    ctx.vision.getConfig().ball_ncnn;
-					int pos = ctx.vision_result.position_0p1mm;
 
-					if(ctx.task.mode == TaskMode::Q6)
+					// 需要检测结果对象（从 measurement 获取）
+					// 注意：此处 measurement 在标定阶段始终可用，
+					// 因为上方视觉推理在 CALIBRATING 时也会执行。
+					// 我们直接使用 ctx.vision_result 重新构造判断。
+
+					const bool detection_ok =
+					    ctx.task.measurement_valid;
+
+					if(!detection_ok)
 					{
-						// M0005: 不要求中心，任意稳定位置即目标
-						ctx.task
-						    .calibration_valid_frames++;
+						ctx.task.calibration_valid_frames = 0;
+						ctx.task.calibration_x_samples.clear();
 					}
-					else
+					else if(ctx.task.mode == TaskMode::Q6)
 					{
-						// M0002～M0004: 必须接近固定中心 O
-						int limit_0p1mm =
-						    static_cast<int>(
-						        bn_cfg
-						            .initial_center_limit_mm
-						        * 10.0);
-						if(std::abs(pos) <= limit_0p1mm)
+						// Q6：保持任意稳定位置作为目标。
+						ctx.task.calibration_x_samples.push_back(
+						    static_cast<float>(
+						        ctx.vision_result.x));
+
+						trimCalibrationSamples(
+						    ctx.task.calibration_x_samples,
+						    bn_cfg.calibration_frames);
+
+						if(isSampleWindowStable(
+						       ctx.task.calibration_x_samples,
+						       bn_cfg.calibration_frames,
+						       bn_cfg.calibration_max_jitter_px))
+						{
+							ctx.task.calibration_valid_frames =
+							    bn_cfg.calibration_frames;
+						}
+						else
+						{
+							ctx.task.calibration_valid_frames =
+							    static_cast<int>(
+							        ctx.task
+							            .calibration_x_samples
+							            .size());
+						}
+					}
+					else if(requiresCalibrationLine(
+					            ctx.task.mode))
+					{
+						// Q3/Q4/Q5: 竖直标定线判断。
+						// 从 ctx.vision_result 重建
+						// BallMeasurement
+						// 的 global_center。
+						BallMeasurement meas;
+						meas.valid =
+						    ctx.vision_result.valid;
+						meas.status =
+						    ctx.vision_result.valid
+						    ? "OK"
+						    : "LOST";
+						meas.global_center.x =
+						    static_cast<float>(
+						        ctx.vision_result.x);
+						meas.global_center.y =
+						    static_cast<float>(
+						        ctx.vision_result.y);
+
+						if(isBallOnCalibrationLine(
+						       meas,
+						       bn_cfg))
 						{
 							ctx.task
-							    .calibration_valid_frames++;
+							    .calibration_x_samples
+							    .push_back(
+							        static_cast<float>(
+							            ctx.vision_result
+							                .x));
+
+							trimCalibrationSamples(
+							    ctx.task
+							        .calibration_x_samples,
+							    bn_cfg
+							        .calibration_frames);
+
+							if(isSampleWindowStable(
+							       ctx.task
+							           .calibration_x_samples,
+							       bn_cfg
+							           .calibration_frames,
+							       bn_cfg
+							           .calibration_max_jitter_px))
+							{
+								ctx.task
+								    .calibration_valid_frames =
+								    bn_cfg
+								        .calibration_frames;
+							}
+							else
+							{
+								ctx.task
+								    .calibration_valid_frames =
+								    static_cast<int>(
+								        ctx.task
+								            .calibration_x_samples
+								            .size());
+							}
+
+							ctx.task
+							    .calibration_line_error_px =
+							    meas.global_center.x
+							    - static_cast<float>(
+							        bn_cfg
+							            .calibration_line_x);
+							ctx.task
+							    .calibration_on_line = true;
 						}
 						else
 						{
 							ctx.task
 							    .calibration_valid_frames = 0;
+							ctx.task
+							    .calibration_x_samples
+							    .clear();
+							ctx.task
+							    .calibration_line_error_px =
+							    ctx.vision_result.valid
+							    ? static_cast<float>(
+							          ctx.vision_result.x)
+							          - static_cast<float>(
+							              bn_cfg
+							                  .calibration_line_x)
+							    : 9999.0F;
+							ctx.task
+							    .calibration_on_line = false;
 						}
 					}
 				}
@@ -1210,6 +1470,12 @@ namespace etest::state
 			{
 				cv::Mat display = ctx.frame.clone();
 				ctx.vision.drawDebugInfo(display, ctx.vision_result);
+
+				drawCalibrationOverlay(
+				    display,
+				    ctx.task,
+				    ctx.vision.getConfig().ball_ncnn,
+				    ctx.vision_result);
 
 				if(!preview_open)
 				{

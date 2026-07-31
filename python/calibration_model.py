@@ -218,7 +218,8 @@ class RoiCalibration:
         default_factory=lambda: RoiRect(416, 160, 448, 320)
     )
 
-    center_line_y: int = 320
+    calibration_line_x: int = 640
+    calibration_line_tolerance_px: int = 20
 
     full_input_size: tuple[int, int] = (640, 160)
     center_input_size: tuple[int, int] = (224, 160)
@@ -260,10 +261,21 @@ class RoiCalibration:
             self.frame_height,
         )
 
-        self.center_line_y = clamp(
-            self.center_line_y,
+        self.calibration_line_x = clamp(
+            self.calibration_line_x,
             0,
-            self.frame_height - 1,
+            self.frame_width - 1,
+        )
+
+        maximum_tolerance = max(
+            1,
+            self.frame_width // 2,
+        )
+
+        self.calibration_line_tolerance_px = clamp(
+            self.calibration_line_tolerance_px,
+            1,
+            maximum_tolerance,
         )
 
     def validate(self) -> None:
@@ -277,9 +289,41 @@ class RoiCalibration:
             self.frame_height,
         )
 
-        if not 0 <= self.center_line_y < self.frame_height:
+        if not 0 <= self.calibration_line_x < self.frame_width:
             raise CalibrationValidationError(
-                f"中心线必须位于 0~{self.frame_height - 1}"
+                f"标定线 X 必须位于 0~{self.frame_width - 1}"
+            )
+
+        if self.calibration_line_tolerance_px < 1:
+            raise CalibrationValidationError(
+                "标定线允许偏差至少为 1 像素"
+            )
+
+        band_left = (
+            self.calibration_line_x
+            - self.calibration_line_tolerance_px
+        )
+
+        band_right = (
+            self.calibration_line_x
+            + self.calibration_line_tolerance_px
+        )
+
+        if (
+            band_left < self.full_roi.left
+            or band_right >= self.full_roi.right
+        ):
+            raise CalibrationValidationError(
+                "标定线有效带必须完整位于 Full ROI 内"
+            )
+
+        if (
+            band_left < self.center_roi.left
+            or band_right >= self.center_roi.right
+        ):
+            raise CalibrationValidationError(
+                "标定线有效带不在 Center ROI 内；"
+                "Q4/Q5 标定切换到 Center 模型后可能立即丢球"
             )
 
 

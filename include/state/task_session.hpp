@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <deque>
 #include <string>
 
 #include <opencv2/core.hpp>
@@ -96,6 +97,15 @@ struct TaskSession
 	int calibration_valid_frames = 0;
 	std::chrono::steady_clock::time_point
 	    calibration_start_time{};
+
+	// 当前连续有效标定帧的球心 X。
+	std::deque<float> calibration_x_samples;
+
+	// GUI/日志可用的当前标定线误差。
+	float calibration_line_error_px = 0.0F;
+
+	// 当前球心是否位于标定线有效带内。
+	bool calibration_on_line = false;
 
 	// 会话零点（VSESSION 确认时刻），用于计算 BALL 的 capture_ms
 	std::chrono::steady_clock::time_point

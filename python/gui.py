@@ -1666,26 +1666,59 @@ class EtestGui:
             row=11, column=0, columnspan=2, sticky=tk.W
         )
 
-        # 水平参考线（辅助线，移到右侧面板）
+        # ── Q3～Q5 任务启动标定线（竖直线，只比较球心全局 X）──
         ttk.Separator(input_frame, orient=tk.HORIZONTAL).grid(
             row=12, column=0, columnspan=2, sticky=tk.EW, pady=(12, 8)
         )
-        ttk.Label(input_frame, text="辅助线", font=("", 10, "bold")).grid(
+        ttk.Label(input_frame, text="任务启动标定线", font=("", 10, "bold")).grid(
             row=13, column=0, columnspan=2, sticky=tk.W, pady=(0, 4)
         )
-        ttk.Label(input_frame, text="水平参考线 Y:").grid(row=14, column=0, sticky=tk.E, padx=(0, 4))
-        self.center_line_y_var = tk.IntVar()
-        self.center_line_y_entry = ttk.Entry(input_frame, textvariable=self.center_line_y_var, width=7)
-        self.center_line_y_entry.grid(row=14, column=1, sticky=tk.W)
-        self.center_line_y_entry.bind("<Return>", lambda e: self._calib_apply_center_line())
-        self.center_line_y_entry.bind("<FocusOut>", lambda e: self._calib_apply_center_line())
+
+        ttk.Label(input_frame, text="标定线 X:").grid(
+            row=14, column=0, sticky=tk.E, padx=(0, 4)
+        )
+        self.calibration_line_x_var = tk.IntVar()
+        self.calibration_line_x_entry = ttk.Entry(
+            input_frame,
+            textvariable=self.calibration_line_x_var,
+            width=7,
+        )
+        self.calibration_line_x_entry.grid(row=14, column=1, sticky=tk.W)
+        self.calibration_line_x_entry.bind(
+            "<Return>", lambda e: self._calib_apply_calibration_line()
+        )
+        self.calibration_line_x_entry.bind(
+            "<FocusOut>", lambda e: self._calib_apply_calibration_line()
+        )
+
+        ttk.Label(input_frame, text="允许偏差 ±px:").grid(
+            row=15, column=0, sticky=tk.E, padx=(0, 4)
+        )
+        self.calibration_line_tolerance_var = tk.IntVar()
+        self.calibration_line_tolerance_entry = ttk.Entry(
+            input_frame,
+            textvariable=self.calibration_line_tolerance_var,
+            width=7,
+        )
+        self.calibration_line_tolerance_entry.grid(
+            row=15, column=1, sticky=tk.W
+        )
+        self.calibration_line_tolerance_entry.bind(
+            "<Return>", lambda e: self._calib_apply_calibration_line()
+        )
+        self.calibration_line_tolerance_entry.bind(
+            "<FocusOut>", lambda e: self._calib_apply_calibration_line()
+        )
 
         ttk.Label(
             input_frame,
-            text="仅用于画面辅助观察\n不参与位置换算",
-            foreground="#888888",
+            text=(
+                "用于 Q3～Q5 启动标定\n"
+                "只比较球心 X，Y 不受限制"
+            ),
+            foreground="#666666",
             font=("", 8),
-        ).grid(row=15, column=0, columnspan=2, sticky=tk.W, pady=(2, 0))
+        ).grid(row=16, column=0, columnspan=2, sticky=tk.W, pady=(2, 0))
 
         # ── 摄像头（必须在数据模型同步之前初始化，防止 _calib_redraw 访问未定义属性）──
         self.calib_camera: Optional[CalibrationCamera] = None
@@ -1753,7 +1786,12 @@ class EtestGui:
             self.roi_width_var.set(roi.width)
             self.roi_height_var.set(roi.height)
 
-            self.center_line_y_var.set(self._roi_calibration.center_line_y)
+            self.calibration_line_x_var.set(
+                self._roi_calibration.calibration_line_x
+            )
+            self.calibration_line_tolerance_var.set(
+                self._roi_calibration.calibration_line_tolerance_px
+            )
 
             self.calib_model_label_var.set(region.display_name)
             self.calib_model_input_var.set(
@@ -1802,17 +1840,20 @@ class EtestGui:
         self._calib_sync_vars_from_model()
         self._calib_redraw()
 
-    def _calib_apply_center_line(self, *_args) -> None:
-        """把中心线输入框值应用到数据模型。"""
+    def _calib_apply_calibration_line(self, *_args) -> None:
+        """把标定线输入框值应用到数据模型。"""
         if self._calib_syncing:
             return
 
         rc = self._roi_calibration
         try:
-            rc.center_line_y = self.center_line_y_var.get()
+            line_x = self.calibration_line_x_var.get()
+            tolerance = self.calibration_line_tolerance_var.get()
         except tk.TclError:
             return
 
+        rc.calibration_line_x = line_x
+        rc.calibration_line_tolerance_px = tolerance
         rc.clamp_all()
         self._calib_sync_vars_from_model()
         self._calib_redraw()
@@ -1932,7 +1973,19 @@ class EtestGui:
                 rc.center_roi.width = int(bn.get("center_src_width", 448))
                 rc.center_roi.height = int(bn.get("center_src_height", 320))
 
-                rc.center_line_y = int(bn.get("center_line_y", 320))
+                rc.calibration_line_x = int(
+                    bn.get(
+                        "calibration_line_x",
+                        bn.get("pipe_center_x", 640),
+                    )
+                )
+
+                rc.calibration_line_tolerance_px = int(
+                    bn.get(
+                        "calibration_line_tolerance_px",
+                        20,
+                    )
+                )
 
                 rc.full_input_size = (
                     int(bn.get("full_input_width", 640)),
@@ -2028,7 +2081,10 @@ class EtestGui:
         ball_ncnn["center_src_width"] = rc.center_roi.width
         ball_ncnn["center_src_height"] = rc.center_roi.height
 
-        ball_ncnn["center_line_y"] = rc.center_line_y
+        ball_ncnn["calibration_line_x"] = rc.calibration_line_x
+        ball_ncnn["calibration_line_tolerance_px"] = (
+            rc.calibration_line_tolerance_px
+        )
 
         rendered = tomlkit.dumps(document)
 
@@ -2046,10 +2102,14 @@ class EtestGui:
             "主程序重启后生效。"
         )
         LOGGER.info(
-            "标定参数已保存: full=(%d,%d,%d,%d) center=(%d,%d,%d,%d) line_y=%d",
+            "ROI/标定线已保存: "
+            "full=(%d,%d,%d,%d) "
+            "center=(%d,%d,%d,%d) "
+            "calibration_line_x=%d tolerance=%d",
             rc.full_roi.x, rc.full_roi.y, rc.full_roi.width, rc.full_roi.height,
             rc.center_roi.x, rc.center_roi.y, rc.center_roi.width, rc.center_roi.height,
-            rc.center_line_y,
+            rc.calibration_line_x,
+            rc.calibration_line_tolerance_px,
         )
 
         # 同步刷新"配置"页面
@@ -2268,12 +2328,84 @@ class EtestGui:
             tags="roi_info",
         )
 
-        # ── 水平参考线 ──
-        line_left, line_y = transform.image_to_canvas(0, rc.center_line_y)
-        line_right, _ = transform.image_to_canvas(rc.frame_width, rc.center_line_y)
+        # ── 竖直标定线与有效带 ──
+        line_x, line_top = transform.image_to_canvas(
+            rc.calibration_line_x,
+            rc.full_roi.top,
+        )
+        _, line_bottom = transform.image_to_canvas(
+            rc.calibration_line_x,
+            rc.full_roi.bottom,
+        )
+
+        left_x, _ = transform.image_to_canvas(
+            rc.calibration_line_x
+            - rc.calibration_line_tolerance_px,
+            0,
+        )
+        right_x, _ = transform.image_to_canvas(
+            rc.calibration_line_x
+            + rc.calibration_line_tolerance_px,
+            0,
+        )
+
+        # 有效带（半透明）
+        self.calib_canvas.create_rectangle(
+            left_x,
+            line_top,
+            right_x,
+            line_bottom,
+            fill="#00aaff",
+            stipple="gray50",
+            outline="",
+            tags="calibration_line_band",
+        )
+
+        # 容差边界（虚线）
         self.calib_canvas.create_line(
-            line_left, line_y, line_right, line_y,
-            fill="#00aaff", width=2, dash=(4, 4), tags="center_line",
+            left_x,
+            line_top,
+            left_x,
+            line_bottom,
+            fill="#0088cc",
+            width=1,
+            dash=(4, 4),
+            tags="calibration_line_band",
+        )
+        self.calib_canvas.create_line(
+            right_x,
+            line_top,
+            right_x,
+            line_bottom,
+            fill="#0088cc",
+            width=1,
+            dash=(4, 4),
+            tags="calibration_line_band",
+        )
+
+        # 主线（实线）
+        self.calib_canvas.create_line(
+            line_x,
+            line_top,
+            line_x,
+            line_bottom,
+            fill="#00aaff",
+            width=3,
+            tags="calibration_line",
+        )
+
+        # 标签
+        self.calib_canvas.create_text(
+            line_x + 5,
+            line_top + 5,
+            text=(
+                f"启动标定线 X={rc.calibration_line_x} "
+                f"±{rc.calibration_line_tolerance_px}px"
+            ),
+            anchor=tk.NW,
+            fill="#00aaff",
+            font=("", 9, "bold"),
+            tags="calibration_line_label",
         )
 
         # ── 八方向缩放句柄（锁定宽高比时只显示四个角）──
@@ -2315,6 +2447,8 @@ class EtestGui:
             "overlay", "active_roi", "other_roi",
             "roi_label", "roi_info", "other_label",
             "center_line", "roi_handle",
+            "calibration_line", "calibration_line_band",
+            "calibration_line_label",
         )
         if self.calib_current_frame is not None:
             self._calib_draw_overlay()

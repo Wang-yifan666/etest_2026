@@ -178,7 +178,19 @@ namespace etest
 		int lost_frames_to_reacquire = 2;
 		int stable_frames_to_center = 8;
 
-		// ── 标定 ──
+		// ── Q3～Q5 启动标定线 ──
+
+		// 原图全局像素 X，球心只需靠近此竖直线。
+		// Y 坐标不参与任务启动标定。
+		int calibration_line_x = 640;
+
+		// 允许球心位于标定线左右多少像素。
+		int calibration_line_tolerance_px = 20;
+
+		// 连续标定帧内允许的最大 X 抖动。
+		double calibration_max_jitter_px = 6.0;
+
+		// ── 标定（旧字段，保留兼容）──
 		int calibration_frames = 8;
 		int calibration_timeout_ms = 1500;
 		double initial_center_limit_mm = 15.0;
@@ -214,6 +226,9 @@ namespace etest
 		SourceInfo source_edge_guard_px;
 		SourceInfo source_lost_frames_to_reacquire;
 		SourceInfo source_stable_frames_to_center;
+		SourceInfo source_calibration_line_x;
+		SourceInfo source_calibration_line_tolerance_px;
+		SourceInfo source_calibration_max_jitter_px;
 		SourceInfo source_calibration_frames;
 		SourceInfo source_calibration_timeout_ms;
 		SourceInfo source_initial_center_limit_mm;

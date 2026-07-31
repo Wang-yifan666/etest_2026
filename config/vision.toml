@@ -169,7 +169,17 @@ full_roi_y = 160
 center_roi_x = 416
 center_roi_y = 160
 
-# 中心线 y（水平参考线，贯穿全图宽度）
+# ── Q3～Q5 启动标定线 ──
+# 原图全局像素坐标；只比较球心 X，不限制球心 Y。
+calibration_line_x = 640
+
+# 球心位于 [line_x-tolerance, line_x+tolerance] 时视为在线上。
+calibration_line_tolerance_px = 20
+
+# 连续有效帧与稳定性要求。
+calibration_max_jitter_px = 6.0
+
+# 中心线 y（水平参考线，贯穿全图宽度，deprecated）
 center_line_y = 320
 
 # 物理中心 O（全局像素坐标，1280×640 原图，center_point 模式使用）

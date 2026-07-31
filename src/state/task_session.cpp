@@ -25,6 +25,9 @@ void TaskSession::reset()
 	vsession_confirmed = false;
 	calibration_valid_frames = 0;
 	calibration_start_time = {};
+	calibration_x_samples.clear();
+	calibration_line_error_px = 0.0F;
+	calibration_on_line = false;
 	lost_frames = 0;
 	center_stable_frames = 0;
 	filtered_x = 0.0;
