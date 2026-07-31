@@ -1681,8 +1681,8 @@ class EtestGui:
         mode = self.calib_mode_var.get()
 
         # Full ROI 矩形
-        fx, fy = self.calib_scale_px(self.calib_full_roi_x, self.calib_full_roi_y)
-        fw, fh = self.calib_scale_px(self.calib_full_src_w, self.calib_full_src_h)
+        fx, fy = self._calib_scale_px(self.calib_full_roi_x, self.calib_full_roi_y)
+        fw, fh = self._calib_scale_px(self.calib_full_src_w, self.calib_full_src_h)
         full_roi_tag = "full_roi"
         self.calib_canvas.create_rectangle(
             fx, fy, fx + fw, fy + fh,
@@ -1690,8 +1690,8 @@ class EtestGui:
         )
 
         # Center ROI 矩形
-        cx, cy = self.calib_scale_px(self.calib_center_roi_x, self.calib_center_roi_y)
-        cw, ch = self.calib_scale_px(self.calib_center_src_w, self.calib_center_src_h)
+        cx, cy = self._calib_scale_px(self.calib_center_roi_x, self.calib_center_roi_y)
+        cw, ch = self._calib_scale_px(self.calib_center_src_w, self.calib_center_src_h)
         center_roi_tag = "center_roi"
         self.calib_canvas.create_rectangle(
             cx, cy, cx + cw, cy + ch,
@@ -1732,13 +1732,13 @@ class EtestGui:
 
         # 检查是否点在拖动句柄附近
         if mode == "full_roi":
-            fx, fy = self.calib_scale_px(self.calib_full_roi_x, self.calib_full_roi_y)
+            fx, fy = self._calib_scale_px(self.calib_full_roi_x, self.calib_full_roi_y)
             if abs(event.x - fx) < 12 and abs(event.y - fy) < 12:
                 self.calib_drag_item = "full_roi"
                 self.calib_drag_start_x = event.x
 
         elif mode == "center_roi":
-            cx, cy = self.calib_scale_px(self.calib_center_roi_x, self.calib_center_roi_y)
+            cx, cy = self._calib_scale_px(self.calib_center_roi_x, self.calib_center_roi_y)
             if abs(event.x - cx) < 12 and abs(event.y - cy) < 12:
                 self.calib_drag_item = "center_roi"
                 self.calib_drag_start_x = event.x
