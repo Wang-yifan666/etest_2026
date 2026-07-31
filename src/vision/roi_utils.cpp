@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <stdexcept>
 
 namespace etest::vision::roi_utils

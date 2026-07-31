@@ -42,14 +42,6 @@ except ImportError:
     np = None  # type: ignore
     HAS_CV2 = False
 
-try:
-    from PIL import Image, ImageTk
-    HAS_PIL = True
-except ImportError:
-    Image = None  # type: ignore
-    ImageTk = None  # type: ignore
-    HAS_PIL = False
-
 
 # 路径与常量
 
@@ -1602,10 +1594,10 @@ class EtestGui:
 
     @ui_guard("打开摄像头")
     def on_calib_start_camera(self) -> None:
-        if not HAS_CV2 or not HAS_PIL:
+        if not HAS_CV2:
             raise OperationError(
-                "标定功能需要 opencv-python 和 Pillow。\n"
-                "运行：pip install opencv-python Pillow"
+                "标定功能需要 opencv-python。\n"
+                "运行：pip3 install opencv-python"
             )
 
         if self.calib_running:
@@ -1658,9 +1650,11 @@ class EtestGui:
 
         small = cv2.resize(frame, (new_w, new_h))
 
-        img = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
-        pil_img = Image.fromarray(img)
-        self.calib_tk_img = ImageTk.PhotoImage(pil_img)
+        # 使用 PPM 格式，无需 Pillow
+        rgb = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
+        ppm_header = f"P6\n{new_w} {new_h}\n255\n".encode("ascii")
+        ppm_data = ppm_header + rgb.tobytes()
+        self.calib_tk_img = tk.PhotoImage(data=ppm_data)
 
         self.calib_canvas.delete("all")
         self.calib_canvas.create_image(
