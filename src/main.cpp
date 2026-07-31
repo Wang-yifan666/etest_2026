@@ -327,7 +327,7 @@ int main(int argc, char* argv[])
 		                      false,
 		                      0,
 		                      {},
-		                      etest::TaskPhase::CALIBRATING};
+		                      etest::AppState::START};
 
 		etest::State current_state = etest::State::START;
 

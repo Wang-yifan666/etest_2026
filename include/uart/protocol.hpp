@@ -109,6 +109,21 @@ namespace etest::uart::protocol
 
 	std::optional<DoneInfo> parseDone(const UartMessage& msg) noexcept;
 
+	// ── M000X 模式应答 ──
+
+	// ACK,M0001 / ACK,M0002 ...
+	std::string makeModeAckLine(const std::string& mode);
+
+	// START,M0001,0 / START,M0005,-372 ...
+	// target_0p1mm: 目标位置，0.1 mm 单位
+	std::string makeStartLine(const std::string& mode,
+	                          int target_0p1mm);
+
+	// CALIB_FAIL,M0003,NOT_AT_CENTER ...
+	std::string makeCalibrationFailLine(
+	    const std::string& mode,
+	    const std::string& reason);
+
 	// ── M000X 题目编号 ──
 
 	// 判断是否为 M0001~M0005

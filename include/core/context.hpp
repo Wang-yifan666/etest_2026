@@ -5,7 +5,9 @@
 
 #include "core/config.hpp"
 #include "state/state.hpp"
+#include "state/task_session.hpp"
 #include "uart/uart.hpp"
+#include "vision/ball_ncnn_manager.hpp"
 #include "vision/camera.hpp"
 #include "vision/video_recorder.hpp"
 #include "vision/vision.hpp"
@@ -20,32 +22,14 @@ namespace etest
 		RESTART_REQUIRED
 	};
 
-	// 任务阶段（SEARCH 内部）
-	enum class TaskPhase
+	// 应用级状态（程序页面，main.cpp 驱动）
+	// 与比赛任务状态 ContestTaskPhase 正交
+	enum class AppState
 	{
-		CALIBRATING, // 标定原点中，发送 BALL CALIB
-		RUNNING,     // 标定完成，等待发送 CONTESTSTART
-		CONTEST,     // 比赛进行中，收到 CONTESTSTART ACK 后
-		STOPPING // 收到 DONE，等待发送 CONTESTSTOP 后回到 RUNNING
-	};
-
-	// 任务会话
-	struct TaskSession
-	{
-		std::uint32_t session_id = 0; // 视觉会话 ID
-		std::uint64_t vision_epoch_ns =
-		    0; // 会话零点纳秒（单调时钟 time_since_epoch）
-		std::chrono::steady_clock::time_point
-		    vision_epoch{};               // 会话零点时间点
-		std::uint32_t seq = 0;            // BALL 序号
-		bool vsession_confirmed = false;  // VSESSION 握手完成
-		std::string active_mode;          // 当前比赛模式
-		int command = 0;                  // 任务命令号 1~5
-		int problem_number = 0;           // 题目编号 2~6
-		bool mission_received = false;    // 是否收到 M000X 选题
-		bool contest_start_sent = false;  // CONTESTSTART 已发送
-		bool contest_start_acked = false; // CONTESTSTART 已确认
-		std::chrono::steady_clock::time_point phase_since{};
+		START,
+		SEARCH,
+		ERROR,
+		END
 	};
 
 	struct AppContext
@@ -76,9 +60,9 @@ namespace etest
 		bool lower_machine_online = false;
 		std::uint32_t uart_seq = 0;
 
-		// 任务状态
+		// 任务状态（使用新的 TaskSession）
 		TaskSession task;
-		TaskPhase task_phase = TaskPhase::CALIBRATING;
+		AppState app_state = AppState::START;
 	};
 
 	// 纯函数：根据连续异常计数返回恢复动作

@@ -28,8 +28,10 @@ endif()
 add_library(etest_vision_core STATIC
     src/vision/vision.cpp
     src/vision/vision_utils.cpp
+    src/vision/ball_ncnn_manager.cpp
     src/vision/yolo_ball.cpp
     src/vision/yolo_detector.cpp
+    src/vision/roi_utils.cpp
     src/vision/yolo_backend_opencv.cpp
 )
 
@@ -91,11 +93,37 @@ add_executable(etest_2026
     src/vision/video_recorder.cpp
     src/uart/uart.cpp
     src/uart/protocol.cpp
+    src/state/task_session.cpp
 )
 
 target_include_directories(etest_2026 PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(etest_2026 PRIVATE etest_vision_core ${OpenCV_LIBS} pthread)
 target_compile_options(etest_2026 PRIVATE -Wall -Wextra -pedantic)
+
+# ── UART 模式测试 ──
+add_executable(etest_uart_mode
+    test/test_uart_mode.cpp
+    src/uart/protocol.cpp
+    src/uart/uart.cpp
+    src/core/logger.cpp
+)
+
+target_include_directories(etest_uart_mode PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_compile_options(etest_uart_mode PRIVATE -Wall -Wextra -pedantic)
+target_link_libraries(etest_uart_mode PRIVATE pthread)
+add_test(NAME uart_mode_test COMMAND etest_uart_mode)
+
+# ── 任务会话测试 ──
+add_executable(etest_task_session
+    test/test_task_session.cpp
+    src/state/task_session.cpp
+    src/core/logger.cpp
+)
+
+target_include_directories(etest_task_session PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(etest_task_session PRIVATE ${OpenCV_LIBS} pthread)
+target_compile_options(etest_task_session PRIVATE -Wall -Wextra -pedantic)
+add_test(NAME task_session_test COMMAND etest_task_session)
 
 # ── 协议测试 ──
 add_executable(etest_protocol
@@ -143,6 +171,18 @@ target_include_directories(etest_hsv_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(etest_hsv_test PRIVATE etest_vision_core ${OpenCV_LIBS} pthread)
 target_compile_options(etest_hsv_test PRIVATE -Wall -Wextra -pedantic)
 add_test(NAME hsv_test COMMAND etest_hsv_test)
+
+# ── ROI 几何测试 ──
+add_executable(etest_ball_roi
+    test/test_ball_roi.cpp
+    src/core/config.cpp
+    src/core/logger.cpp
+)
+
+target_include_directories(etest_ball_roi PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(etest_ball_roi PRIVATE etest_vision_core ${OpenCV_LIBS} pthread)
+target_compile_options(etest_ball_roi PRIVATE -Wall -Wextra -pedantic)
+add_test(NAME ball_roi_test COMMAND etest_ball_roi)
 
 # ── 视频回归测试 ──
 add_executable(etest_ball_video_test

@@ -311,6 +311,35 @@ namespace etest::uart::protocol
 		return info;
 	}
 
+	// ── M000X 模式应答 ──
+
+	std::string makeModeAckLine(const std::string& mode)
+	{
+		std::ostringstream oss;
+		oss.imbue(std::locale::classic());
+		oss << "ACK," << mode;
+		return oss.str();
+	}
+
+	std::string makeStartLine(const std::string& mode,
+	                          int target_0p1mm)
+	{
+		std::ostringstream oss;
+		oss.imbue(std::locale::classic());
+		oss << "START," << mode << "," << target_0p1mm;
+		return oss.str();
+	}
+
+	std::string makeCalibrationFailLine(
+	    const std::string& mode,
+	    const std::string& reason)
+	{
+		std::ostringstream oss;
+		oss.imbue(std::locale::classic());
+		oss << "CALIB_FAIL," << mode << "," << reason;
+		return oss.str();
+	}
+
 	// ── M000X 题目编号 ──
 
 	bool isMissionCode(const UartMessage& msg) noexcept

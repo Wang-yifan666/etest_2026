@@ -610,20 +610,10 @@ namespace etest::state
 				            ctx.vision.yoloBackendName()));
 			}
 
-			// 初始化会话 ID 和时间零点
-			ctx.task.session_id = static_cast<std::uint32_t>(
-			    std::chrono::steady_clock::now()
-			        .time_since_epoch()
-			        .count()
-			    & 0xFFFFFFFFu);
-			ctx.task.vision_epoch_ns = std::chrono::steady_clock::now()
-			                               .time_since_epoch()
-			                               .count();
-			ctx.task.vision_epoch = std::chrono::steady_clock::now();
-			ctx.vision.setVisionEpoch(ctx.task.vision_epoch_ns);
-
+			// 初始化任务会话
+			ctx.task.reset();
 			ETEST_LOG_INFO("STATE_START",
-			               "VSESSION session_id="
+			               "initial session_id="
 			                   + std::to_string(ctx.task.session_id));
 		}
 

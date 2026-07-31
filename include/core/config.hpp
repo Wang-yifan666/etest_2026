@@ -121,6 +121,88 @@ namespace etest
 		std::string to_string() const;
 	};
 
+	// 子配置：NCNN 小球检测（定义在 VisionConfig 之前）
+
+	struct AxisPoint
+	{
+		double pixel = 0.0;
+		double position_mm = 0.0;
+	};
+
+	struct PipeAxisCalibration
+	{
+		std::vector<AxisPoint> points;
+		int image_right_sign = 1; // +1 或 -1
+	};
+
+	struct BallNcnnConfig
+	{
+		bool enabled = true;
+
+		// ── 模型路径 ──
+		std::string full_model_param;
+		std::string center_model_param;
+
+		// ── 输入尺寸 ──
+		int full_input_width = 640;
+		int full_input_height = 160;
+		int center_input_width = 224;
+		int center_input_height = 160;
+
+		// ── ROI 原始尺寸 ──
+		int full_src_width = 1280;
+		int full_src_height = 320;
+		int center_src_width = 448;
+		int center_src_height = 320;
+
+		// ── 物理中心 O（全局像素坐标）──
+		int pipe_center_x = 640;
+		int pipe_center_y = 320;
+
+		// ── 跟踪阈值 ──
+		int edge_guard_px = 24;
+		int lost_frames_to_reacquire = 2;
+		int stable_frames_to_center = 8;
+
+		// ── 标定 ──
+		int calibration_frames = 8;
+		int calibration_timeout_ms = 1500;
+		double minimum_confidence = 0.45;
+
+		// ── 坐标标定 ──
+		PipeAxisCalibration axis_calibration;
+
+		// ── NCNN 高级选项 ──
+		int num_threads = 4;
+		bool use_fp16_storage = true;
+		bool use_fp16_arithmetic = true;
+
+		SourceInfo source_enabled;
+		SourceInfo source_full_model_param;
+		SourceInfo source_center_model_param;
+		SourceInfo source_full_input_width;
+		SourceInfo source_full_input_height;
+		SourceInfo source_center_input_width;
+		SourceInfo source_center_input_height;
+		SourceInfo source_full_src_width;
+		SourceInfo source_full_src_height;
+		SourceInfo source_center_src_width;
+		SourceInfo source_center_src_height;
+		SourceInfo source_pipe_center_x;
+		SourceInfo source_pipe_center_y;
+		SourceInfo source_edge_guard_px;
+		SourceInfo source_lost_frames_to_reacquire;
+		SourceInfo source_stable_frames_to_center;
+		SourceInfo source_calibration_frames;
+		SourceInfo source_calibration_timeout_ms;
+		SourceInfo source_minimum_confidence;
+		SourceInfo source_num_threads;
+		SourceInfo source_use_fp16_storage;
+		SourceInfo source_use_fp16_arithmetic;
+
+		std::string to_string() const;
+	};
+
 	// 子配置：滚球视觉
 
 	struct BallConfig
@@ -394,6 +476,7 @@ namespace etest
 		SourceInfo source_min_area;
 
 		BallConfig ball;
+		BallNcnnConfig ball_ncnn;
 
 		std::string to_string() const;
 	};

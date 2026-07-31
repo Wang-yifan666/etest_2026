@@ -2,9 +2,12 @@
 
 #include "core/config.hpp"
 #include "core/logger.hpp"
+#include "state/task_session.hpp"
 #include "uart/protocol.hpp"
 #include "uart/uart.hpp"
+#include "vision/ball_ncnn_manager.hpp"
 #include "vision/latest_frame_capture.hpp"
+#include "vision/roi_utils.hpp"
 #include "vision/vision.hpp"
 
 #include <opencv2/highgui.hpp>
@@ -42,6 +45,14 @@ namespace etest::state
 			return false;
 		}
 
+		// 辅助：当前任务是否活跃（收到 M000x 且未结束）
+		bool isMissionActive(const TaskSession& task)
+		{
+			return task.phase == ContestTaskPhase::PREPARING
+			    || task.phase == ContestTaskPhase::CALIBRATING
+			    || task.phase == ContestTaskPhase::RUNNING;
+		}
+
 	} // namespace
 
 	State runSearch(AppContext& ctx, const SearchConfig& search_cfg,
@@ -76,8 +87,6 @@ namespace etest::state
 		std::int64_t perf_vision_total_us = 0;
 		std::int64_t perf_loop_total_us = 0;
 		std::uint64_t dropped_frames_total = 0;
-		std::uint64_t last_perf_captured = 0;
-		std::uint64_t last_perf_processed = 0;
 
 		// 帧率控制（仅文件源）
 		const bool is_file = ctx.camera.isFileSource();
@@ -117,26 +126,18 @@ namespace etest::state
 		    uart_cfg.protocol_version_minor;
 
 		// 发送失败节流
-		std::string last_send_error;
-		auto last_send_error_time = std::chrono::steady_clock::now()
-		    - std::chrono::milliseconds(5000);
-		constexpr int send_error_throttle_ms = 2000;
 		std::string last_hb_error;
-		auto last_hb_error_time = last_send_error_time;
+		auto last_hb_error_time = std::chrono::steady_clock::now()
+		    - std::chrono::milliseconds(5000);
 
 		int frame_failures = 0;
 
-		// VSESSION 重发
-		auto last_vsession_send = std::chrono::steady_clock::now();
+		// BALL 发送限频（25 Hz）
 		auto last_ball_send = std::chrono::steady_clock::now();
-		auto last_contest_start_send = std::chrono::steady_clock::now();
+		constexpr auto kBallSendPeriod = std::chrono::milliseconds(40);
 
-		// CONTESTSTART 等待中检测球移动
-		bool contest_start_sent = false;
-		auto contest_start_since = std::chrono::steady_clock::now();
-
-		// DONE 标记
-		bool done_received = false;
+		// M0001 准备阶段：等待 1 个新帧
+		bool m0001_frame_received = false;
 
 		// ── 最新帧采集（仅实时摄像头）──
 		const bool use_latest_capture = !is_file;
@@ -171,7 +172,7 @@ namespace etest::state
 			++loop_calls;
 			const auto loop_start = std::chrono::steady_clock::now();
 
-			// ── 2) UART 消息处理（移到帧读取之前，确保及时处理）──
+			// ── 1) 优先清空 UART 接收队列 ──
 			{
 				UartMessage msg;
 				int processed = 0;
@@ -180,72 +181,91 @@ namespace etest::state
 				{
 					++processed;
 
-					// M000X → 记录题目编号，开始标定流程
+					// M000X → 记录题目
 					if(uart::protocol::isMissionCode(msg))
 					{
-						int code =
-						    uart::protocol::parseMissionCode(msg);
-						std::string mode_name =
-						    uart::protocol::missionModeName(code);
-						ETEST_LOG_INFO(
-						    "SEARCH",
-						    "received mission code: " + msg.tag
-						        + " → mode=" + mode_name);
-						ctx.task.command = code;
-						ctx.task.problem_number =
-						    code + 1; // 1→H2, ..., 5→H6
-						ctx.task.active_mode = mode_name;
-						ctx.task.mission_received = true;
-						ctx.task_phase = TaskPhase::CALIBRATING;
-						ctx.task.contest_start_acked = false;
-						ctx.task.contest_start_sent = false;
-						contest_start_sent = false;
+						const std::string& new_tag = msg.tag;
+						TaskMode new_mode =
+						    TaskSession::modeFromTag(new_tag);
 
-						// 重新初始化 VSESSION —— 统一时间原点
-						const auto epoch =
-						    std::chrono::steady_clock::now();
+						// 重复同一指令处理
+						if(isMissionActive(ctx.task)
+						   && ctx.task.command_tag == new_tag)
+						{
+							if(ctx.task.phase
+							   == ContestTaskPhase::CALIBRATING)
+							{
+								ctx.uart.sendLine(
+								    uart::protocol::makeModeAckLine(
+								        new_tag));
+							}
+							else if(ctx.task.phase
+							        == ContestTaskPhase::RUNNING)
+							{
+								ctx.uart.sendLine(
+								    uart::protocol::makeStartLine(
+								        new_tag,
+								        static_cast<int>(std::lround(
+								            ctx.task
+								                .target_position_mm
+								            * 10.0))));
+							}
+							continue;
+						}
 
-						ctx.task.vsession_confirmed = false;
-						ctx.task.session_id =
-						    static_cast<std::uint32_t>(
-						        epoch.time_since_epoch().count()
-						        & 0xFFFFFFFFu);
-						ctx.task.vision_epoch_ns =
-						    static_cast<std::uint64_t>(
-						        std::chrono::duration_cast<
-						            std::chrono::nanoseconds>(
-						            epoch.time_since_epoch())
-						            .count());
-						ctx.task.vision_epoch = epoch;
-						ctx.vision.setVisionEpoch(
-						    ctx.task.vision_epoch_ns);
-						ctx.vision.resetYoloSession();
+						// 另一指令 → 终止旧 session
+						ctx.task.reset();
+						ctx.task.mode = new_mode;
+						ctx.task.command_tag = new_tag;
 						ctx.task.seq = 0;
 
 						ETEST_LOG_INFO(
 						    "SEARCH",
-						    "new vsession session_id="
-						        + std::to_string(ctx.task.session_id));
-						last_vsession_send =
-						    epoch
-						    - std::chrono::milliseconds(
-						        search_cfg.vsession_retry_interval_ms);
+						    "received mission code: "
+						        + new_tag
+						        + " session_id="
+						        + std::to_string(
+						            ctx.task.session_id));
+
+						// 发送 ACK
+						ctx.uart.sendLine(
+						    uart::protocol::makeModeAckLine(
+						        new_tag));
+
+						// M0001: PREPARING
+						if(new_tag == "M0001")
+						{
+							ctx.task.enterPhase(
+							    ContestTaskPhase::PREPARING);
+							ctx.task.vision_enabled = false;
+							ctx.task.tracking_mode =
+							    TrackingMode::NONE;
+							m0001_frame_received = false;
+						}
+						else
+						{
+							// M0002～M0005: CALIBRATING
+							ctx.task.enterPhase(
+							    ContestTaskPhase::CALIBRATING);
+							ctx.task.vision_enabled = true;
+							ctx.task.tracking_mode =
+							    TrackingMode::FULL;
+						}
+
+						ctx.vision.resetYoloSession();
 						continue;
 					}
 
-					// BOOT,OK → 清除 VSESSION，重新握手
+					// BOOT,OK → 清除任务，重新握手
 					if(uart::protocol::isBootOk(msg))
 					{
 						ETEST_LOG_WARN(
 						    "SEARCH",
 						    "lower machine reboot: " + msg.raw);
 						ctx.lower_machine_online = false;
-						ctx.task.mission_received = false;
-						ctx.task.command = 0;
+						ctx.task.reset();
 						link_state = LinkState::WAIT_PING;
 						heartbeat_offline = true;
-						ctx.task.vsession_confirmed = false;
-						ctx.task.contest_start_acked = false;
 						ctx.vision.resetYoloSession();
 						ctx.uart.sendLine("PING");
 						last_ping_time =
@@ -279,7 +299,7 @@ namespace etest::state
 						continue;
 					}
 
-					// CAPS 响应（重连握手期间）
+					// CAPS 响应
 					if(uart::protocol::isCapsResponse(msg)
 					   && link_state == LinkState::WAIT_PROTO)
 					{
@@ -314,7 +334,6 @@ namespace etest::state
 								    "proto version confirmed: "
 								        + std::to_string(*major) + "."
 								        + std::to_string(*minor));
-								// 发送 CAPS?
 								ctx.uart.sendLine("CAPS?");
 								link_state_since =
 								    std::chrono::steady_clock::now();
@@ -345,32 +364,27 @@ namespace etest::state
 						continue;
 					}
 
-					// VSESSION ACK
-					if(uart::protocol::isVsessionAck(
-					       msg, ctx.task.session_id))
-					{
-						ctx.task.vsession_confirmed = true;
-						ETEST_LOG_INFO("SEARCH", "VSESSION confirmed");
-						continue;
-					}
-
-					// CONTESTSTART ACK
-					if(uart::protocol::isContestStartAck(msg))
-					{
-						ctx.task.contest_start_acked = true;
-						ctx.task_phase = TaskPhase::CONTEST;
-						ETEST_LOG_INFO("SEARCH",
-						               "CONTESTSTART confirmed");
-						continue;
-					}
-
-					// DONE
+					// DONE（需匹配当前 mode）
 					if(auto done = uart::protocol::parseDone(msg))
 					{
+						if(done->mode != ctx.task.command_tag)
+						{
+							ETEST_LOG_WARN(
+							    "SEARCH",
+							    "ignoring DONE mode mismatch: got "
+							        + done->mode + " expected "
+							        + ctx.task.command_tag);
+							continue;
+						}
 						ETEST_LOG_INFO("SEARCH",
 						               "DONE received: " + done->mode
 						                   + " result=" + done->result);
-						done_received = true;
+						ctx.task.enterPhase(
+						    ContestTaskPhase::FINISHED);
+						ctx.task.vision_enabled = false;
+						ctx.task.tracking_mode = TrackingMode::NONE;
+						ctx.task.measurement_valid = false;
+						ctx.vision.resetYoloSession();
 						continue;
 					}
 
@@ -384,7 +398,7 @@ namespace etest::state
 				}
 			}
 
-			// ── 3) 心跳发送与超时 ──
+			// ── 2) 心跳发送与超时 ──
 			{
 				const auto now = std::chrono::steady_clock::now();
 				const auto elapsed =
@@ -418,14 +432,12 @@ namespace etest::state
 						link_state = LinkState::WAIT_PING;
 						link_state_since = now;
 						handshake_retry_count = 0;
-						ctx.task.vsession_confirmed = false;
 						const std::string err_msg = "heartbeat timeout";
 						if(!shouldThrottle(err_msg, last_hb_error,
 						                   last_hb_error_time))
 							ETEST_LOG_WARN("SEARCH", err_msg);
 					}
 				}
-				// WAIT_PROTO 超时重试
 				if(link_state == LinkState::WAIT_PROTO)
 				{
 					const auto proto_elapsed =
@@ -440,11 +452,6 @@ namespace etest::state
 							++handshake_retry_count;
 							ctx.uart.sendLine("PROTO?");
 							link_state_since = now;
-							ETEST_LOG_WARN(
-							    "SEARCH",
-							    "PROTO retry "
-							        + std::to_string(
-							            handshake_retry_count));
 						}
 						else
 						{
@@ -457,27 +464,7 @@ namespace etest::state
 				}
 			}
 
-			// ── 4) VSESSION 握手（仅在收到 M000X 后发送）──
-			if(ctx.task.mission_received && !ctx.task.vsession_confirmed
-			   && ctx.uart.isOpen() && link_state == LinkState::ONLINE)
-			{
-				const auto now = std::chrono::steady_clock::now();
-				const auto elapsed = std::chrono::duration_cast<
-				                         std::chrono::milliseconds>(
-				                         now - last_vsession_send)
-				                         .count();
-				if(elapsed >= search_cfg.vsession_retry_interval_ms)
-				{
-					auto line = uart::protocol::makeVsessionLine(
-					    ctx.task.session_id,
-					    search_cfg.nominal_fps * 100,
-					    search_cfg.camera_id);
-					ctx.uart.sendLine(line);
-					last_vsession_send = now;
-				}
-			}
-
-			// ── 1) 获取帧 ──
+			// ── 3) 获取帧 ──
 			vision::FramePacket packet;
 			bool has_new_frame = false;
 
@@ -488,7 +475,6 @@ namespace etest::state
 
 				if(!has_new_frame)
 				{
-					// 检查采集线程是否报错
 					if(capture.state()
 					   == vision::CaptureWorkerState::CAMERA_ERROR)
 					{
@@ -501,26 +487,13 @@ namespace etest::state
 						                  "capture worker failed"};
 						return State::ERROR;
 					}
-
-					// 无新帧，短暂休眠后继续（保证 UART/心跳及时）
 					std::this_thread::sleep_for(
 					    std::chrono::milliseconds(1));
-					continue;
-				}
-
-				// 过滤任务开始前采集的旧帧
-				if(ctx.task.mission_received
-				   && packet.received_at < ctx.task.vision_epoch)
-				{
-					last_processed_sequence = packet.sequence;
 					continue;
 				}
 			}
 			else
 			{
-				// 文件源：保留原有同步读取逻辑
-
-				// 帧率控制
 				if(frame_interval.count() > 0)
 				{
 					const auto since_last = std::chrono::duration_cast<
@@ -542,7 +515,6 @@ namespace etest::state
 						    "file source ended; exiting search");
 						break;
 					}
-
 					if(frame_failures >= 3)
 					{
 						ETEST_LOG_ERROR(
@@ -562,32 +534,49 @@ namespace etest::state
 				frame_failures = 0;
 				last_frame_time = std::chrono::steady_clock::now();
 
-				// 将同步读取的帧包装为 FramePacket
 				packet.frame = ctx.frame;
 				packet.received_at = std::chrono::steady_clock::now();
 				packet.sequence = received_frames;
 				has_new_frame = true;
 			}
 
-			// 更新 ctx.frame 和丢帧统计
 			if(has_new_frame)
 			{
 				++received_frames;
 				ctx.frame = packet.frame;
 
-				// 丢帧统计：sequence 跳跃说明有帧被覆盖（仅在最新帧模式下有意义）
 				if(use_latest_capture && last_processed_sequence != 0
 				   && packet.sequence > last_processed_sequence + 1)
 				{
 					dropped_frames_total +=
 					    packet.sequence - last_processed_sequence - 1;
 				}
-
 				last_processed_sequence = packet.sequence;
 			}
 
-			// ── 5) 视觉处理 + BALL 发送（仅在收到 M000X 后）──
-			if(ctx.task.mission_received && ctx.task.vsession_confirmed
+			// ── 4) 推进任务阶段 ──
+			if(has_new_frame)
+			{
+				// M0001: 等待 1 个新帧后立即 START
+				if(ctx.task.phase == ContestTaskPhase::PREPARING)
+				{
+					m0001_frame_received = true;
+					ctx.uart.sendLine(
+					    uart::protocol::makeStartLine(
+					        ctx.task.command_tag, 0));
+					ctx.task.start_sent = true;
+					ctx.task.enterPhase(
+					    ContestTaskPhase::RUNNING);
+					ctx.task.vision_enabled = false;
+					ctx.task.tracking_mode = TrackingMode::NONE;
+					ETEST_LOG_INFO(
+					    "SEARCH",
+					    "M0001: PREPARING → RUNNING");
+				}
+			}
+
+			// ── 5) 按需执行视觉推理 ──
+			if(isMissionActive(ctx.task) && ctx.task.vision_enabled
 			   && has_new_frame)
 			{
 				const auto vision_start =
@@ -602,71 +591,62 @@ namespace etest::state
 				                           .count();
 				++perf_vision_calls;
 				perf_vision_total_us += vision_us;
-
 				++processed_frames;
+			}
 
+			// ── 6) 限频发送任务输出 ──
+			if(isMissionActive(ctx.task)
+			   && ctx.task.vision_enabled)
+			{
 				const auto now = std::chrono::steady_clock::now();
 				const auto ball_elapsed =
 				    std::chrono::duration_cast<
 				        std::chrono::milliseconds>(now - last_ball_send)
 				        .count();
 
-				if(ball_elapsed >= search_cfg.result_send_interval_ms
-				   || ctx.task_phase == TaskPhase::CALIBRATING)
+				if(ball_elapsed >= kBallSendPeriod.count()
+				   || ctx.task.phase
+				          == ContestTaskPhase::CALIBRATING)
 				{
-					// ── 修正后的 capture_ms / age_ms ──
-					// capture_ms: 帧采集时刻相对于视觉会话开始的时间（毫秒）
-					// age_ms: 帧从采集到发送 BALL 的延迟（毫秒）
-
-					// 使用 packet.received_at（采集线程打的时间戳）代替 now
-					const auto capture_ms_64 =
-					    std::chrono::duration_cast<
-					        std::chrono::milliseconds>(
-					        packet.received_at - ctx.task.vision_epoch)
-					        .count();
-					const auto age_ms_64 =
-					    std::chrono::duration_cast<
-					        std::chrono::milliseconds>(
-					        now - packet.received_at)
-					        .count();
-
-					const std::uint32_t capture_ms = static_cast<
-					    std::uint32_t>(std::clamp<std::int64_t>(
-					    capture_ms_64, 0,
-					    std::numeric_limits<std::uint32_t>::max()));
-					const std::uint32_t age_ms = static_cast<
-					    std::uint32_t>(std::clamp<std::int64_t>(
-					    age_ms_64, 0,
-					    std::numeric_limits<std::uint32_t>::max()));
-
 					std::string status;
 					int pos = 0;
 					float conf = 0.0F;
 
-					if(ctx.vision_result.calibrated
-					   && ctx.vision_result.valid)
+					if(ctx.task.phase
+					       == ContestTaskPhase::CALIBRATING)
+					{
+						status = "CALIB";
+					}
+					else if(ctx.vision_result.calibrated
+					        && ctx.vision_result.valid)
 					{
 						status = "OK";
 						pos = ctx.vision_result.position_0p1mm;
 						conf = static_cast<float>(
 						    ctx.vision_result.confidence);
 					}
-					else if(!ctx.vision_result.calibrated)
-					{
-						status = "CALIB";
-					}
 					else if(!ctx.vision_result.valid)
 					{
 						status = "LOST";
+						ctx.task.measurement_valid = false;
 					}
 					else
 					{
 						status = "ERROR";
+						ctx.task.measurement_valid = false;
+					}
+
+					if(status == "OK")
+					{
+						ctx.task.measurement_valid = true;
+						ctx.task.current_position_mm =
+						    pos / 10.0;
+						ctx.task.last_confidence = conf;
 					}
 
 					auto line = uart::protocol::makeBallLineV5Simple(
-					    ctx.task.session_id, ctx.task.seq++, capture_ms,
-					    age_ms, pos, conf, status);
+					    ctx.task.session_id, ctx.task.seq++,
+					    0, 0, pos, conf, status);
 					if(line.has_value())
 					{
 						ctx.uart.sendLine(*line);
@@ -674,81 +654,45 @@ namespace etest::state
 					}
 				}
 
-				// 6) 标定完成 → 自动发送 CONTESTSTART
-				if(ctx.task_phase == TaskPhase::CALIBRATING
+				// 标定完成 → 发送 START（M0002～M0005）
+				if(ctx.task.phase
+				       == ContestTaskPhase::CALIBRATING
 				   && ctx.vision_result.calibrated
-				   && !contest_start_sent
-				   && link_state == LinkState::ONLINE)
+				   && !ctx.task.start_sent)
 				{
-					auto line = uart::protocol::makeContestStartLine(
-					    ctx.task.active_mode.empty()
-					        ? "H5"
-					        : ctx.task.active_mode);
-					ctx.uart.sendLine(line);
-					contest_start_sent = true;
-					contest_start_since = now;
-					ctx.task.active_mode = "H5_LAP_CENTER";
+					int target_0p1mm = 0;
+					if(ctx.task.mode == TaskMode::Q6)
+					{
+						// M0005: 锁定当前绝对位置
+						target_0p1mm =
+						    ctx.vision_result.position_0p1mm;
+						ctx.task.target_position_mm =
+						    target_0p1mm / 10.0;
+					}
+
+					ctx.uart.sendLine(
+					    uart::protocol::makeStartLine(
+					        ctx.task.command_tag,
+					        target_0p1mm));
+					ctx.task.start_sent = true;
+					ctx.task.enterPhase(
+					    ContestTaskPhase::RUNNING);
+
+					if(ctx.task.mode == TaskMode::Q4
+					   || ctx.task.mode == TaskMode::Q5)
+					{
+						ctx.task.tracking_mode =
+						    TrackingMode::CENTER;
+					}
 
 					ETEST_LOG_INFO(
-					    "SEARCH", "auto-sent CONTESTSTART after calib");
-				}
-
-				// 7) CONTESTSTART 未确认期间检测球移动
-				if(contest_start_sent
-				   && ctx.task_phase == TaskPhase::CALIBRATING
-				   && ctx.vision_result.calibrated)
-				{
-					if(ctx.vision_result.position_0p1mm != 0
-					   && std::abs(ctx.vision_result.position_0p1mm)
-					       > 200)
-					{
-						ETEST_LOG_WARN(
-						    "SEARCH",
-						    "ball moved during CONTESTSTART wait; "
-						    "recalibrating");
-						ctx.vision.resetYoloSession();
-					}
-				}
-
-				// 8) CONTESTSTART 重发
-				if(contest_start_sent && !ctx.task.contest_start_acked
-				   && ctx.task_phase != TaskPhase::CONTEST)
-				{
-					const auto elapsed = std::chrono::duration_cast<
-					                         std::chrono::milliseconds>(
-					                         now - contest_start_since)
-					                         .count();
-					if(elapsed > 1000)
-					{
-						auto line =
-						    uart::protocol::makeContestStartLine(
-						        ctx.task.active_mode.empty()
-						            ? "H5"
-						            : ctx.task.active_mode);
-						ctx.uart.sendLine(line);
-						contest_start_since = now;
-					}
+					    "SEARCH",
+					    "CALIBRATING → RUNNING, target="
+					        + std::to_string(target_0p1mm));
 				}
 			}
 
-			// 9) DONE → CONTESTSTOP
-			if(done_received && ctx.task_phase == TaskPhase::CONTEST)
-			{
-				ctx.uart.sendLine(
-				    uart::protocol::makeContestStopLine());
-				ctx.task_phase = TaskPhase::CALIBRATING;
-				ctx.task.contest_start_sent = false;
-				ctx.task.contest_start_acked = false;
-				contest_start_sent = false;
-				done_received = false;
-				ctx.vision.resetYoloSession();
-				ctx.task.active_mode.clear();
-
-				ETEST_LOG_INFO("SEARCH",
-				               "CONTESTSTOP sent; recalibrating");
-			}
-
-			// 10) 性能统计日志
+			// ── 7) 心跳、日志、预览 ──
 			{
 				const auto now = std::chrono::steady_clock::now();
 				const auto loop_us =
@@ -766,42 +710,22 @@ namespace etest::state
 					    ? (static_cast<double>(perf_vision_total_us)
 					       / processed_frames / 1000.0)
 					    : 0.0;
-					const auto avg_loop_us =
-					    loop_calls > 0
-					    ? (perf_loop_total_us
-					       / std::max<std::uint64_t>(1, loop_calls))
-					    : std::int64_t{0};
-
-					const auto now_captured = use_latest_capture
-					    ? capture.capturedFrames()
-					    : received_frames;
 
 					ETEST_LOG_INFO(
 					    "PERF",
 					    "vision_ms="
 					        + std::to_string(
 					            static_cast<int>(avg_vision_ms))
-					        + " loop_us="
-					        + std::to_string(
-					            static_cast<int>(avg_loop_us))
 					        + " loops="
 					        + std::to_string(loop_calls)
 					        + " received="
 					        + std::to_string(received_frames)
 					        + " processed="
 					        + std::to_string(processed_frames)
-					        + " captured="
-					        + std::to_string(now_captured) + " dropped="
-					        + std::to_string(dropped_frames_total)
-					        + " read_fail="
-					        + std::to_string(
-					            use_latest_capture
-					                ? capture.readFailures()
-					                : 0));
+					        + " dropped="
+					        + std::to_string(dropped_frames_total));
 
 					last_perf_log = now;
-					last_perf_captured = now_captured;
-					last_perf_processed = last_processed_sequence;
 					loop_calls = 0;
 					received_frames = 0;
 					processed_frames = 0;
@@ -811,7 +735,7 @@ namespace etest::state
 				}
 			}
 
-			// 11) 节流日志
+			// 节流日志
 			{
 				const auto now = std::chrono::steady_clock::now();
 				const auto elapsed = std::chrono::duration_cast<
@@ -822,7 +746,7 @@ namespace etest::state
 					std::string msg = "searching... frame="
 					    + std::to_string(received_frames);
 
-					if(ctx.vision_result.target_type == "BALL")
+					if(ctx.task.vision_enabled)
 					{
 						if(ctx.vision_result.valid
 						   && ctx.vision_result.calibrated)
@@ -830,12 +754,7 @@ namespace etest::state
 							msg += " | ball: "
 							    + std::to_string(
 							           ctx.vision_result.position_0p1mm)
-							    + " (0.1mm) conf="
-							    + std::to_string(
-							           static_cast<int>(std::lround(
-							               ctx.vision_result.confidence
-							               * 100.0)))
-							    + "%";
+							    + " (0.1mm)";
 						}
 						else if(!ctx.vision_result.error_code.empty())
 						{
@@ -847,31 +766,37 @@ namespace etest::state
 							msg += " | ball: LOST";
 						}
 					}
+
+					msg += " | mode=" + ctx.task.command_tag;
 					msg += " | phase=";
-					switch(ctx.task_phase)
+					switch(ctx.task.phase)
 					{
-					case TaskPhase::CALIBRATING:
+					case ContestTaskPhase::IDLE:
+						msg += "IDLE";
+						break;
+					case ContestTaskPhase::PREPARING:
+						msg += "PREPARING";
+						break;
+					case ContestTaskPhase::CALIBRATING:
 						msg += "CALIBRATING";
 						break;
-					case TaskPhase::RUNNING:
+					case ContestTaskPhase::RUNNING:
 						msg += "RUNNING";
 						break;
-					case TaskPhase::CONTEST:
-						msg += "CONTEST";
+					case ContestTaskPhase::FINISHED:
+						msg += "FINISHED";
 						break;
-					case TaskPhase::STOPPING:
-						msg += "STOPPING";
+					case ContestTaskPhase::FAULT:
+						msg += "FAULT";
 						break;
 					}
-					msg += " vsession="
-					    + std::string(
-					           ctx.task.vsession_confirmed ? "1" : "0");
+
 					ETEST_LOG_INFO("SEARCH", msg);
 					last_throttle_time = now;
 				}
 			}
 
-			// 12) 预览绘制
+			// 预览绘制
 			if(can_show_preview && has_new_frame)
 			{
 				cv::Mat display = ctx.frame.clone();
@@ -898,7 +823,6 @@ namespace etest::state
 			}
 			else if(can_show_preview)
 			{
-				// 无新帧时仍处理窗口事件
 				const int key = cv::waitKey(1) & 0xFF;
 				if(allow_keyboard_exit
 				   && (key == 27 || key == 'q' || key == 'Q'))
@@ -918,7 +842,6 @@ namespace etest::state
 		if(can_show_preview && preview_open)
 			cv::destroyAllWindows();
 
-		// LatestFrameCapture 在此析构，自动 stop + join
 		ETEST_LOG_INFO("SEARCH", "exiting search loop");
 		return State::END;
 	}
