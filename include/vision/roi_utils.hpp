@@ -17,20 +17,18 @@ namespace etest::vision::roi_utils
 	};
 
 	// 构建完整水管 ROI
-	// frame_size: 原始帧尺寸（1280×640）
+	// frame_size: 原始帧尺寸（1280×720）
 	// roi_width, roi_height: 从 BallNcnnConfig::full_src_* 读取
 	// pipe_center_y: 物理中心 O 的 y 坐标
-	cv::Rect makeFullRoi(const cv::Size& frame_size,
-	                     int roi_width, int roi_height,
-	                     int pipe_center_y);
+	cv::Rect makeFullRoi(const cv::Size& frame_size, int roi_width,
+	                     int roi_height, int pipe_center_y);
 
 	// 构建中心水管 ROI
-	// frame_size: 原始帧尺寸（1280×640）
+	// frame_size: 原始帧尺寸（1280×720）
 	// roi_width, roi_height: 从 BallNcnnConfig::center_src_* 读取
 	// pipe_center_x, pipe_center_y: 物理中心 O 的坐标
-	cv::Rect makeCenterRoi(const cv::Size& frame_size,
-	                       int roi_width, int roi_height,
-	                       int pipe_center_x,
+	cv::Rect makeCenterRoi(const cv::Size& frame_size, int roi_width,
+	                       int roi_height, int pipe_center_x,
 	                       int pipe_center_y);
 
 	// ROI 局部像素坐标 → 原图全局像素坐标
@@ -49,9 +47,8 @@ namespace etest::vision::roi_utils
 	InferenceRoi getFullInferenceRoi(const cv::Size& frame_size,
 	                                 const BallNcnnConfig& config);
 
-	InferenceRoi getCenterInferenceRoi(
-	    const cv::Size& frame_size,
-	    const BallNcnnConfig& config);
+	InferenceRoi getCenterInferenceRoi(const cv::Size& frame_size,
+	                                   const BallNcnnConfig& config);
 
 	// ── 物理坐标标定（Commit 4）──
 
@@ -77,7 +74,6 @@ namespace etest::vision::roi_utils
 	/// 全局像素 x → 物理毫米（带越界检测）。
 	/// 像素超出标定点范围时 out_of_range=true, valid=false。
 	AxisPositionResult pixelToMmChecked(
-	    double pixel_global,
-	    const PipeAxisCalibration& cal) noexcept;
+	    double pixel_global, const PipeAxisCalibration& cal) noexcept;
 
 } // namespace etest::vision::roi_utils

@@ -124,9 +124,8 @@ namespace etest::uart::protocol
 	                          int target_0p1mm);
 
 	// CALIB_FAIL,M0003,NOT_AT_CENTER ...
-	std::string makeCalibrationFailLine(
-	    const std::string& mode,
-	    const std::string& reason);
+	std::string makeCalibrationFailLine(const std::string& mode,
+	                                    const std::string& reason);
 
 	// ── M000X 题目编号 ──
 

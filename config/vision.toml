@@ -180,11 +180,11 @@ calibration_line_tolerance_px = 25
 calibration_max_jitter_px = 6.0
 
 # 中心线 y（水平参考线，贯穿全图宽度，deprecated）
-center_line_y = 320
+center_line_y = 360
 
 # 物理中心 O（全局像素坐标，1280×640 原图，center_point 模式使用）
 pipe_center_x = 640
-pipe_center_y = 320
+pipe_center_y = 360
 
 # 跟踪阈值
 edge_guard_px = 24

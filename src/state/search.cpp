@@ -57,8 +57,7 @@ namespace etest::state
 
 		// 从 ROI 矩形向内收缩 guard 像素，得到安全区域
 		// guard 会被 clamp 到不超过 ROI 的一半
-		cv::Rect makeSafeRoi(const cv::Rect& roi,
-		                     int requested_guard)
+		cv::Rect makeSafeRoi(const cv::Rect& roi, int requested_guard)
 		{
 			if(roi.empty())
 			{
@@ -66,12 +65,10 @@ namespace etest::state
 			}
 
 			const int guard_x = std::clamp(
-			    requested_guard, 0,
-			    std::max(0, (roi.width - 1) / 2));
+			    requested_guard, 0, std::max(0, (roi.width - 1) / 2));
 
 			const int guard_y = std::clamp(
-			    requested_guard, 0,
-			    std::max(0, (roi.height - 1) / 2));
+			    requested_guard, 0, std::max(0, (roi.height - 1) / 2));
 
 			return {
 			    roi.x + guard_x,
@@ -86,54 +83,43 @@ namespace etest::state
 		                   const cv::Point2f& point)
 		{
 			return point.x >= static_cast<float>(roi.x)
-			    && point.x
-			           < static_cast<float>(roi.x + roi.width)
+			    && point.x < static_cast<float>(roi.x + roi.width)
 			    && point.y >= static_cast<float>(roi.y)
-			    && point.y
-			           < static_cast<float>(roi.y + roi.height);
+			    && point.y < static_cast<float>(roi.y + roi.height);
 		}
 
 		// ── P2.1: 稳定窗口辅助函数 ──
 
-		void trimCalibrationSamples(
-		    std::deque<float>& samples,
-		    int maximum_count)
+		void trimCalibrationSamples(std::deque<float>& samples,
+		                            int maximum_count)
 		{
-			while(static_cast<int>(samples.size())
-			      > maximum_count)
+			while(static_cast<int>(samples.size()) > maximum_count)
 			{
 				samples.pop_front();
 			}
 		}
 
-		bool isSampleWindowStable(
-		    const std::deque<float>& samples,
-		    int required_count,
-		    double maximum_jitter_px)
+		bool isSampleWindowStable(const std::deque<float>& samples,
+		                          int required_count,
+		                          double maximum_jitter_px)
 		{
-			if(static_cast<int>(samples.size())
-			   < required_count)
+			if(static_cast<int>(samples.size()) < required_count)
 			{
 				return false;
 			}
 
 			const auto [minimum, maximum] =
-			    std::minmax_element(
-			        samples.begin(),
-			        samples.end());
+			    std::minmax_element(samples.begin(), samples.end());
 
-			return static_cast<double>(
-			           *maximum - *minimum)
-			       <= maximum_jitter_px;
+			return static_cast<double>(*maximum - *minimum)
+			    <= maximum_jitter_px;
 		}
 
 		// ── P0.5: 标定线判断纯函数 ──
 
-		bool requiresCalibrationLine(
-		    const TaskMode mode) noexcept
+		bool requiresCalibrationLine(const TaskMode mode) noexcept
 		{
-			return mode == TaskMode::Q3
-			    || mode == TaskMode::Q4
+			return mode == TaskMode::Q3 || mode == TaskMode::Q4
 			    || mode == TaskMode::Q5;
 		}
 
@@ -141,111 +127,71 @@ namespace etest::state
 		    const BallMeasurement& measurement,
 		    const BallNcnnConfig& config) noexcept
 		{
-			if(!measurement.valid
-			   || measurement.status != "OK")
+			if(!measurement.valid || measurement.status != "OK")
 			{
 				return false;
 			}
 
-			const float error_px =
-			    measurement.global_center.x
-			    - static_cast<float>(
-			        config.calibration_line_x);
+			const float error_px = measurement.global_center.x
+			    - static_cast<float>(config.calibration_line_x);
 
-			return std::abs(error_px)
-			    <= static_cast<float>(
+			return std::abs(error_px) <= static_cast<float>(
 			           config.calibration_line_tolerance_px);
 		}
 
 		// ── P0.6: 运行时标定叠加绘制 ──
 
 		void drawCalibrationOverlay(
-		    cv::Mat& frame,
-		    const TaskSession& task,
+		    cv::Mat& frame, const TaskSession& task,
 		    const BallNcnnConfig& config,
 		    const vision::VisionResult& vision_result)
 		{
 			if(frame.empty())
 				return;
 
-			const int line_x = std::clamp(
-			    config.calibration_line_x,
-			    0,
-			    frame.cols - 1);
+			const int line_x = std::clamp(config.calibration_line_x, 0,
+			                              frame.cols - 1);
 
-			const int tolerance =
-			    config.calibration_line_tolerance_px;
+			const int tolerance = config.calibration_line_tolerance_px;
 
-			const int left = std::clamp(
-			    line_x - tolerance,
-			    0,
-			    frame.cols - 1);
+			const int left =
+			    std::clamp(line_x - tolerance, 0, frame.cols - 1);
 
-			const int right = std::clamp(
-			    line_x + tolerance,
-			    0,
-			    frame.cols - 1);
+			const int right =
+			    std::clamp(line_x + tolerance, 0, frame.cols - 1);
 
-			cv::line(
-			    frame,
-			    {line_x, 0},
-			    {line_x, frame.rows - 1},
-			    {255, 170, 0},
-			    2);
+			cv::line(frame, {line_x, 0}, {line_x, frame.rows - 1},
+			         {255, 170, 0}, 2);
 
-			cv::line(
-			    frame,
-			    {left, 0},
-			    {left, frame.rows - 1},
-			    {180, 100, 0},
-			    1);
+			cv::line(frame, {left, 0}, {left, frame.rows - 1},
+			         {180, 100, 0}, 1);
 
-			cv::line(
-			    frame,
-			    {right, 0},
-			    {right, frame.rows - 1},
-			    {180, 100, 0},
-			    1);
+			cv::line(frame, {right, 0}, {right, frame.rows - 1},
+			         {180, 100, 0}, 1);
 
-			if(task.phase
-			   == ContestTaskPhase::CALIBRATING)
+			if(task.phase == ContestTaskPhase::CALIBRATING)
 			{
 				const float ball_x =
 				    static_cast<float>(vision_result.x);
 
-				const float error =
-				    ball_x - static_cast<float>(line_x);
+				const float error = ball_x - static_cast<float>(line_x);
 
-				const bool on_line =
-				    vision_result.valid
-				    && std::abs(error)
-				           <= static_cast<float>(tolerance);
+				const bool on_line = vision_result.valid
+				    && std::abs(error) <= static_cast<float>(tolerance);
 
-				const cv::Scalar color =
-				    on_line
+				const cv::Scalar color = on_line
 				    ? cv::Scalar(0, 255, 0)
 				    : cv::Scalar(0, 0, 255);
 
-				const std::string label =
-				    "CALIB XERR="
-				    + std::to_string(
-				        static_cast<int>(
-				            std::lround(error)))
+				const std::string label = "CALIB XERR="
+				    + std::to_string(static_cast<int>(
+				        std::lround(error)))
 				    + "px "
-				    + std::to_string(
-				        task.calibration_valid_frames)
-				    + "/"
-				    + std::to_string(
-				        config.calibration_frames);
+				    + std::to_string(task.calibration_valid_frames)
+				    + "/" + std::to_string(config.calibration_frames);
 
-				cv::putText(
-				    frame,
-				    label,
-				    {20, 60},
-				    cv::FONT_HERSHEY_SIMPLEX,
-				    0.7,
-				    color,
-				    2);
+				cv::putText(frame, label, {20, 60},
+				            cv::FONT_HERSHEY_SIMPLEX, 0.7, color, 2);
 			}
 		}
 
@@ -379,8 +325,9 @@ namespace etest::state
 					// POWEROFF → 退出程序
 					if(uart::protocol::isPoweroff(msg))
 					{
-						ETEST_LOG_INFO("SEARCH",
-						               "POWEROFF received from lower machine; shutting down");
+						ETEST_LOG_INFO(
+						    "SEARCH",
+						    "POWEROFF received from lower machine; shutting down");
 						ctx.exit_reason = ExitReason::NORMAL;
 						ctx.running = false;
 						break;
@@ -408,11 +355,9 @@ namespace etest::state
 
 						ETEST_LOG_INFO(
 						    "SEARCH",
-						    "received mission code: "
-						        + new_tag
+						    "received mission code: " + new_tag
 						        + " session_id="
-						        + std::to_string(
-						            ctx.task.session_id));
+						        + std::to_string(ctx.task.session_id));
 
 						// M0001: PREPARING
 						if(new_tag == "M0001")
@@ -420,12 +365,11 @@ namespace etest::state
 							ctx.task.enterPhase(
 							    ContestTaskPhase::PREPARING);
 							ctx.task.vision_enabled = false;
-							ctx.task.tracking_mode =
-							    TrackingMode::NONE;
+							ctx.task.tracking_mode = TrackingMode::NONE;
 							m0001_frame_received = false;
 
-							ETEST_LOG_INFO("SEARCH",
-							               "task M0001 (Q2): no vision");
+							ETEST_LOG_INFO(
+							    "SEARCH", "task M0001 (Q2): no vision");
 
 							// M0001 也发送 VSESSION 声明
 							ctx.uart.sendLine(
@@ -441,15 +385,13 @@ namespace etest::state
 							ctx.task.enterPhase(
 							    ContestTaskPhase::CALIBRATING);
 							ctx.task.vision_enabled = true;
-							ctx.task.tracking_mode =
-							    TrackingMode::FULL;
+							ctx.task.tracking_mode = TrackingMode::FULL;
 
 							const auto& bn =
 							    ctx.vision.getConfig().ball_ncnn;
 							ETEST_LOG_INFO(
 							    "SEARCH",
-							    "task "
-							        + new_tag
+							    "task " + new_tag
 							        + " → CALIBRATING, "
 							          "model=FULL "
 							        + std::to_string(
@@ -458,12 +400,10 @@ namespace etest::state
 							        + std::to_string(
 							            bn.full_input_height)
 							        + " (ROI "
-							        + std::to_string(
-							            bn.full_src_width)
+							        + std::to_string(bn.full_src_width)
 							        + "x"
-							        + std::to_string(
-							            bn.full_src_height)
-							        + " from 1280x640)");
+							        + std::to_string(bn.full_src_height)
+							        + " from 1280x720)");
 
 							// 发送 VSESSION 声明视觉会话
 							ctx.uart.sendLine(
@@ -604,10 +544,10 @@ namespace etest::state
 						ctx.task.vsession_confirmed = true;
 						ctx.task.session_start_time =
 						    std::chrono::steady_clock::now();
-						ETEST_LOG_INFO("SEARCH",
-						               "VSESSION confirmed: session="
-						                   + std::to_string(
-						                       ctx.task.session_id));
+						ETEST_LOG_INFO(
+						    "SEARCH",
+						    "VSESSION confirmed: session="
+						        + std::to_string(ctx.task.session_id));
 						continue;
 					}
 
@@ -626,8 +566,7 @@ namespace etest::state
 						ETEST_LOG_INFO("SEARCH",
 						               "DONE received: " + done->mode
 						                   + " result=" + done->result);
-						ctx.task.enterPhase(
-						    ContestTaskPhase::FINISHED);
+						ctx.task.enterPhase(ContestTaskPhase::FINISHED);
 						ctx.task.vision_enabled = false;
 						ctx.task.tracking_mode = TrackingMode::NONE;
 						ctx.task.measurement_valid = false;
@@ -818,15 +757,13 @@ namespace etest::state
 					    uart::protocol::makeContestStartLine(
 					        mode_name));
 					ctx.task.start_sent = true;
-					ctx.task.enterPhase(
-					    ContestTaskPhase::RUNNING);
+					ctx.task.enterPhase(ContestTaskPhase::RUNNING);
 					ctx.task.vision_enabled = false;
 					ctx.task.tracking_mode = TrackingMode::NONE;
-					ETEST_LOG_INFO(
-					    "SEARCH",
-					    "M0001: PREPARING → RUNNING, "
-					    "CONTESTSTART sent: "
-					        + std::string(mode_name));
+					ETEST_LOG_INFO("SEARCH",
+					               "M0001: PREPARING → RUNNING, "
+					               "CONTESTSTART sent: "
+					                   + std::string(mode_name));
 				}
 			}
 
@@ -838,16 +775,14 @@ namespace etest::state
 				    std::chrono::steady_clock::now();
 
 				// 标定阶段强制 FULL，RUNNING 阶段按 tracking_mode
-				TrackingMode effective_mode =
-				    ctx.task.tracking_mode;
+				TrackingMode effective_mode = ctx.task.tracking_mode;
 				if(ctx.task.phase == ContestTaskPhase::CALIBRATING)
 				{
 					effective_mode = TrackingMode::FULL;
 				}
 
-				auto measurement =
-				    ctx.vision.processBallNcnn(ctx.frame,
-				                               effective_mode);
+				auto measurement = ctx.vision.processBallNcnn(
+				    ctx.frame, effective_mode);
 				const auto vision_end =
 				    std::chrono::steady_clock::now();
 				const auto vision_us = std::chrono::duration_cast<
@@ -861,8 +796,7 @@ namespace etest::state
 				// 同步测量结果到 task session
 				ctx.task.last_confidence =
 				    static_cast<double>(measurement.confidence);
-				if(measurement.valid
-				   && measurement.status == "OK")
+				if(measurement.valid && measurement.status == "OK")
 				{
 					ctx.task.current_position_mm =
 					    measurement.position_0p1mm / 10.0;
@@ -881,9 +815,8 @@ namespace etest::state
 					}
 				}
 
-					// ── CENTER / FULL_REACQUIRE 切换（仅 Q4/Q5 RUNNING）──
-				if(ctx.task.phase
-				       == ContestTaskPhase::RUNNING
+				// ── CENTER / FULL_REACQUIRE 切换（仅 Q4/Q5 RUNNING）──
+				if(ctx.task.phase == ContestTaskPhase::RUNNING
 				   && (ctx.task.mode == TaskMode::Q4
 				       || ctx.task.mode == TaskMode::Q5))
 				{
@@ -897,77 +830,54 @@ namespace etest::state
 					        .rect;
 
 					const cv::Rect safe_center_roi =
-					    makeSafeRoi(
-					        center_roi, bn_cfg.edge_guard_px);
+					    makeSafeRoi(center_roi, bn_cfg.edge_guard_px);
 
 					const bool measurement_ok =
-					    measurement.valid
-					    && measurement.status == "OK";
+					    measurement.valid && measurement.status == "OK";
 
-					const bool ball_inside_safe_center =
-					    measurement_ok
-					    && containsPoint(
-					        safe_center_roi,
-					        measurement.global_center);
+					const bool ball_inside_safe_center = measurement_ok
+					    && containsPoint(safe_center_roi,
+					                     measurement.global_center);
 
-					if(ctx.task.tracking_mode
-					   == TrackingMode::CENTER)
+					if(ctx.task.tracking_mode == TrackingMode::CENTER)
 					{
 						const bool should_reacquire =
 						    !ball_inside_safe_center
 						    || ctx.task.lost_frames
-						           >= bn_cfg
-						               .lost_frames_to_reacquire;
+						        >= bn_cfg.lost_frames_to_reacquire;
 
 						if(should_reacquire)
 						{
 							ctx.task.tracking_mode =
 							    TrackingMode::FULL_REACQUIRE;
-							ctx.task.center_stable_frames =
-							    0;
-							ctx.vision
-							    .resetBallNcnnSession();
+							ctx.task.center_stable_frames = 0;
+							ctx.vision.resetBallNcnnSession();
 							ETEST_LOG_INFO(
 							    "SEARCH",
 							    "CENTER -> FULL_REACQUIRE: "
 							    "ball left center safe ROI"
 							    " global_center=("
-							        + std::to_string(
-							            static_cast<int>(
-							                measurement
-							                    .global_center
-							                    .x))
+							        + std::to_string(static_cast<int>(
+							            measurement.global_center.x))
 							        + ","
-							        + std::to_string(
-							            static_cast<int>(
-							                measurement
-							                    .global_center
-							                    .y))
+							        + std::to_string(static_cast<int>(
+							            measurement.global_center.y))
 							        + ") center_roi=("
-							        + std::to_string(
-							            center_roi.x)
+							        + std::to_string(center_roi.x) + ","
+							        + std::to_string(center_roi.y) + ","
+							        + std::to_string(center_roi.width)
 							        + ","
-							        + std::to_string(
-							            center_roi.y)
-							        + ","
-							        + std::to_string(
-							            center_roi.width)
-							        + ","
-							        + std::to_string(
-							            center_roi.height)
+							        + std::to_string(center_roi.height)
 							        + ") safe_roi=("
-							        + std::to_string(
-							            safe_center_roi.x)
+							        + std::to_string(safe_center_roi.x)
 							        + ","
-							        + std::to_string(
-							            safe_center_roi.y)
+							        + std::to_string(safe_center_roi.y)
 							        + ","
 							        + std::to_string(
 							            safe_center_roi.width)
 							        + ","
 							        + std::to_string(
-							            safe_center_roi
-							                .height)
+							            safe_center_roi.height)
 							        + ")");
 						}
 					}
@@ -979,15 +889,12 @@ namespace etest::state
 							++ctx.task.center_stable_frames;
 
 							if(ctx.task.center_stable_frames
-							   >= bn_cfg
-							          .stable_frames_to_center)
+							   >= bn_cfg.stable_frames_to_center)
 							{
 								ctx.task.tracking_mode =
 								    TrackingMode::CENTER;
-								ctx.task
-								    .center_stable_frames = 0;
-								ctx.vision
-								    .resetBallNcnnSession();
+								ctx.task.center_stable_frames = 0;
+								ctx.vision.resetBallNcnnSession();
 								ETEST_LOG_INFO(
 								    "SEARCH",
 								    "FULL_REACQUIRE -> CENTER: "
@@ -997,14 +904,12 @@ namespace etest::state
 								        + std::to_string(
 								            static_cast<int>(
 								                measurement
-								                    .global_center
-								                    .x))
+								                    .global_center.x))
 								        + ","
 								        + std::to_string(
 								            static_cast<int>(
 								                measurement
-								                    .global_center
-								                    .y))
+								                    .global_center.y))
 								        + ")");
 							}
 						}
@@ -1022,16 +927,13 @@ namespace etest::state
 				ctx.vision_result.position_0p1mm =
 				    measurement.position_0p1mm;
 				ctx.vision_result.x =
-				    static_cast<double>(
-				        measurement.global_center.x);
+				    static_cast<double>(measurement.global_center.x);
 				ctx.vision_result.y =
-				    static_cast<double>(
-				        measurement.global_center.y);
+				    static_cast<double>(measurement.global_center.y);
 			}
 
 			// ── 6) 限频发送任务输出 ──
-			if(isMissionActive(ctx.task)
-			   && ctx.task.vision_enabled
+			if(isMissionActive(ctx.task) && ctx.task.vision_enabled
 			   && ctx.task.vsession_confirmed)
 			{
 				const auto now = std::chrono::steady_clock::now();
@@ -1041,15 +943,13 @@ namespace etest::state
 				        .count();
 
 				if(ball_elapsed >= kBallSendPeriod.count()
-				   || ctx.task.phase
-				          == ContestTaskPhase::CALIBRATING)
+				   || ctx.task.phase == ContestTaskPhase::CALIBRATING)
 				{
 					std::string status;
 					int pos = 0;
 					float conf = 0.0F;
 
-					if(ctx.task.phase
-					       == ContestTaskPhase::CALIBRATING)
+					if(ctx.task.phase == ContestTaskPhase::CALIBRATING)
 					{
 						status = "CALIB";
 					}
@@ -1057,7 +957,8 @@ namespace etest::state
 					        && ctx.vision_result.valid)
 					{
 						status = "OK";
-						pos = ctx.vision_result.position_0p1mm;
+						pos = ctx.vision_result.position_0p1mm
+						    - ctx.task.zero_offset_0p1mm;
 						conf = static_cast<float>(
 						    ctx.vision_result.confidence);
 					}
@@ -1075,8 +976,7 @@ namespace etest::state
 					if(status == "OK")
 					{
 						ctx.task.measurement_valid = true;
-						ctx.task.current_position_mm =
-						    pos / 10.0;
+						ctx.task.current_position_mm = pos / 10.0;
 						ctx.task.last_confidence = conf;
 					}
 
@@ -1084,10 +984,9 @@ namespace etest::state
 					std::uint32_t capture_ms = 0;
 					std::uint32_t age_ms = 0;
 					if(has_new_frame
-					   && ctx.task.session_start_time
-					          .time_since_epoch()
-					          .count()
-					      > 0)
+					   && ctx.task.session_start_time.time_since_epoch()
+					           .count()
+					       > 0)
 					{
 						capture_ms = static_cast<std::uint32_t>(
 						    std::chrono::duration_cast<
@@ -1103,8 +1002,8 @@ namespace etest::state
 					}
 
 					auto line = uart::protocol::makeBallLineV5Simple(
-					    ctx.task.session_id, ctx.task.seq++,
-					    capture_ms, age_ms, pos, conf, status);
+					    ctx.task.session_id, ctx.task.seq++, capture_ms,
+					    age_ms, pos, conf, status);
 					if(line.has_value())
 					{
 						ctx.uart.sendLine(*line);
@@ -1113,8 +1012,7 @@ namespace etest::state
 				}
 
 				// 标定中积累有效帧（P0.5: 新逻辑，使用竖直标定线）
-				if(ctx.task.phase
-				       == ContestTaskPhase::CALIBRATING
+				if(ctx.task.phase == ContestTaskPhase::CALIBRATING
 				   && has_new_frame)
 				{
 					const auto& bn_cfg =
@@ -1137,8 +1035,7 @@ namespace etest::state
 					{
 						// Q6：保持任意稳定位置作为目标。
 						ctx.task.calibration_x_samples.push_back(
-						    static_cast<float>(
-						        ctx.vision_result.x));
+						    static_cast<float>(ctx.vision_result.x));
 
 						trimCalibrationSamples(
 						    ctx.task.calibration_x_samples,
@@ -1156,106 +1053,75 @@ namespace etest::state
 						{
 							ctx.task.calibration_valid_frames =
 							    static_cast<int>(
-							        ctx.task
-							            .calibration_x_samples
+							        ctx.task.calibration_x_samples
 							            .size());
 						}
 					}
-					else if(requiresCalibrationLine(
-					            ctx.task.mode))
+					else if(requiresCalibrationLine(ctx.task.mode))
 					{
 						// Q3/Q4/Q5: 竖直标定线判断。
 						// 从 ctx.vision_result 重建
 						// BallMeasurement
 						// 的 global_center。
 						BallMeasurement meas;
-						meas.valid =
-						    ctx.vision_result.valid;
+						meas.valid = ctx.vision_result.valid;
 						meas.status =
-						    ctx.vision_result.valid
-						    ? "OK"
-						    : "LOST";
+						    ctx.vision_result.valid ? "OK" : "LOST";
 						meas.global_center.x =
-						    static_cast<float>(
-						        ctx.vision_result.x);
+						    static_cast<float>(ctx.vision_result.x);
 						meas.global_center.y =
-						    static_cast<float>(
-						        ctx.vision_result.y);
+						    static_cast<float>(ctx.vision_result.y);
 
-						if(isBallOnCalibrationLine(
-						       meas,
-						       bn_cfg))
+						if(isBallOnCalibrationLine(meas, bn_cfg))
 						{
-							ctx.task
-							    .calibration_x_samples
-							    .push_back(
-							        static_cast<float>(
-							            ctx.vision_result
-							                .x));
+							ctx.task.calibration_x_samples.push_back(
+							    static_cast<float>(
+							        ctx.vision_result.x));
 
 							trimCalibrationSamples(
-							    ctx.task
-							        .calibration_x_samples,
-							    bn_cfg
-							        .calibration_frames);
+							    ctx.task.calibration_x_samples,
+							    bn_cfg.calibration_frames);
 
 							if(isSampleWindowStable(
-							       ctx.task
-							           .calibration_x_samples,
-							       bn_cfg
-							           .calibration_frames,
-							       bn_cfg
-							           .calibration_max_jitter_px))
+							       ctx.task.calibration_x_samples,
+							       bn_cfg.calibration_frames,
+							       bn_cfg.calibration_max_jitter_px))
 							{
-								ctx.task
-								    .calibration_valid_frames =
-								    bn_cfg
-								        .calibration_frames;
+								ctx.task.calibration_valid_frames =
+								    bn_cfg.calibration_frames;
 							}
 							else
 							{
-								ctx.task
-								    .calibration_valid_frames =
+								ctx.task.calibration_valid_frames =
 								    static_cast<int>(
-								        ctx.task
-								            .calibration_x_samples
+								        ctx.task.calibration_x_samples
 								            .size());
 							}
 
-							ctx.task
-							    .calibration_line_error_px =
+							ctx.task.calibration_line_error_px =
 							    meas.global_center.x
 							    - static_cast<float>(
-							        bn_cfg
-							            .calibration_line_x);
-							ctx.task
-							    .calibration_on_line = true;
+							        bn_cfg.calibration_line_x);
+							ctx.task.calibration_on_line = true;
 						}
 						else
 						{
-							ctx.task
-							    .calibration_valid_frames = 0;
-							ctx.task
-							    .calibration_x_samples
-							    .clear();
-							ctx.task
-							    .calibration_line_error_px =
+							ctx.task.calibration_valid_frames = 0;
+							ctx.task.calibration_x_samples.clear();
+							ctx.task.calibration_line_error_px =
 							    ctx.vision_result.valid
 							    ? static_cast<float>(
 							          ctx.vision_result.x)
-							          - static_cast<float>(
-							              bn_cfg
-							                  .calibration_line_x)
+							        - static_cast<float>(
+							            bn_cfg.calibration_line_x)
 							    : 9999.0F;
-							ctx.task
-							    .calibration_on_line = false;
+							ctx.task.calibration_on_line = false;
 						}
 					}
 				}
 
 				// 标定完成 → 发送 START（M0002～M0005）
-				if(ctx.task.phase
-				       == ContestTaskPhase::CALIBRATING
+				if(ctx.task.phase == ContestTaskPhase::CALIBRATING
 				   && !ctx.task.start_sent
 				   && ctx.task.vsession_confirmed
 				   && ctx.task.calibration_valid_frames
@@ -1266,21 +1132,27 @@ namespace etest::state
 					if(ctx.task.mode == TaskMode::Q6)
 					{
 						// M0005: 锁定当前绝对位置
-						target_0p1mm =
-						    ctx.vision_result.position_0p1mm;
+						target_0p1mm = ctx.vision_result.position_0p1mm;
 						ctx.task.target_position_mm =
 						    target_0p1mm / 10.0;
 					}
+
+					// 捕获标定位置的绝对物理坐标作为零位偏移，后续上报位置均减去此值
+					ctx.task.zero_offset_0p1mm =
+					    ctx.vision_result.position_0p1mm;
+					ETEST_LOG_INFO(
+					    "SEARCH",
+					    "zero offset captured: "
+					        + std::to_string(ctx.task.zero_offset_0p1mm)
+					        + " (0.1mm), subsequent positions relative to this");
 
 					const char* mode_name =
 					    TaskSession::modeName(ctx.task.mode);
 					if(ctx.task.mode == TaskMode::Q6)
 					{
 						// M0005 使用带 target 的 START
-						auto start_line =
-						    uart::protocol::makeStartLine(
-						        ctx.task.command_tag,
-						        target_0p1mm);
+						auto start_line = uart::protocol::makeStartLine(
+						    ctx.task.command_tag, target_0p1mm);
 						ctx.uart.sendLine(start_line);
 					}
 					else
@@ -1290,66 +1162,56 @@ namespace etest::state
 						        mode_name));
 					}
 					ctx.task.start_sent = true;
-					ctx.task.enterPhase(
-					    ContestTaskPhase::RUNNING);
+					ctx.task.enterPhase(ContestTaskPhase::RUNNING);
 
-				const auto& bn_cfg =
-				    ctx.vision.getConfig().ball_ncnn;
+					const auto& bn_cfg =
+					    ctx.vision.getConfig().ball_ncnn;
 
-				if(ctx.task.mode == TaskMode::Q4
-				   || ctx.task.mode == TaskMode::Q5)
-				{
-					ctx.task.tracking_mode =
-					    TrackingMode::CENTER;
-					ETEST_LOG_INFO(
-					    "SEARCH",
-					    "switching to CENTER model "
-					        + std::to_string(
-					            bn_cfg.center_input_width)
-					        + "×"
-					        + std::to_string(
-					            bn_cfg.center_input_height));
-				}
+					if(ctx.task.mode == TaskMode::Q4
+					   || ctx.task.mode == TaskMode::Q5)
+					{
+						ctx.task.tracking_mode = TrackingMode::CENTER;
+						ETEST_LOG_INFO(
+						    "SEARCH",
+						    "switching to CENTER model "
+						        + std::to_string(
+						            bn_cfg.center_input_width)
+						        + "×"
+						        + std::to_string(
+						            bn_cfg.center_input_height));
+					}
 
-				ctx.vision_result.calibrated = true;
+					ctx.vision_result.calibrated = true;
 
-				std::string tracking_label = "FULL";
-				if(ctx.task.tracking_mode
-				   == TrackingMode::CENTER)
-				{
-					tracking_label = "CENTER";
-				}
+					std::string tracking_label = "FULL";
+					if(ctx.task.tracking_mode == TrackingMode::CENTER)
+					{
+						tracking_label = "CENTER";
+					}
 
-				ETEST_LOG_INFO(
-				    "SEARCH",
-				    "CALIBRATING → RUNNING, "
-				    "START sent: "
-				        + std::string(mode_name)
-				        + " tracking="
-				        + tracking_label
-				        + " target="
-				        + std::to_string(target_0p1mm));
+					ETEST_LOG_INFO("SEARCH",
+					               "CALIBRATING → RUNNING, "
+					               "START sent: "
+					                   + std::string(mode_name)
+					                   + " tracking=" + tracking_label
+					                   + " target="
+					                   + std::to_string(target_0p1mm));
 				}
 
 				// 标定超时
-				if(ctx.task.phase
-				       == ContestTaskPhase::CALIBRATING
+				if(ctx.task.phase == ContestTaskPhase::CALIBRATING
 				   && !ctx.task.start_sent)
 				{
-					const auto now =
-					    std::chrono::steady_clock::now();
-					const auto elapsed =
-					    std::chrono::duration_cast<
-					        std::chrono::milliseconds>(
-					        now
-					        - ctx.task.calibration_start_time);
+					const auto now = std::chrono::steady_clock::now();
+					const auto elapsed = std::chrono::duration_cast<
+					    std::chrono::milliseconds>(
+					    now - ctx.task.calibration_start_time);
 					if(elapsed.count()
 					   > ctx.vision.getConfig()
-					          .ball_ncnn.calibration_timeout_ms)
+					         .ball_ncnn.calibration_timeout_ms)
 					{
 						ETEST_LOG_WARN(
-						    "SEARCH",
-						    "calibration timeout, resetting");
+						    "SEARCH", "calibration timeout, resetting");
 						ctx.task.calibration_valid_frames = 0;
 						ctx.task.calibration_start_time = now;
 					}
@@ -1369,8 +1231,7 @@ namespace etest::state
 				    std::chrono::milliseconds>(now - last_perf_log);
 				if(perf_elapsed >= perf_interval)
 				{
-					const auto avg_vision_ms =
-					    processed_frames > 0
+					const auto avg_vision_ms = processed_frames > 0
 					    ? (static_cast<double>(perf_vision_total_us)
 					       / processed_frames / 1000.0)
 					    : 0.0;
@@ -1380,8 +1241,7 @@ namespace etest::state
 					    "vision_ms="
 					        + std::to_string(
 					            static_cast<int>(avg_vision_ms))
-					        + " loops="
-					        + std::to_string(loop_calls)
+					        + " loops=" + std::to_string(loop_calls)
 					        + " received="
 					        + std::to_string(received_frames)
 					        + " processed="
@@ -1482,11 +1342,9 @@ namespace etest::state
 				cv::Mat display = ctx.frame.clone();
 				ctx.vision.drawDebugInfo(display, ctx.vision_result);
 
-				drawCalibrationOverlay(
-				    display,
-				    ctx.task,
-				    ctx.vision.getConfig().ball_ncnn,
-				    ctx.vision_result);
+				drawCalibrationOverlay(display, ctx.task,
+				                       ctx.vision.getConfig().ball_ncnn,
+				                       ctx.vision_result);
 
 				if(!preview_open)
 				{

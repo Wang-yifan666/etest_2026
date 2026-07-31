@@ -25,8 +25,8 @@ namespace
 	void test_full_roi_centered()
 	{
 		cv::Size frame(1280, 640);
-		cv::Rect roi =
-		    etest::vision::roi_utils::makeFullRoi(frame, 1280, 320, 320);
+		cv::Rect roi = etest::vision::roi_utils::makeFullRoi(
+		    frame, 1280, 320, 320);
 		check("full roi x=0", roi.x == 0);
 		check("full roi width=1280", roi.width == 1280);
 		check("full roi height=320", roi.height == 320);
@@ -42,8 +42,8 @@ namespace
 	{
 		cv::Size frame(1280, 640);
 		// pipe_center_y=100 → y = 100-160 = -60 → clamp to 0
-		cv::Rect roi =
-		    etest::vision::roi_utils::makeFullRoi(frame, 1280, 320, 100);
+		cv::Rect roi = etest::vision::roi_utils::makeFullRoi(
+		    frame, 1280, 320, 100);
 		check("full roi top edge y=0", roi.y == 0);
 		check("full roi top edge within bounds",
 		      roi.y >= 0 && roi.y + roi.height <= frame.height);
@@ -54,8 +54,8 @@ namespace
 		cv::Size frame(1280, 640);
 		// pipe_center_y=600 → y = 600-160 = 440, but 440+320=760 > 640
 		// → clamp to 640-320=320
-		cv::Rect roi =
-		    etest::vision::roi_utils::makeFullRoi(frame, 1280, 320, 600);
+		cv::Rect roi = etest::vision::roi_utils::makeFullRoi(
+		    frame, 1280, 320, 600);
 		check("full roi bottom edge y=320", roi.y == 320);
 		check("full roi bottom edge within bounds",
 		      roi.y >= 0 && roi.y + roi.height <= frame.height);
@@ -133,8 +133,7 @@ namespace
 		cv::Rect center_roi(416, 160, 448, 320);
 		cv::Point2f local(224.0F, 160.0F);
 		cv::Point2f global =
-		    etest::vision::roi_utils::localToGlobal(
-		        local, center_roi);
+		    etest::vision::roi_utils::localToGlobal(local, center_roi);
 
 		check("localToGlobal center x=640",
 		      std::abs(global.x - 640.0F) < 1e-6F);

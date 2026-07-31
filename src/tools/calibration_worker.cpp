@@ -65,13 +65,11 @@ int main(int argc, char** argv)
 {
 	if(argc != 2)
 	{
-		std::cerr
-		    << "Usage: etest_calibration_worker <config_dir>\n";
+		std::cerr << "Usage: etest_calibration_worker <config_dir>\n";
 		return EXIT_FAILURE;
 	}
 
-	const auto load_result =
-	    etest::loadAppConfigFromDir(argv[1]);
+	const auto load_result = etest::loadAppConfigFromDir(argv[1]);
 
 	if(!load_result.file_loaded)
 	{
@@ -92,28 +90,25 @@ int main(int argc, char** argv)
 	}
 
 	// 向 stderr 输出当前使用的模型配置
-	std::cerr
-	    << "[worker] 模型已加载\n"
-	    << "[worker]   FULL model : "
-	    << bn.full_input_width << "×" << bn.full_input_height
-	    << "  (ROI " << bn.full_src_width << "×"
-	    << bn.full_src_height << "; frame "
-	    << app_config.camera.width << "×"
-	    << app_config.camera.height << ")\n"
-	    << "[worker]   CENTER model: "
-	    << bn.center_input_width << "×" << bn.center_input_height
-	    << "  (ROI " << bn.center_src_width << "×"
-	    << bn.center_src_height << "; frame "
-	    << app_config.camera.width << "×"
-	    << app_config.camera.height << ")\n"
-	    << "[worker]   threads=" << bn.num_threads
-	    << " fp16_storage=" << (bn.use_fp16_storage ? "true" : "false")
-	    << " fp16_arithmetic="
-	    << (bn.use_fp16_arithmetic ? "true" : "false")
-	    << "\n"
-	    << "[worker]   confidence_min=" << bn.minimum_confidence
-	    << "\n"
-	    << std::flush;
+	std::cerr << "[worker] 模型已加载\n"
+	          << "[worker]   FULL model : " << bn.full_input_width
+	          << "×" << bn.full_input_height << "  (ROI "
+	          << bn.full_src_width << "×" << bn.full_src_height
+	          << "; frame " << app_config.camera.width << "×"
+	          << app_config.camera.height << ")\n"
+	          << "[worker]   CENTER model: " << bn.center_input_width
+	          << "×" << bn.center_input_height << "  (ROI "
+	          << bn.center_src_width << "×" << bn.center_src_height
+	          << "; frame " << app_config.camera.width << "×"
+	          << app_config.camera.height << ")\n"
+	          << "[worker]   threads=" << bn.num_threads
+	          << " fp16_storage="
+	          << (bn.use_fp16_storage ? "true" : "false")
+	          << " fp16_arithmetic="
+	          << (bn.use_fp16_arithmetic ? "true" : "false") << "\n"
+	          << "[worker]   confidence_min=" << bn.minimum_confidence
+	          << "\n"
+	          << std::flush;
 
 	// ── V2 握手 ──
 	std::string line;
@@ -121,8 +116,7 @@ int main(int argc, char** argv)
 
 	if(line != "HELLO\t2")
 	{
-		std::cout << "ERROR\t协议版本不匹配，需要 V2\n"
-		          << std::flush;
+		std::cout << "ERROR\t协议版本不匹配，需要 V2\n" << std::flush;
 		return EXIT_FAILURE;
 	}
 
@@ -154,8 +148,7 @@ int main(int argc, char** argv)
 		// INFER  请求ID  图片路径  FULL/CENTER
 		if(parts.size() != 4 || parts[0] != "INFER")
 		{
-			std::cout << "RESULT\t0\tERROR\t非法命令\n"
-			          << std::flush;
+			std::cout << "RESULT\t0\tERROR\t非法命令\n" << std::flush;
 			continue;
 		}
 
@@ -169,56 +162,46 @@ int main(int argc, char** argv)
 			last_mode = mode_str;
 			if(last_mode == "FULL")
 			{
-				std::cerr
-				    << "[worker] mode=FULL ("
-				    << bn.full_input_width << "×"
-				    << bn.full_input_height << ")\n"
-				    << std::flush;
+				std::cerr << "[worker] mode=FULL ("
+				          << bn.full_input_width << "×"
+				          << bn.full_input_height << ")\n"
+				          << std::flush;
 			}
 			else if(last_mode == "CENTER")
 			{
-				std::cerr
-				    << "[worker] mode=CENTER ("
-				    << bn.center_input_width << "×"
-				    << bn.center_input_height << ")\n"
-				    << std::flush;
+				std::cerr << "[worker] mode=CENTER ("
+				          << bn.center_input_width << "×"
+				          << bn.center_input_height << ")\n"
+				          << std::flush;
 			}
 		}
 
-		cv::Mat frame =
-		    cv::imread(image_path, cv::IMREAD_COLOR);
+		cv::Mat frame = cv::imread(image_path, cv::IMREAD_COLOR);
 
 		if(frame.empty())
 		{
-			std::cout
-			    << "RESULT\t" << request_id
-			    << "\tERROR\t无法读取图片\n"
-			    << std::flush;
+			std::cout << "RESULT\t" << request_id
+			          << "\tERROR\t无法读取图片\n"
+			          << std::flush;
 			continue;
 		}
 
-		const auto measurement = manager.process(
-		    frame,
-		    parseMode(mode_str));
+		const auto measurement =
+		    manager.process(frame, parseMode(mode_str));
 
 		if(!measurement.valid)
 		{
-			std::cout
-			    << "RESULT\t" << request_id
-			    << "\tLOST\n"
-			    << std::flush;
+			std::cout << "RESULT\t" << request_id << "\tLOST\n"
+			          << std::flush;
 			continue;
 		}
 
-		std::cout
-		    << std::fixed
-		    << std::setprecision(3)
-		    << "RESULT\t" << request_id << "\tOK\t"
-		    << measurement.global_center.x << "\t"
-		    << measurement.global_center.y << "\t"
-		    << measurement.confidence
-		    << "\n"
-		    << std::flush;
+		std::cout << std::fixed << std::setprecision(3) << "RESULT\t"
+		          << request_id << "\tOK\t"
+		          << measurement.global_center.x << "\t"
+		          << measurement.global_center.y << "\t"
+		          << measurement.confidence << "\n"
+		          << std::flush;
 	}
 
 	return EXIT_SUCCESS;

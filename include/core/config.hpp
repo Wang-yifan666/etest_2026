@@ -102,7 +102,7 @@ namespace etest
 	{
 		std::string source = "/dev/video0";
 		int width = 1280;
-		int height = 640;
+		int height = 720;
 		int fps = 30;
 		std::string fourcc = "MJPG";
 		bool loop_video = false;
@@ -187,18 +187,18 @@ namespace etest
 		// "topleft"      = 直接使用 full_roi_*/center_roi_* 左上角坐标
 		std::string roi_location_mode = "center_point";
 
-		// ── Full/Center ROI 左上角坐标（仅在 topleft 模式使用，1280×640 原图坐标）──
+		// ── Full/Center ROI 左上角坐标（仅在 topleft 模式使用，1280×720 原图坐标）──
 		int full_roi_x = 0;
 		int full_roi_y = 160;
 		int center_roi_x = 416;
 		int center_roi_y = 160;
 
 		// ── 中心线 y 坐标（水平参考线，贯穿全图宽度）──
-		int center_line_y = 320;
+		int center_line_y = 360;
 
 		// ── 物理中心 O（全局像素坐标，center_point 模式使用）──
 		int pipe_center_x = 640;
-		int pipe_center_y = 320;
+		int pipe_center_y = 360;
 
 		// ── 跟踪阈值 ──
 		int edge_guard_px = 24;
@@ -626,7 +626,8 @@ namespace etest
 		std::string class_names_path = "model/coco.names";
 
 		// ── NCNN 模型路径（仅 yolo_backend = "ncnn"）──
-		std::string ncnn_param_path = "model/ncnn_640x640/best_640x640_fp32.ncnn.param";
+		std::string ncnn_param_path =
+		    "model/ncnn_640x640/best_640x640_fp32.ncnn.param";
 
 		double nn_confidence_threshold = 0.5;
 		double nn_nms_threshold = 0.4;

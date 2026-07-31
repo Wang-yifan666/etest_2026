@@ -95,7 +95,7 @@ namespace etest::vision
 					return false;
 				}
 
-					// ── 预处理 ──
+				// ── 预处理 ──
 				const int source_width = frame.cols;
 				const int source_height = frame.rows;
 
@@ -110,10 +110,10 @@ namespace etest::vision
 					    static_cast<float>(config_.input_height)
 					        / static_cast<float>(source_height));
 
-					const int resized_width = std::max(
-					    1,
-					    static_cast<int>(
-					        std::round(source_width * scale)));
+					const int resized_width =
+					    std::max(1,
+					             static_cast<int>(
+					                 std::round(source_width * scale)));
 
 					const int resized_height = std::max(
 					    1,
@@ -122,20 +122,17 @@ namespace etest::vision
 
 					cv::Mat resized;
 					cv::resize(frame, resized,
-					           cv::Size(resized_width,
-					                    resized_height));
+					           cv::Size(resized_width, resized_height));
 
 					const int padding_left =
 					    (config_.input_width - resized_width) / 2;
 
 					const int padding_top =
-					    (config_.input_height - resized_height)
-					    / 2;
+					    (config_.input_height - resized_height) / 2;
 
 					const cv::Scalar gray(114, 114, 114);
 					cv::copyMakeBorder(
-					    resized, blob,
-					    padding_top,
+					    resized, blob, padding_top,
 					    config_.input_height - resized_height
 					        - padding_top,
 					    padding_left,
@@ -150,21 +147,15 @@ namespace etest::vision
 					cv::dnn::blobFromImage(rgb, blob);
 
 					// 记录变换参数
-					output.transform.mode =
-					    ResizeMode::LETTERBOX;
-					output.transform.source_width =
-					    source_width;
-					output.transform.source_height =
-					    source_height;
-					output.transform.input_width =
-					    config_.input_width;
+					output.transform.mode = ResizeMode::LETTERBOX;
+					output.transform.source_width = source_width;
+					output.transform.source_height = source_height;
+					output.transform.input_width = config_.input_width;
 					output.transform.input_height =
 					    config_.input_height;
 					output.transform.uniform_scale = scale;
-					output.transform.padding_left =
-					    padding_left;
-					output.transform.padding_top =
-					    padding_top;
+					output.transform.padding_left = padding_left;
+					output.transform.padding_top = padding_top;
 				}
 				else
 				{
@@ -174,28 +165,22 @@ namespace etest::vision
 					    cv::Size(config_.input_width,
 					             config_.input_height),
 					    cv::Scalar(),
-					    true,  // BGR → RGB
-					    false  // 不裁剪
+					    true, // BGR → RGB
+					    false // 不裁剪
 					);
 
 					// 记录变换参数
-					output.transform.mode =
-					    ResizeMode::STRETCH;
-					output.transform.source_width =
-					    source_width;
-					output.transform.source_height =
-					    source_height;
-					output.transform.input_width =
-					    config_.input_width;
+					output.transform.mode = ResizeMode::STRETCH;
+					output.transform.source_width = source_width;
+					output.transform.source_height = source_height;
+					output.transform.input_width = config_.input_width;
 					output.transform.input_height =
 					    config_.input_height;
 					output.transform.scale_x =
-					    static_cast<float>(
-					        config_.input_width)
+					    static_cast<float>(config_.input_width)
 					    / static_cast<float>(source_width);
 					output.transform.scale_y =
-					    static_cast<float>(
-					        config_.input_height)
+					    static_cast<float>(config_.input_height)
 					    / static_cast<float>(source_height);
 				}
 

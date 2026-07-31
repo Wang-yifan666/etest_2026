@@ -832,13 +832,13 @@ namespace
 		    "vision.ball_ncnn.edge_guard_px",
 		    "vision.ball_ncnn.lost_frames_to_reacquire",
 		    "vision.ball_ncnn.stable_frames_to_center",
-	    "vision.ball_ncnn.calibration_line_x",
-	    "vision.ball_ncnn.calibration_line_tolerance_px",
-	    "vision.ball_ncnn.calibration_max_jitter_px",
-	    "vision.ball_ncnn.calibration_frames",
-	    "vision.ball_ncnn.calibration_timeout_ms",
-	    "vision.ball_ncnn.initial_center_limit_mm",
-	    "vision.ball_ncnn.minimum_confidence",
+		    "vision.ball_ncnn.calibration_line_x",
+		    "vision.ball_ncnn.calibration_line_tolerance_px",
+		    "vision.ball_ncnn.calibration_max_jitter_px",
+		    "vision.ball_ncnn.calibration_frames",
+		    "vision.ball_ncnn.calibration_timeout_ms",
+		    "vision.ball_ncnn.initial_center_limit_mm",
+		    "vision.ball_ncnn.minimum_confidence",
 		    "vision.ball_ncnn.num_threads",
 		    "vision.ball_ncnn.use_fp16_storage",
 		    "vision.ball_ncnn.use_fp16_arithmetic",
@@ -991,9 +991,8 @@ namespace
 		           &config.camera.source_playback_fps);
 
 		config.stream.enabled =
-		    getBool(raw_config, "stream.enabled",
-		            config.stream.enabled, result,
-		            &config.stream.source_enabled);
+		    getBool(raw_config, "stream.enabled", config.stream.enabled,
+		            result, &config.stream.source_enabled);
 
 		config.stream.host =
 		    getString(raw_config, "stream.host", config.stream.host,
@@ -1524,8 +1523,9 @@ namespace
 		{
 			auto& bn = config.vision.ball_ncnn;
 
-			bn.enabled = getBool(raw_config, "vision.ball_ncnn.enabled",
-			                     bn.enabled, result, &bn.source_enabled);
+			bn.enabled =
+			    getBool(raw_config, "vision.ball_ncnn.enabled",
+			            bn.enabled, result, &bn.source_enabled);
 
 			bn.full_model_param = getString(
 			    raw_config, "vision.ball_ncnn.full_model_param",
@@ -1547,17 +1547,15 @@ namespace
 			           bn.full_input_height, 32, 1920, result,
 			           &bn.source_full_input_height);
 
-			bn.center_input_width =
-			    getInt(raw_config,
-			           "vision.ball_ncnn.center_input_width",
-			           bn.center_input_width, 32, 1920, result,
-			           &bn.source_center_input_width);
+			bn.center_input_width = getInt(
+			    raw_config, "vision.ball_ncnn.center_input_width",
+			    bn.center_input_width, 32, 1920, result,
+			    &bn.source_center_input_width);
 
-			bn.center_input_height =
-			    getInt(raw_config,
-			           "vision.ball_ncnn.center_input_height",
-			           bn.center_input_height, 32, 1920, result,
-			           &bn.source_center_input_height);
+			bn.center_input_height = getInt(
+			    raw_config, "vision.ball_ncnn.center_input_height",
+			    bn.center_input_height, 32, 1920, result,
+			    &bn.source_center_input_height);
 
 			bn.full_src_width =
 			    getInt(raw_config, "vision.ball_ncnn.full_src_width",
@@ -1596,29 +1594,27 @@ namespace
 			// ── Full/Center ROI 左上角坐标 ──
 			bn.full_roi_x = getInt(
 			    raw_config, "vision.ball_ncnn.full_roi_x",
-			    bn.full_roi_x, 0, 4096, result,
-			    &bn.source_full_roi_x);
+			    bn.full_roi_x, 0, 4096, result, &bn.source_full_roi_x);
 
 			bn.full_roi_y = getInt(
 			    raw_config, "vision.ball_ncnn.full_roi_y",
-			    bn.full_roi_y, 0, 2160, result,
-			    &bn.source_full_roi_y);
+			    bn.full_roi_y, 0, 2160, result, &bn.source_full_roi_y);
 
-			bn.center_roi_x = getInt(
-			    raw_config, "vision.ball_ncnn.center_roi_x",
-			    bn.center_roi_x, 0, 4096, result,
-			    &bn.source_center_roi_x);
+			bn.center_roi_x =
+			    getInt(raw_config, "vision.ball_ncnn.center_roi_x",
+			           bn.center_roi_x, 0, 4096, result,
+			           &bn.source_center_roi_x);
 
-			bn.center_roi_y = getInt(
-			    raw_config, "vision.ball_ncnn.center_roi_y",
-			    bn.center_roi_y, 0, 2160, result,
-			    &bn.source_center_roi_y);
+			bn.center_roi_y =
+			    getInt(raw_config, "vision.ball_ncnn.center_roi_y",
+			           bn.center_roi_y, 0, 2160, result,
+			           &bn.source_center_roi_y);
 
 			// ── 中心线 ──
-			bn.center_line_y = getInt(
-			    raw_config, "vision.ball_ncnn.center_line_y",
-			    bn.center_line_y, 0, 2160, result,
-			    &bn.source_center_line_y);
+			bn.center_line_y =
+			    getInt(raw_config, "vision.ball_ncnn.center_line_y",
+			           bn.center_line_y, 0, 2160, result,
+			           &bn.source_center_line_y);
 
 			bn.pipe_center_x =
 			    getInt(raw_config, "vision.ball_ncnn.pipe_center_x",
@@ -1635,24 +1631,21 @@ namespace
 			           bn.edge_guard_px, 0, 200, result,
 			           &bn.source_edge_guard_px);
 
-			bn.lost_frames_to_reacquire =
-			    getInt(raw_config,
-			           "vision.ball_ncnn.lost_frames_to_reacquire",
-			           bn.lost_frames_to_reacquire, 1, 60, result,
-			           &bn.source_lost_frames_to_reacquire);
+			bn.lost_frames_to_reacquire = getInt(
+			    raw_config, "vision.ball_ncnn.lost_frames_to_reacquire",
+			    bn.lost_frames_to_reacquire, 1, 60, result,
+			    &bn.source_lost_frames_to_reacquire);
 
-			bn.stable_frames_to_center =
-			    getInt(raw_config,
-			           "vision.ball_ncnn.stable_frames_to_center",
-			           bn.stable_frames_to_center, 1, 60, result,
-			           &bn.source_stable_frames_to_center);
+			bn.stable_frames_to_center = getInt(
+			    raw_config, "vision.ball_ncnn.stable_frames_to_center",
+			    bn.stable_frames_to_center, 1, 60, result,
+			    &bn.source_stable_frames_to_center);
 
 			// ── Q3～Q5 启动标定线 ──
-			bn.calibration_line_x =
-			    getInt(raw_config,
-			           "vision.ball_ncnn.calibration_line_x",
-			           bn.calibration_line_x, 0, 4096, result,
-			           &bn.source_calibration_line_x);
+			bn.calibration_line_x = getInt(
+			    raw_config, "vision.ball_ncnn.calibration_line_x",
+			    bn.calibration_line_x, 0, 4096, result,
+			    &bn.source_calibration_line_x);
 
 			bn.calibration_line_tolerance_px =
 			    getInt(raw_config,
@@ -1666,53 +1659,46 @@ namespace
 			              bn.calibration_max_jitter_px, 0.0, 100.0,
 			              result, &bn.source_calibration_max_jitter_px);
 
-			bn.calibration_frames =
-			    getInt(raw_config,
-			           "vision.ball_ncnn.calibration_frames",
-			           bn.calibration_frames, 1, 60, result,
-			           &bn.source_calibration_frames);
+			bn.calibration_frames = getInt(
+			    raw_config, "vision.ball_ncnn.calibration_frames",
+			    bn.calibration_frames, 1, 60, result,
+			    &bn.source_calibration_frames);
 
-			bn.calibration_timeout_ms =
-			    getInt(raw_config,
-			           "vision.ball_ncnn.calibration_timeout_ms",
-			           bn.calibration_timeout_ms, 100, 10000, result,
-			           &bn.source_calibration_timeout_ms);
+			bn.calibration_timeout_ms = getInt(
+			    raw_config, "vision.ball_ncnn.calibration_timeout_ms",
+			    bn.calibration_timeout_ms, 100, 10000, result,
+			    &bn.source_calibration_timeout_ms);
 
-			bn.initial_center_limit_mm =
-			    getDouble(raw_config,
-			              "vision.ball_ncnn.initial_center_limit_mm",
-			              bn.initial_center_limit_mm, 0.0, 100.0,
-			              result, &bn.source_initial_center_limit_mm);
+			bn.initial_center_limit_mm = getDouble(
+			    raw_config, "vision.ball_ncnn.initial_center_limit_mm",
+			    bn.initial_center_limit_mm, 0.0, 100.0, result,
+			    &bn.source_initial_center_limit_mm);
 
-			bn.minimum_confidence =
-			    getDouble(raw_config,
-			              "vision.ball_ncnn.minimum_confidence",
-			              bn.minimum_confidence, 0.0, 1.0, result,
-			              &bn.source_minimum_confidence);
+			bn.minimum_confidence = getDouble(
+			    raw_config, "vision.ball_ncnn.minimum_confidence",
+			    bn.minimum_confidence, 0.0, 1.0, result,
+			    &bn.source_minimum_confidence);
 
-			bn.num_threads =
-			    getInt(raw_config, "vision.ball_ncnn.num_threads",
-			           bn.num_threads, 1, 8, result,
-			           &bn.source_num_threads);
+			bn.num_threads = getInt(
+			    raw_config, "vision.ball_ncnn.num_threads",
+			    bn.num_threads, 1, 8, result, &bn.source_num_threads);
 
 			bn.use_fp16_storage =
-			    getBool(raw_config,
-			            "vision.ball_ncnn.use_fp16_storage",
+			    getBool(raw_config, "vision.ball_ncnn.use_fp16_storage",
 			            bn.use_fp16_storage, result,
 			            &bn.source_use_fp16_storage);
 
-			bn.use_fp16_arithmetic =
-			    getBool(raw_config,
-			            "vision.ball_ncnn.use_fp16_arithmetic",
-			            bn.use_fp16_arithmetic, result,
-			            &bn.source_use_fp16_arithmetic);
+			bn.use_fp16_arithmetic = getBool(
+			    raw_config, "vision.ball_ncnn.use_fp16_arithmetic",
+			    bn.use_fp16_arithmetic, result,
+			    &bn.source_use_fp16_arithmetic);
 
 			// 轴标定
-			bn.axis_calibration.image_right_sign =
-			    getInt(raw_config,
-			           "vision.ball_ncnn.axis_calibration.image_right_sign",
-			           bn.axis_calibration.image_right_sign, -1, 1,
-			           result, nullptr);
+			bn.axis_calibration.image_right_sign = getInt(
+			    raw_config,
+			    "vision.ball_ncnn.axis_calibration.image_right_sign",
+			    bn.axis_calibration.image_right_sign, -1, 1, result,
+			    nullptr);
 
 			if(bn.axis_calibration.image_right_sign != -1
 			   && bn.axis_calibration.image_right_sign != 1)
@@ -1726,14 +1712,13 @@ namespace
 
 			// 标定点：逗号分隔的浮点字符串 — 严格解析
 			std::string pixels_str = getString(
-			    raw_config,
-			    "vision.ball_ncnn.axis_calibration.pixels",
+			    raw_config, "vision.ball_ncnn.axis_calibration.pixels",
 			    "", true, result, nullptr);
 
 			std::string positions_str = getString(
 			    raw_config,
-			    "vision.ball_ncnn.axis_calibration.positions_mm",
-			    "", true, result, nullptr);
+			    "vision.ball_ncnn.axis_calibration.positions_mm", "",
+			    true, result, nullptr);
 
 			if(!pixels_str.empty() && !positions_str.empty())
 			{
@@ -1741,8 +1726,7 @@ namespace
 				auto splitDoublesStrict =
 				    [&](const std::string& value,
 				        const std::string& key,
-				        std::vector<double>& output) -> bool
-				{
+				        std::vector<double>& output) -> bool {
 					output.clear();
 
 					std::istringstream stream(value);
@@ -1750,7 +1734,8 @@ namespace
 
 					while(std::getline(stream, token, ','))
 					{
-						const auto first = token.find_first_not_of(" \t");
+						const auto first =
+						    token.find_first_not_of(" \t");
 						const auto last = token.find_last_not_of(" \t");
 
 						if(first == std::string::npos)
@@ -1768,15 +1753,13 @@ namespace
 						const double number =
 						    std::strtod(token.c_str(), &end);
 
-						if(end == token.c_str()
-						   || *end != '\0'
+						if(end == token.c_str() || *end != '\0'
 						   || !std::isfinite(number))
 						{
 							addMessage(
 							    result,
 							    etest::ConfigMessageLevel::ERROR,
-							    key
-							        + " contains invalid number: "
+							    key + " contains invalid number: "
 							        + token);
 							return false;
 						}
@@ -1801,20 +1784,18 @@ namespace
 				{
 					if(pixels.size() != positions.size())
 					{
-						addMessage(
-						    result,
-						    etest::ConfigMessageLevel::ERROR,
-						    "axis_calibration.pixels and "
-						    "positions_mm must have the same "
-						    "number of values");
+						addMessage(result,
+						           etest::ConfigMessageLevel::ERROR,
+						           "axis_calibration.pixels and "
+						           "positions_mm must have the same "
+						           "number of values");
 					}
 					else if(pixels.size() < 2)
 					{
-						addMessage(
-						    result,
-						    etest::ConfigMessageLevel::ERROR,
-						    "axis calibration requires at least "
-						    "2 points; keeping defaults");
+						addMessage(result,
+						           etest::ConfigMessageLevel::ERROR,
+						           "axis calibration requires at least "
+						           "2 points; keeping defaults");
 					}
 					else
 					{
@@ -1827,8 +1808,7 @@ namespace
 							{
 								addMessage(
 								    result,
-								    etest::ConfigMessageLevel::
-								        ERROR,
+								    etest::ConfigMessageLevel::ERROR,
 								    "axis_calibration.pixels must "
 								    "be strictly increasing");
 								pixels_monotonic = false;
@@ -1842,27 +1822,21 @@ namespace
 							bool increasing = true;
 							bool decreasing = true;
 
-							for(std::size_t i = 1;
-							    i < positions.size();
+							for(std::size_t i = 1; i < positions.size();
 							    ++i)
 							{
-								increasing =
-								    increasing
-								    && positions[i]
-								           > positions[i - 1];
+								increasing = increasing
+								    && positions[i] > positions[i - 1];
 
-								decreasing =
-								    decreasing
-								    && positions[i]
-								           < positions[i - 1];
+								decreasing = decreasing
+								    && positions[i] < positions[i - 1];
 							}
 
 							if(!increasing && !decreasing)
 							{
 								addMessage(
 								    result,
-								    etest::ConfigMessageLevel::
-								        ERROR,
+								    etest::ConfigMessageLevel::ERROR,
 								    "axis_calibration.positions_mm "
 								    "must be monotonic");
 							}
@@ -1871,13 +1845,11 @@ namespace
 								bn.axis_calibration.points.clear();
 
 								for(std::size_t i = 0;
-								    i < pixels.size();
-								    ++i)
+								    i < pixels.size(); ++i)
 								{
-									bn.axis_calibration
-									    .points.push_back(
-									        {pixels[i],
-									         positions[i]});
+									bn.axis_calibration.points
+									    .push_back(
+									        {pixels[i], positions[i]});
 								}
 							}
 						}
@@ -2024,10 +1996,10 @@ namespace
 		}
 
 		// ── YOLO 后端选择 ──
-		config.search.yolo_backend = getString(
-		    raw_config, "search.yolo_backend",
-		    config.search.yolo_backend, false, result,
-		    &config.search.source_yolo_backend);
+		config.search.yolo_backend =
+		    getString(raw_config, "search.yolo_backend",
+		              config.search.yolo_backend, false, result,
+		              &config.search.source_yolo_backend);
 		if(config.search.yolo_backend != "opencv"
 		   && config.search.yolo_backend != "ncnn")
 		{
@@ -2038,16 +2010,15 @@ namespace
 		}
 
 		// ── NCNN 模型路径 ──
-		config.search.ncnn_param_path = getString(
-		    raw_config, "search.ncnn_param_path",
-		    config.search.ncnn_param_path, false, result,
-		    &config.search.source_ncnn_param_path);
+		config.search.ncnn_param_path =
+		    getString(raw_config, "search.ncnn_param_path",
+		              config.search.ncnn_param_path, false, result,
+		              &config.search.source_ncnn_param_path);
 
 		// ── 线程数 ──
-		config.search.nn_threads =
-		    getInt(raw_config, "search.nn_threads",
-		           config.search.nn_threads, 1, 8, result,
-		           &config.search.source_nn_threads);
+		config.search.nn_threads = getInt(
+		    raw_config, "search.nn_threads", config.search.nn_threads,
+		    1, 8, result, &config.search.source_nn_threads);
 
 		// ── NCNN 高级选项 ──
 		config.search.ncnn_use_fp16_storage =
@@ -2062,14 +2033,14 @@ namespace
 		    getBool(raw_config, "search.ncnn_use_vulkan",
 		            config.search.ncnn_use_vulkan, result,
 		            &config.search.source_ncnn_use_vulkan);
-		config.search.ncnn_input_blob = getString(
-		    raw_config, "search.ncnn_input_blob",
-		    config.search.ncnn_input_blob, false, result,
-		    &config.search.source_ncnn_input_blob);
-		config.search.ncnn_output_blob = getString(
-		    raw_config, "search.ncnn_output_blob",
-		    config.search.ncnn_output_blob, false, result,
-		    &config.search.source_ncnn_output_blob);
+		config.search.ncnn_input_blob =
+		    getString(raw_config, "search.ncnn_input_blob",
+		              config.search.ncnn_input_blob, false, result,
+		              &config.search.source_ncnn_input_blob);
+		config.search.ncnn_output_blob =
+		    getString(raw_config, "search.ncnn_output_blob",
+		              config.search.ncnn_output_blob, false, result,
+		              &config.search.source_ncnn_output_blob);
 
 		// ── YOLO 输入尺寸 ──
 		config.search.nn_input_width =
@@ -2736,8 +2707,7 @@ namespace etest
 		return "enabled=" + std::string(enabled ? "true" : "false")
 		    + ", host=" + host + ", port=" + std::to_string(port)
 		    + ", payload_type=" + std::to_string(payload_type)
-		    + ", mtu=" + std::to_string(mtu)
-		    + ", allow_fallback="
+		    + ", mtu=" + std::to_string(mtu) + ", allow_fallback="
 		    + std::string(allow_fallback ? "true" : "false");
 	}
 
@@ -2877,8 +2847,7 @@ namespace etest
 				err("stream.host is empty");
 			}
 
-			if(config.stream.port < 1
-			   || config.stream.port > 65535)
+			if(config.stream.port < 1 || config.stream.port > 65535)
 			{
 				err("stream.port out of range");
 			}
@@ -2889,8 +2858,7 @@ namespace etest
 				err("stream.payload_type out of range");
 			}
 
-			if(config.stream.mtu < 576
-			   || config.stream.mtu > 9000)
+			if(config.stream.mtu < 576 || config.stream.mtu > 9000)
 			{
 				err("stream.mtu out of range");
 			}
@@ -2926,36 +2894,31 @@ namespace etest
 				// 若摄像头宽高无效则跳过（已有其他校验报错）
 				if(cam_w > 0 && cam_h > 0)
 				{
-					auto validateRoi =
-					    [&](const std::string& name, int x, int y,
-					        int w, int h) {
-						    if(x < 0 || y < 0 || w <= 0 || h <= 0)
-						    {
-							    err(name
-							        + " has invalid position "
-							          "or size");
-							    return;
-						    }
+					auto validateRoi = [&](const std::string& name,
+					                       int x, int y, int w, int h) {
+						if(x < 0 || y < 0 || w <= 0 || h <= 0)
+						{
+							err(name
+							    + " has invalid position "
+							      "or size");
+							return;
+						}
 
-						    if(x + w > cam_w || y + h > cam_h)
-						    {
-							    err(name
-							        + " (x=" + std::to_string(x)
-							        + ", y=" + std::to_string(y)
-							        + ", w=" + std::to_string(w)
-							        + ", h=" + std::to_string(h)
-							        + ") exceeds camera frame ("
-							        + std::to_string(cam_w)
-							        + "x"
-							        + std::to_string(cam_h)
-							        + ")");
-						    }
-					    };
+						if(x + w > cam_w || y + h > cam_h)
+						{
+							err(name + " (x=" + std::to_string(x)
+							    + ", y=" + std::to_string(y)
+							    + ", w=" + std::to_string(w)
+							    + ", h=" + std::to_string(h)
+							    + ") exceeds camera frame ("
+							    + std::to_string(cam_w) + "x"
+							    + std::to_string(cam_h) + ")");
+						}
+					};
 
 					validateRoi("vision.ball_ncnn.full_roi",
 					            bn.full_roi_x, bn.full_roi_y,
-					            bn.full_src_width,
-					            bn.full_src_height);
+					            bn.full_src_width, bn.full_src_height);
 
 					validateRoi("vision.ball_ncnn.center_roi",
 					            bn.center_roi_x, bn.center_roi_y,
@@ -2966,12 +2929,10 @@ namespace etest
 				// ── 校验标定线有效带完全位于 Full ROI 内 ──
 				if(bn.enabled)
 				{
-					const int line_left =
-					    bn.calibration_line_x
+					const int line_left = bn.calibration_line_x
 					    - bn.calibration_line_tolerance_px;
 
-					const int line_right =
-					    bn.calibration_line_x
+					const int line_right = bn.calibration_line_x
 					    + bn.calibration_line_tolerance_px;
 
 					const int full_left = bn.full_roi_x;
@@ -2982,30 +2943,29 @@ namespace etest
 					   || line_right >= full_right)
 					{
 						err("calibration_line_x ± tolerance "
-						    "[" + std::to_string(line_left)
-						    + ", " + std::to_string(line_right)
+						    "["
+						    + std::to_string(line_left) + ", "
+						    + std::to_string(line_right)
 						    + "] must be completely inside "
 						      "Full ROI ["
-						    + std::to_string(full_left)
-						    + ", " + std::to_string(full_right)
-						    + ")");
+						    + std::to_string(full_left) + ", "
+						    + std::to_string(full_right) + ")");
 					}
 
 					// 建议检查是否在 Center ROI 中
 					const int center_left = bn.center_roi_x;
 					const int center_right =
-					    bn.center_roi_x
-					    + bn.center_src_width;
+					    bn.center_roi_x + bn.center_src_width;
 
 					if(line_left < center_left
 					   || line_right >= center_right)
 					{
 						warn("calibration_line_x ± tolerance ["
-						     + std::to_string(line_left)
-						     + ", " + std::to_string(line_right)
+						     + std::to_string(line_left) + ", "
+						     + std::to_string(line_right)
 						     + "] is outside Center ROI ["
-						     + std::to_string(center_left)
-						     + ", " + std::to_string(center_right)
+						     + std::to_string(center_left) + ", "
+						     + std::to_string(center_right)
 						     + "); Q4/Q5 may lose the ball "
 						       "immediately after calibration");
 					}

@@ -23,7 +23,7 @@ namespace etest::vision
 		                std::string& error) noexcept;
 
 		// 按跟踪模式执行推理
-		// raw_frame: 原始 1280×640 BGR 帧
+		// raw_frame: 原始 1280×720 BGR 帧
 		// tracking_mode: 当前跟踪模式
 		// 返回 BallMeasurement，包含局部和全局坐标
 		BallMeasurement process(const cv::Mat& raw_frame,
@@ -52,16 +52,14 @@ namespace etest::vision
 		// 按给定检测器执行推理（内部使用 ROI）
 		BallMeasurement detectWithRoi(
 		    const cv::Mat& raw_frame,
-		    const roi_utils::InferenceRoi& roi,
-		    YoloDetector& detector,
+		    const roi_utils::InferenceRoi& roi, YoloDetector& detector,
 		    YoloTiming* timing) noexcept;
 
 		// 创建单个检测器
 		std::unique_ptr<YoloDetector> createDetector(
-		    const std::string& param_path,
-		    int input_width, int input_height,
-		    int num_threads, bool fp16_storage, bool fp16_arithmetic,
-		    std::string& error) const noexcept;
+		    const std::string& param_path, int input_width,
+		    int input_height, int num_threads, bool fp16_storage,
+		    bool fp16_arithmetic, std::string& error) const noexcept;
 	};
 
 } // namespace etest::vision

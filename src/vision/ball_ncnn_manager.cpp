@@ -13,8 +13,8 @@
 namespace etest::vision
 {
 
-	bool BallNcnnManager::initialize(
-	    const BallNcnnConfig& config, std::string& error) noexcept
+	bool BallNcnnManager::initialize(const BallNcnnConfig& config,
+	                                 std::string& error) noexcept
 	{
 		config_ = config;
 
@@ -28,24 +28,21 @@ namespace etest::vision
 		if(!config_.full_model_param.empty())
 		{
 			full_detector_ = createDetector(
-			    config_.full_model_param,
-			    config_.full_input_width,
-			    config_.full_input_height,
-			    config_.num_threads,
-			    config_.use_fp16_storage,
-			    config_.use_fp16_arithmetic, error);
+			    config_.full_model_param, config_.full_input_width,
+			    config_.full_input_height, config_.num_threads,
+			    config_.use_fp16_storage, config_.use_fp16_arithmetic,
+			    error);
 			if(!full_detector_)
 			{
 				return false;
 			}
 			full_ready_ = true;
-			ETEST_LOG_INFO("BALL_NCNN",
-			               "full model loaded: "
-			                   + config_.full_model_param
-			                   + " input="
-			                   + std::to_string(config_.full_input_width)
-			                   + "x"
-			                   + std::to_string(config_.full_input_height));
+			ETEST_LOG_INFO(
+			    "BALL_NCNN",
+			    "full model loaded: " + config_.full_model_param
+			        + " input="
+			        + std::to_string(config_.full_input_width) + "x"
+			        + std::to_string(config_.full_input_height));
 		}
 		else
 		{
@@ -57,26 +54,21 @@ namespace etest::vision
 		if(!config_.center_model_param.empty())
 		{
 			center_detector_ = createDetector(
-			    config_.center_model_param,
-			    config_.center_input_width,
-			    config_.center_input_height,
-			    config_.num_threads,
-			    config_.use_fp16_storage,
-			    config_.use_fp16_arithmetic, error);
+			    config_.center_model_param, config_.center_input_width,
+			    config_.center_input_height, config_.num_threads,
+			    config_.use_fp16_storage, config_.use_fp16_arithmetic,
+			    error);
 			if(!center_detector_)
 			{
 				return false;
 			}
 			center_ready_ = true;
-			ETEST_LOG_INFO("BALL_NCNN",
-			               "center model loaded: "
-			                   + config_.center_model_param
-			                   + " input="
-			                   + std::to_string(
-			                       config_.center_input_width)
-			                   + "x"
-			                   + std::to_string(
-			                       config_.center_input_height));
+			ETEST_LOG_INFO(
+			    "BALL_NCNN",
+			    "center model loaded: " + config_.center_model_param
+			        + " input="
+			        + std::to_string(config_.center_input_width) + "x"
+			        + std::to_string(config_.center_input_height));
 		}
 		else
 		{
@@ -85,8 +77,8 @@ namespace etest::vision
 		}
 
 		// ── 预热：各跑 3 帧 ──
-		cv::Mat dummy = cv::Mat::zeros(
-		    config_.full_src_height, config_.full_src_width, CV_8UC3);
+		cv::Mat dummy = cv::Mat::zeros(config_.full_src_height,
+		                               config_.full_src_width, CV_8UC3);
 
 		for(int i = 0; i < 3; ++i)
 		{
@@ -94,9 +86,9 @@ namespace etest::vision
 			full_detector_->infer(dummy, &dummy_timing);
 		}
 
-		cv::Mat dummy_center = cv::Mat::zeros(
-		    config_.center_src_height, config_.center_src_width,
-		    CV_8UC3);
+		cv::Mat dummy_center =
+		    cv::Mat::zeros(config_.center_src_height,
+		                   config_.center_src_width, CV_8UC3);
 		for(int i = 0; i < 3; ++i)
 		{
 			YoloTiming dummy_timing;
@@ -140,15 +132,15 @@ namespace etest::vision
 				return result;
 			}
 			detector = center_detector_.get();
-			roi = roi_utils::getCenterInferenceRoi(
-			    raw_frame.size(), config_);
+			roi = roi_utils::getCenterInferenceRoi(raw_frame.size(),
+			                                       config_);
 		}
 		else
 		{
 			// FULL 或 FULL_REACQUIRE
 			detector = full_detector_.get();
-			roi = roi_utils::getFullInferenceRoi(
-			    raw_frame.size(), config_);
+			roi = roi_utils::getFullInferenceRoi(raw_frame.size(),
+			                                     config_);
 		}
 
 		return detectWithRoi(raw_frame, roi, *detector, timing);
@@ -191,17 +183,16 @@ namespace etest::vision
 
 		if(clamped != roi.rect)
 		{
-			ETEST_LOG_ERROR(
-			    "BALL_NCNN",
-			    "Configured ROI exceeds frame boundary: "
-			    "roi=("
-			        + std::to_string(roi.rect.x) + ","
-			        + std::to_string(roi.rect.y) + ","
-			        + std::to_string(roi.rect.width) + ","
-			        + std::to_string(roi.rect.height)
-			        + "), frame=("
-			        + std::to_string(raw_frame.cols) + ","
-			        + std::to_string(raw_frame.rows) + ")");
+			ETEST_LOG_ERROR("BALL_NCNN",
+			                "Configured ROI exceeds frame boundary: "
+			                "roi=("
+			                    + std::to_string(roi.rect.x) + ","
+			                    + std::to_string(roi.rect.y) + ","
+			                    + std::to_string(roi.rect.width) + ","
+			                    + std::to_string(roi.rect.height)
+			                    + "), frame=("
+			                    + std::to_string(raw_frame.cols) + ","
+			                    + std::to_string(raw_frame.rows) + ")");
 
 			result.status = "ERROR";
 			return result;
@@ -231,8 +222,8 @@ namespace etest::vision
 		if(!tracking_initialized_)
 		{
 			// 选置信度最高的
-			float best_conf = static_cast<float>(
-			    config_.minimum_confidence);
+			float best_conf =
+			    static_cast<float>(config_.minimum_confidence);
 			for(const auto& d: detections)
 			{
 				if(d.confidence > best_conf)
@@ -253,10 +244,9 @@ namespace etest::vision
 
 				cv::Point2f local_center = d.center();
 				cv::Point2f global_center =
-				    roi_utils::localToGlobal(
-				        local_center, clamped);
-				double dist = cv::norm(
-				    global_center - last_global_center_);
+				    roi_utils::localToGlobal(local_center, clamped);
+				double dist =
+				    cv::norm(global_center - last_global_center_);
 
 				if(dist < best_dist)
 				{
@@ -282,8 +272,7 @@ namespace etest::vision
 		if(tracking_initialized_)
 		{
 			constexpr double kMaxJumpPx = 80.0;
-			double jump =
-			    cv::norm(global_center - last_global_center_);
+			double jump = cv::norm(global_center - last_global_center_);
 			if(jump > kMaxJumpPx)
 			{
 				result.status = "LOST";
@@ -308,12 +297,10 @@ namespace etest::vision
 		return result;
 	}
 
-	std::unique_ptr<YoloDetector>
-	BallNcnnManager::createDetector(
+	std::unique_ptr<YoloDetector> BallNcnnManager::createDetector(
 	    const std::string& param_path, int input_width,
 	    int input_height, int num_threads, bool fp16_storage,
-	    bool fp16_arithmetic,
-	    std::string& error) const noexcept
+	    bool fp16_arithmetic, std::string& error) const noexcept
 	{
 		YoloBackendConfig backend_config;
 		backend_config.input_width = input_width;
@@ -326,8 +313,7 @@ namespace etest::vision
 		backend_config.output_blob = "out0";
 
 #ifdef ETEST_HAS_NCNN
-		auto backend =
-		    createNcnnBackend(param_path, backend_config);
+		auto backend = createNcnnBackend(param_path, backend_config);
 		if(!backend)
 		{
 			error = "failed to create NCNN backend: " + param_path;
@@ -341,8 +327,8 @@ namespace etest::vision
 		if(!detector->initialize(
 		       std::move(backend), backend_config,
 		       std::move(class_names),
-		       static_cast<float>(config_.minimum_confidence),
-		       0.45F, init_error))
+		       static_cast<float>(config_.minimum_confidence), 0.45F,
+		       init_error))
 		{
 			error = "detector init failed: " + init_error;
 			return nullptr;

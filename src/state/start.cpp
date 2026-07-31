@@ -320,8 +320,9 @@ namespace etest::state
 					{
 						if(uart::protocol::isPoweroff(msg))
 						{
-							ETEST_LOG_INFO("STATE_START",
-							               "POWEROFF received during BOOT wait; shutting down");
+							ETEST_LOG_INFO(
+							    "STATE_START",
+							    "POWEROFF received during BOOT wait; shutting down");
 							ctx.exit_reason = ExitReason::NORMAL;
 							ctx.running = false;
 							return State::END;
@@ -371,8 +372,9 @@ namespace etest::state
 					{
 						if(uart::protocol::isPoweroff(msg))
 						{
-							ETEST_LOG_INFO("STATE_START",
-							               "POWEROFF received during PING wait; shutting down");
+							ETEST_LOG_INFO(
+							    "STATE_START",
+							    "POWEROFF received during PING wait; shutting down");
 							ctx.exit_reason = ExitReason::NORMAL;
 							ctx.running = false;
 							return State::END;
@@ -432,8 +434,9 @@ namespace etest::state
 					{
 						if(uart::protocol::isPoweroff(msg))
 						{
-							ETEST_LOG_INFO("STATE_START",
-							               "POWEROFF received during PROTO wait; shutting down");
+							ETEST_LOG_INFO(
+							    "STATE_START",
+							    "POWEROFF received during PROTO wait; shutting down");
 							ctx.exit_reason = ExitReason::NORMAL;
 							ctx.running = false;
 							return State::END;
@@ -536,8 +539,9 @@ namespace etest::state
 					{
 						if(uart::protocol::isPoweroff(msg))
 						{
-							ETEST_LOG_INFO("STATE_START",
-							               "POWEROFF received during CAPS wait; shutting down");
+							ETEST_LOG_INFO(
+							    "STATE_START",
+							    "POWEROFF received during CAPS wait; shutting down");
 							ctx.exit_reason = ExitReason::NORMAL;
 							ctx.running = false;
 							return State::END;
@@ -623,8 +627,7 @@ namespace etest::state
 		{
 			ETEST_LOG_INFO(
 			    "STATE_START",
-			    "loading YOLO model: backend="
-			        + search_cfg.yolo_backend
+			    "loading YOLO model: backend=" + search_cfg.yolo_backend
 			        + " input="
 			        + std::to_string(search_cfg.nn_input_width) + "x"
 			        + std::to_string(search_cfg.nn_input_height)
@@ -642,8 +645,7 @@ namespace etest::state
 				ETEST_LOG_INFO(
 				    "STATE_START",
 				    "YOLO model loaded: backend="
-				        + std::string(
-				            ctx.vision.yoloBackendName()));
+				        + std::string(ctx.vision.yoloBackendName()));
 			}
 
 			// 初始化任务会话
@@ -674,12 +676,11 @@ namespace etest::state
 			cv::Mat check_frame;
 			if(ctx.camera.read(check_frame) && !check_frame.empty())
 			{
-				if(check_frame.cols != 1280
-				   || check_frame.rows != 640)
+				if(check_frame.cols != 1280 || check_frame.rows != 720)
 				{
 					ETEST_LOG_WARN(
 					    "STATE_START",
-					    "frame size mismatch: expected 1280x640, got "
+					    "frame size mismatch: expected 1280x720, got "
 					        + std::to_string(check_frame.cols) + "x"
 					        + std::to_string(check_frame.rows));
 				}

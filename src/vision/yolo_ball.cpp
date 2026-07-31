@@ -171,8 +171,7 @@ namespace etest::vision
 
 			const int class_count = column_count - 5;
 
-			if(class_count
-			   != static_cast<int>(nn_class_names_.size()))
+			if(class_count != static_cast<int>(nn_class_names_.size()))
 			{
 				ETEST_LOG_ERROR(
 				    "VISION_YOLO",
@@ -222,8 +221,7 @@ namespace etest::vision
 					}
 				}
 
-				const float confidence =
-				    objectness * best_class_score;
+				const float confidence = objectness * best_class_score;
 
 				if(confidence < nn_confidence_threshold_)
 					continue;
@@ -233,11 +231,10 @@ namespace etest::vision
 				const float width = candidate[2] * scale_x;
 				const float height = candidate[3] * scale_y;
 
-				cv::Rect box(
-				    static_cast<int>(center_x - width * 0.5F),
-				    static_cast<int>(center_y - height * 0.5F),
-				    static_cast<int>(width),
-				    static_cast<int>(height));
+				cv::Rect box(static_cast<int>(center_x - width * 0.5F),
+				             static_cast<int>(center_y - height * 0.5F),
+				             static_cast<int>(width),
+				             static_cast<int>(height));
 
 				box &= cv::Rect(0, 0, frame.cols, frame.rows);
 
@@ -255,14 +252,12 @@ namespace etest::vision
 			cv::dnn::NMSBoxes(
 			    boxes, confidences,
 			    static_cast<float>(nn_confidence_threshold_),
-			    static_cast<float>(nn_nms_threshold_),
-			    kept_indices);
+			    static_cast<float>(nn_nms_threshold_), kept_indices);
 
 			for(const int idx: kept_indices)
 			{
 				detections.push_back(
-				    {class_ids[idx], confidences[idx],
-				     boxes[idx]});
+				    {class_ids[idx], confidences[idx], boxes[idx]});
 			}
 
 			std::sort(
@@ -273,10 +268,8 @@ namespace etest::vision
 
 			const auto t_end = Clock::now();
 
-			auto to_ms = [](const auto& a,
-			                const auto& b) -> double {
-				return std::chrono::duration<double, std::milli>(
-				           b - a)
+			auto to_ms = [](const auto& a, const auto& b) -> double {
+				return std::chrono::duration<double, std::milli>(b - a)
 				    .count();
 			};
 
@@ -286,12 +279,9 @@ namespace etest::vision
 			    to_ms(t_after_preprocess, t_after_forward);
 			local_timing.decode_ms =
 			    to_ms(t_before_decode, t_after_decode);
-			local_timing.nms_ms =
-			    to_ms(t_after_decode, t_end);
-			local_timing.total_ms =
-			    local_timing.preprocess_ms
-			    + local_timing.forward_ms
-			    + local_timing.decode_ms
+			local_timing.nms_ms = to_ms(t_after_decode, t_end);
+			local_timing.total_ms = local_timing.preprocess_ms
+			    + local_timing.forward_ms + local_timing.decode_ms
 			    + local_timing.nms_ms;
 
 			if(timing != nullptr)

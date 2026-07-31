@@ -99,6 +99,9 @@ namespace etest
 		int calibration_valid_frames = 0;
 		std::chrono::steady_clock::time_point calibration_start_time{};
 
+		// 标定完成时捕获的零位偏移（0.1mm），后续上报位置需减去此偏移
+		int zero_offset_0p1mm = 0;
+
 		// 当前连续有效标定帧的球心 X。
 		std::deque<float> calibration_x_samples;
 

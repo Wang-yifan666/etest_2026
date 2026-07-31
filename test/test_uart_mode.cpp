@@ -12,8 +12,13 @@ namespace
 
 	void check(const std::string& label, bool condition)
 	{
-		if(!condition) { std::cerr << "[FAIL] " << label << "\n"; ++failures; }
-		else std::cout << "[PASS] " << label << "\n";
+		if(!condition)
+		{
+			std::cerr << "[FAIL] " << label << "\n";
+			++failures;
+		}
+		else
+			std::cout << "[PASS] " << label << "\n";
 	}
 
 	void test_mission_codes()
@@ -26,14 +31,16 @@ namespace
 			etest::UartMessage msg;
 			msg.tag = tag;
 			msg.type = etest::UartMessageType::UNKNOWN;
-			check("isMission " + tag, etest::uart::protocol::isMissionCode(msg));
+			check("isMission " + tag,
+			      etest::uart::protocol::isMissionCode(msg));
 			int code = etest::uart::protocol::parseMissionCode(msg);
 			check("parseMission " + tag, code == (c - '0'));
 		}
 		// M0006 → false
 		etest::UartMessage msg;
 		msg.tag = "M0006";
-		check("isMission M0006=false", !etest::uart::protocol::isMissionCode(msg));
+		check("isMission M0006=false",
+		      !etest::uart::protocol::isMissionCode(msg));
 	}
 
 	void test_mode_ack()
@@ -56,11 +63,15 @@ namespace
 
 	void test_calib_fail()
 	{
-		auto line = etest::uart::protocol::makeCalibrationFailLine("M0002", "NOT_AT_CENTER");
-		check("CALIB_FAIL,M0002,NOT_AT_CENTER", line == "CALIB_FAIL,M0002,NOT_AT_CENTER");
+		auto line = etest::uart::protocol::makeCalibrationFailLine(
+		    "M0002", "NOT_AT_CENTER");
+		check("CALIB_FAIL,M0002,NOT_AT_CENTER",
+		      line == "CALIB_FAIL,M0002,NOT_AT_CENTER");
 
-		line = etest::uart::protocol::makeCalibrationFailLine("M0005", "BALL_LOST");
-		check("CALIB_FAIL,M0005,BALL_LOST", line == "CALIB_FAIL,M0005,BALL_LOST");
+		line = etest::uart::protocol::makeCalibrationFailLine(
+		    "M0005", "BALL_LOST");
+		check("CALIB_FAIL,M0005,BALL_LOST",
+		      line == "CALIB_FAIL,M0005,BALL_LOST");
 	}
 
 } // namespace
@@ -72,7 +83,11 @@ int main()
 	test_start_line();
 	test_calib_fail();
 
-	if(failures > 0) { std::cerr << "\n" << failures << " FAILED\n"; return 1; }
+	if(failures > 0)
+	{
+		std::cerr << "\n" << failures << " FAILED\n";
+		return 1;
+	}
 	std::cout << "\nAll UART mode tests passed.\n";
 	return 0;
 }

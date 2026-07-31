@@ -45,8 +45,8 @@ int main()
 			return 2;
 		}
 
-		if(frame.empty() || frame.cols != 1280
-		   || frame.rows != 720 || frame.type() != CV_8UC3)
+		if(frame.empty() || frame.cols != 1280 || frame.rows != 720
+		   || frame.type() != CV_8UC3)
 		{
 			std::cerr << "[FAIL] invalid frame at frame " << i
 			          << ": cols=" << frame.cols

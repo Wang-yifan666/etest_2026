@@ -61,11 +61,10 @@ namespace etest::vision
 	} // namespace
 
 	Camera::Camera(CameraConfig camera_config,
-	               StreamConfig stream_config,
-	               int retry_interval_ms):
-	    config_(std::move(camera_config)),
-	    stream_config_(std::move(stream_config)),
-	    retry_interval_ms_(retry_interval_ms)
+	               StreamConfig stream_config, int retry_interval_ms):
+	config_(std::move(camera_config)),
+	stream_config_(std::move(stream_config)),
+	retry_interval_ms_(retry_interval_ms)
 	{
 		file_source_ = !isInteger(config_.source)
 		    && !isDevicePath(config_.source)
@@ -87,52 +86,36 @@ namespace etest::vision
 	{
 		std::ostringstream pipeline;
 
-		pipeline
-		    << "v4l2src "
-		    << "device=" << resolved_device << " "
-		    << "io-mode=mmap "
-		    << "do-timestamp=true "
+		pipeline << "v4l2src " << "device=" << resolved_device << " "
+		         << "io-mode=mmap " << "do-timestamp=true "
 
-		    << "! image/jpeg,"
-		    << "width=" << config_.width << ","
-		    << "height=" << config_.height << ","
-		    << "framerate=" << config_.fps << "/1 "
+		         << "! image/jpeg," << "width=" << config_.width << ","
+		         << "height=" << config_.height << ","
+		         << "framerate=" << config_.fps << "/1 "
 
-		    << "! jpegparse "
-		    << "! tee name=t "
+		         << "! jpegparse "
+		         << "! tee name=t "
 
-		    // 图传分支：直接发送摄像头原始 MJPEG
-		    << "t. ! queue "
-		    << "leaky=downstream "
-		    << "max-size-buffers=1 "
-		    << "max-size-bytes=0 "
-		    << "max-size-time=0 "
-		    << "! rtpjpegpay "
-		    << "pt=" << stream_config_.payload_type << " "
-		    << "mtu=" << stream_config_.mtu << " "
-		    << "! udpsink "
-		    << "host=" << stream_config_.host << " "
-		    << "port=" << stream_config_.port << " "
-		    << "sync=false "
-		    << "async=false "
+		         // 图传分支：直接发送摄像头原始 MJPEG
+		         << "t. ! queue " << "leaky=downstream "
+		         << "max-size-buffers=1 " << "max-size-bytes=0 "
+		         << "max-size-time=0 " << "! rtpjpegpay "
+		         << "pt=" << stream_config_.payload_type << " "
+		         << "mtu=" << stream_config_.mtu << " " << "! udpsink "
+		         << "host=" << stream_config_.host << " "
+		         << "port=" << stream_config_.port << " "
+		         << "sync=false "
+		         << "async=false "
 
-		    // 视觉分支：只在这里解码一次
-		    << "t. ! queue "
-		    << "leaky=downstream "
-		    << "max-size-buffers=1 "
-		    << "max-size-bytes=0 "
-		    << "max-size-time=0 "
-		    << "! jpegdec "
-		    << "! videoconvert "
-		    << "! video/x-raw,"
-		    << "format=BGR,"
-		    << "width=" << config_.width << ","
-		    << "height=" << config_.height << ","
-		    << "framerate=" << config_.fps << "/1 "
-		    << "! appsink "
-		    << "drop=true "
-		    << "max-buffers=1 "
-		    << "sync=false";
+		         // 视觉分支：只在这里解码一次
+		         << "t. ! queue " << "leaky=downstream "
+		         << "max-size-buffers=1 " << "max-size-bytes=0 "
+		         << "max-size-time=0 " << "! jpegdec "
+		         << "! videoconvert " << "! video/x-raw,"
+		         << "format=BGR," << "width=" << config_.width << ","
+		         << "height=" << config_.height << ","
+		         << "framerate=" << config_.fps << "/1 " << "! appsink "
+		         << "drop=true " << "max-buffers=1 " << "sync=false";
 
 		return pipeline.str();
 	}
@@ -145,10 +128,9 @@ namespace etest::vision
 
 		ETEST_LOG_INFO(
 		    "CAMERA",
-		    "opening GStreamer MJPEG tee: device="
-		        + resolved_device
-		        + ", receiver=" + stream_config_.host
-		        + ":" + std::to_string(stream_config_.port));
+		    "opening GStreamer MJPEG tee: device=" + resolved_device
+		        + ", receiver=" + stream_config_.host + ":"
+		        + std::to_string(stream_config_.port));
 
 		const bool success = cap_.open(pipeline, cv::CAP_GSTREAMER);
 
@@ -172,8 +154,7 @@ namespace etest::vision
 		if(!success)
 		{
 			ETEST_LOG_WARN(
-			    "CAMERA",
-			    "V4L2 backend failed; retrying with CAP_ANY");
+			    "CAMERA", "V4L2 backend failed; retrying with CAP_ANY");
 
 			success = cap_.open(resolved_device, cv::CAP_ANY);
 		}
@@ -216,8 +197,7 @@ namespace etest::vision
 
 				if(stream_config_.enabled)
 				{
-					success =
-					    openGstreamerPipeline(resolved_path);
+					success = openGstreamerPipeline(resolved_path);
 
 					if(!success && stream_config_.allow_fallback)
 					{
@@ -260,10 +240,8 @@ namespace etest::vision
 					if(!cap_.set(
 					       cv::CAP_PROP_FOURCC,
 					       cv::VideoWriter::fourcc(
-					           config_.fourcc[0],
-					           config_.fourcc[1],
-					           config_.fourcc[2],
-					           config_.fourcc[3])))
+					           config_.fourcc[0], config_.fourcc[1],
+					           config_.fourcc[2], config_.fourcc[3])))
 					{
 						ETEST_LOG_WARN(
 						    "CAMERA",
@@ -272,17 +250,14 @@ namespace etest::vision
 					}
 				}
 
-				if(!cap_.set(cv::CAP_PROP_FRAME_WIDTH,
-				             config_.width))
+				if(!cap_.set(cv::CAP_PROP_FRAME_WIDTH, config_.width))
 				{
-					ETEST_LOG_WARN(
-					    "CAMERA",
-					    "driver rejected requested width "
-					        + std::to_string(config_.width));
+					ETEST_LOG_WARN("CAMERA",
+					               "driver rejected requested width "
+					                   + std::to_string(config_.width));
 				}
 
-				if(!cap_.set(cv::CAP_PROP_FRAME_HEIGHT,
-				             config_.height))
+				if(!cap_.set(cv::CAP_PROP_FRAME_HEIGHT, config_.height))
 				{
 					ETEST_LOG_WARN(
 					    "CAMERA",
@@ -292,18 +267,16 @@ namespace etest::vision
 
 				if(!cap_.set(cv::CAP_PROP_FPS, config_.fps))
 				{
-					ETEST_LOG_WARN(
-					    "CAMERA",
-					    "driver rejected requested FPS "
-					        + std::to_string(config_.fps));
+					ETEST_LOG_WARN("CAMERA",
+					               "driver rejected requested FPS "
+					                   + std::to_string(config_.fps));
 				}
 
 				if(!cap_.set(cv::CAP_PROP_BUFFERSIZE, 1))
 				{
-					ETEST_LOG_WARN(
-					    "CAMERA",
-					    "backend rejected "
-					    "CAP_PROP_BUFFERSIZE=1");
+					ETEST_LOG_WARN("CAMERA",
+					               "backend rejected "
+					               "CAP_PROP_BUFFERSIZE=1");
 				}
 			}
 
@@ -314,8 +287,7 @@ namespace etest::vision
 			            << cap_.get(cv::CAP_PROP_FRAME_WIDTH)
 			            << ", actual_height="
 			            << cap_.get(cv::CAP_PROP_FRAME_HEIGHT)
-			            << ", actual_fps="
-			            << cap_.get(cv::CAP_PROP_FPS)
+			            << ", actual_fps=" << cap_.get(cv::CAP_PROP_FPS)
 			            << ", is_file="
 			            << (file_source_ ? "true" : "false");
 
@@ -335,8 +307,7 @@ namespace etest::vision
 		{
 			ETEST_LOG_ERROR(
 			    "CAMERA",
-			    std::string("OpenCV open exception: ")
-			        + error.what());
+			    std::string("OpenCV open exception: ") + error.what());
 
 			state_ = CameraState::ERROR;
 			return false;
@@ -379,8 +350,7 @@ namespace etest::vision
 				return false;
 			}
 
-			const bool success =
-			    cap_.read(frame) && !frame.empty();
+			const bool success = cap_.read(frame) && !frame.empty();
 
 			if(!success)
 			{
@@ -390,16 +360,14 @@ namespace etest::vision
 
 				if(!read_error_reported_)
 				{
-					ETEST_LOG_ERROR(
-					    "CAMERA",
-					    "failed to read a valid frame");
+					ETEST_LOG_ERROR("CAMERA",
+					                "failed to read a valid frame");
 
 					read_error_reported_ = true;
 				}
 
 				if(file_source_
-				   && consecutive_failures_
-				          >= kMaxConsecutiveFailures)
+				   && consecutive_failures_ >= kMaxConsecutiveFailures)
 				{
 					if(config_.loop_video)
 					{
@@ -414,10 +382,9 @@ namespace etest::vision
 						return read(frame);
 					}
 
-					ETEST_LOG_INFO(
-					    "CAMERA",
-					    "file source reached end; not "
-					    "reopening");
+					ETEST_LOG_INFO("CAMERA",
+					               "file source reached end; not "
+					               "reopening");
 
 					state_ = CameraState::FILE_EOF;
 				}
@@ -429,8 +396,7 @@ namespace etest::vision
 
 			if(read_error_reported_)
 			{
-				ETEST_LOG_INFO("CAMERA",
-				               "frame reading recovered");
+				ETEST_LOG_INFO("CAMERA", "frame reading recovered");
 
 				read_error_reported_ = false;
 			}
@@ -440,12 +406,10 @@ namespace etest::vision
 			const int target_w = config_.width;
 			const int target_h = config_.height;
 			if(target_w > 0 && target_h > 0
-			   && (frame.cols != target_w
-			       || frame.rows != target_h))
+			   && (frame.cols != target_w || frame.rows != target_h))
 			{
-				cv::resize(frame, frame,
-				           cv::Size(target_w, target_h), 0.0,
-				           0.0, cv::INTER_LINEAR);
+				cv::resize(frame, frame, cv::Size(target_w, target_h),
+				           0.0, 0.0, cv::INTER_LINEAR);
 			}
 
 			state_ = CameraState::OK;
@@ -455,10 +419,9 @@ namespace etest::vision
 		{
 			if(!read_error_reported_)
 			{
-				ETEST_LOG_ERROR(
-				    "CAMERA",
-				    std::string("OpenCV read exception: ")
-				        + error.what());
+				ETEST_LOG_ERROR("CAMERA",
+				                std::string("OpenCV read exception: ")
+				                    + error.what());
 
 				read_error_reported_ = true;
 			}
@@ -473,8 +436,7 @@ namespace etest::vision
 			{
 				ETEST_LOG_ERROR(
 				    "CAMERA",
-				    std::string("read exception: ")
-				        + error.what());
+				    std::string("read exception: ") + error.what());
 
 				read_error_reported_ = true;
 			}
@@ -487,8 +449,7 @@ namespace etest::vision
 		{
 			if(!read_error_reported_)
 			{
-				ETEST_LOG_ERROR("CAMERA",
-				                "unknown read exception");
+				ETEST_LOG_ERROR("CAMERA", "unknown read exception");
 
 				read_error_reported_ = true;
 			}
@@ -555,13 +516,11 @@ namespace etest::vision
 		{
 			ETEST_LOG_ERROR(
 			    "CAMERA",
-			    std::string("release exception: ")
-			        + error.what());
+			    std::string("release exception: ") + error.what());
 		}
 		catch(...)
 		{
-			ETEST_LOG_ERROR("CAMERA",
-			                "unknown release exception");
+			ETEST_LOG_ERROR("CAMERA", "unknown release exception");
 		}
 	}
 

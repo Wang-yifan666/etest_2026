@@ -326,8 +326,7 @@ namespace etest::uart::protocol
 		return oss.str();
 	}
 
-	std::string makeStartLine(const std::string& mode,
-	                          int target_0p1mm)
+	std::string makeStartLine(const std::string& mode, int target_0p1mm)
 	{
 		std::ostringstream oss;
 		oss.imbue(std::locale::classic());
@@ -335,9 +334,8 @@ namespace etest::uart::protocol
 		return oss.str();
 	}
 
-	std::string makeCalibrationFailLine(
-	    const std::string& mode,
-	    const std::string& reason)
+	std::string makeCalibrationFailLine(const std::string& mode,
+	                                    const std::string& reason)
 	{
 		std::ostringstream oss;
 		oss.imbue(std::locale::classic());

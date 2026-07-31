@@ -1712,9 +1712,9 @@ ratio_zero:
 			backend = createNcnnBackend(param_path, backend_cfg);
 			if(!backend)
 			{
-				ETEST_LOG_ERROR("VISION",
-				                "failed to create NCNN backend: "
-				                    + param_path);
+				ETEST_LOG_ERROR(
+				    "VISION",
+				    "failed to create NCNN backend: " + param_path);
 				return false;
 			}
 			model_label = "ncnn:" + param_path;
@@ -1747,10 +1747,9 @@ ratio_zero:
 			std::ifstream f(config.class_names_path);
 			if(!f.is_open())
 			{
-				ETEST_LOG_ERROR(
-				    "VISION",
-				    "cannot open class_names: "
-				        + config.class_names_path);
+				ETEST_LOG_ERROR("VISION",
+				                "cannot open class_names: "
+				                    + config.class_names_path);
 				return false;
 			}
 			std::string line;
@@ -1761,8 +1760,7 @@ ratio_zero:
 
 		std::string err;
 		if(!candidate->initialize(
-		       std::move(backend), backend_cfg,
-		       std::move(class_names),
+		       std::move(backend), backend_cfg, std::move(class_names),
 		       static_cast<float>(config.nn_confidence_threshold),
 		       static_cast<float>(config.nn_nms_threshold), err))
 		{
@@ -1775,15 +1773,14 @@ ratio_zero:
 		nn_loaded_ = true;
 		yolo_model_unhealthy_ = false;
 
-		ETEST_LOG_INFO("VISION",
-		               "YOLO model loaded: backend="
-		                   + std::string(yolo_detector_->backendName())
-		                   + "(" + model_label + ") input="
-		                   + std::to_string(backend_cfg.input_width)
-		                   + "x"
-		                   + std::to_string(backend_cfg.input_height)
-		                   + " threads="
-		                   + std::to_string(backend_cfg.num_threads));
+		ETEST_LOG_INFO(
+		    "VISION",
+		    "YOLO model loaded: backend="
+		        + std::string(yolo_detector_->backendName()) + "("
+		        + model_label + ") input="
+		        + std::to_string(backend_cfg.input_width) + "x"
+		        + std::to_string(backend_cfg.input_height) + " threads="
+		        + std::to_string(backend_cfg.num_threads));
 
 		return true;
 	}

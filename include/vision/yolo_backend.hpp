@@ -15,7 +15,7 @@ namespace etest::vision
 	// ── 预处理模式 ──
 	enum class ResizeMode
 	{
-		STRETCH,   // 直接拉伸到模型输入尺寸（现有行为）
+		STRETCH, // 直接拉伸到模型输入尺寸（现有行为）
 		LETTERBOX, // 保持宽高比缩放 + 补灰边
 	};
 
