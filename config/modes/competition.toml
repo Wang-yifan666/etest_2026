@@ -378,5 +378,5 @@ use_fp16_storage = true
 #
 #   Raspberry Pi 5 上经过精度和稳定性测试后，
 #   可以尝试改成 true。
-use_fp16_arithmetic = false
+use_fp16_arithmetic = true
 

@@ -163,18 +163,18 @@ roi_location_mode = "topleft"
 
 # Full ROI 左上角（1280×640 原图坐标）
 full_roi_x = 0
-full_roi_y = 160
+full_roi_y = 164
 
 # Center ROI 左上角（1280×640 原图坐标）
-center_roi_x = 416
-center_roi_y = 160
+center_roi_x = 568
+center_roi_y = 166
 
 # ── Q3～Q5 启动标定线 ──
 # 原图全局像素坐标；只比较球心 X，不限制球心 Y。
-calibration_line_x = 640
+calibration_line_x = 801
 
 # 球心位于 [line_x-tolerance, line_x+tolerance] 时视为在线上。
-calibration_line_tolerance_px = 20
+calibration_line_tolerance_px = 25
 
 # 连续有效帧与稳定性要求。
 calibration_max_jitter_px = 6.0
@@ -206,5 +206,5 @@ use_fp16_arithmetic = true
 # 1px ≈ 0.1760mm（1280×720 画面）
 [vision.ball_ncnn.axis_calibration]
 image_right_sign = 1
-pixels = "0, 640, 1279"
-positions_mm = "-112.64, 0.0, 112.46"
+pixels = "439.000,558.500,737.000,791.000,849.500,1027.500,1136.000"
+positions_mm = "-60.000,-40.000,-10.000,0.000,10.000,40.000,60.000"
