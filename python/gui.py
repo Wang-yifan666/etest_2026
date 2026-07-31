@@ -23,7 +23,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 import json
 import re
-from typing import Callable, Optional, TypeVar
+from typing import Callable, Optional, TypeVar 
 
 try:
     import tomllib  # Python 3.11+
@@ -3119,6 +3119,7 @@ class EtestGui:
                     f"有效帧 {len(x_samples)}/{total_frames}，"
                     "低于最低要求 3 帧",
                 )
+                self.post_ui(self._axis_sampling_cleanup, "采样失败")
                 return
 
             center1, mad1 = robust_sample(x_samples)
@@ -3133,6 +3134,7 @@ class EtestGui:
                     self._axis_sampling_failed,
                     "异常值过滤后有效帧不足（<3）",
                 )
+                self.post_ui(self._axis_sampling_cleanup, "采样失败")
                 return
 
             from statistics import median as stat_median
@@ -3173,6 +3175,7 @@ class EtestGui:
                     self._axis_sampling_failed,
                     "采样失败：\n" + "\n".join(reject_reasons),
                 )
+                self.post_ui(self._axis_sampling_cleanup, "采样不合格")
                 return
 
             # 6. 添加到标定点
