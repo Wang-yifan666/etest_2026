@@ -165,6 +165,30 @@ class RoiRect:
             height=max(cls.MIN_HEIGHT, bottom - top),
         )
 
+    @classmethod
+    def from_points(
+        cls,
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+    ) -> "RoiRect":
+        """自由框选：从任意两点构造矩形 ROI（不锁定宽高比）。"""
+        left = round(min(x1, x2))
+        top = round(min(y1, y2))
+        right = round(max(x1, x2))
+        bottom = round(max(y1, y2))
+
+        width = max(cls.MIN_WIDTH, right - left)
+        height = max(cls.MIN_HEIGHT, bottom - top)
+
+        return cls(
+            x=left,
+            y=top,
+            width=width,
+            height=height,
+        )
+
 
 # ── 模型区域描述 ──
 

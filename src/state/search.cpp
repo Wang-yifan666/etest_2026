@@ -53,6 +53,44 @@ namespace etest::state
 			    || task.phase == ContestTaskPhase::RUNNING;
 		}
 
+		// 从 ROI 矩形向内收缩 guard 像素，得到安全区域
+		// guard 会被 clamp 到不超过 ROI 的一半
+		cv::Rect makeSafeRoi(const cv::Rect& roi,
+		                     int requested_guard)
+		{
+			if(roi.empty())
+			{
+				return {};
+			}
+
+			const int guard_x = std::clamp(
+			    requested_guard, 0,
+			    std::max(0, (roi.width - 1) / 2));
+
+			const int guard_y = std::clamp(
+			    requested_guard, 0,
+			    std::max(0, (roi.height - 1) / 2));
+
+			return {
+			    roi.x + guard_x,
+			    roi.y + guard_y,
+			    std::max(1, roi.width - guard_x * 2),
+			    std::max(1, roi.height - guard_y * 2),
+			};
+		}
+
+		// 点是否在矩形内（右开下开边界）
+		bool containsPoint(const cv::Rect& roi,
+		                   const cv::Point2f& point)
+		{
+			return point.x >= static_cast<float>(roi.x)
+			    && point.x
+			           < static_cast<float>(roi.x + roi.width)
+			    && point.y >= static_cast<float>(roi.y)
+			    && point.y
+			           < static_cast<float>(roi.y + roi.height);
+		}
+
 	} // namespace
 
 	State runSearch(AppContext& ctx, const SearchConfig& search_cfg,
@@ -676,7 +714,7 @@ namespace etest::state
 					}
 				}
 
-				// ── CENTER / FULL_REACQUIRE 切换（仅 Q4/Q5 RUNNING）──
+					// ── CENTER / FULL_REACQUIRE 切换（仅 Q4/Q5 RUNNING）──
 				if(ctx.task.phase
 				       == ContestTaskPhase::RUNNING
 				   && (ctx.task.mode == TaskMode::Q4
@@ -684,74 +722,122 @@ namespace etest::state
 				{
 					const auto& bn_cfg =
 					    ctx.vision.getConfig().ball_ncnn;
+
+					// 使用全局坐标 + 实际 Center ROI 判断安全区域
+					const cv::Rect center_roi =
+					    etest::vision::roi_utils::getCenterInferenceRoi(
+					        ctx.frame.size(), bn_cfg)
+					        .rect;
+
+					const cv::Rect safe_center_roi =
+					    makeSafeRoi(
+					        center_roi, bn_cfg.edge_guard_px);
+
+					const bool measurement_ok =
+					    measurement.valid
+					    && measurement.status == "OK";
+
+					const bool ball_inside_safe_center =
+					    measurement_ok
+					    && containsPoint(
+					        safe_center_roi,
+					        measurement.global_center);
+
 					if(ctx.task.tracking_mode
 					   == TrackingMode::CENTER)
 					{
-						bool near_edge =
-						    !measurement.valid
-						    || measurement.local_center.x
-						        < static_cast<float>(
-						            bn_cfg.edge_guard_px)
-						    || measurement.local_center.x
-						        > static_cast<float>(
-						            bn_cfg.center_input_width
-						            - bn_cfg.edge_guard_px);
-						if(near_edge
-						   || ctx.task.lost_frames
-						       >= bn_cfg.lost_frames_to_reacquire)
+						const bool should_reacquire =
+						    !ball_inside_safe_center
+						    || ctx.task.lost_frames
+						           >= bn_cfg
+						               .lost_frames_to_reacquire;
+
+						if(should_reacquire)
 						{
 							ctx.task.tracking_mode =
 							    TrackingMode::FULL_REACQUIRE;
-							ctx.task.center_stable_frames = 0;
+							ctx.task.center_stable_frames =
+							    0;
 							ctx.vision
 							    .resetBallNcnnSession();
 							ETEST_LOG_INFO(
 							    "SEARCH",
-							    "CENTER → FULL_REACQUIRE "
-							    "(model "
+							    "CENTER -> FULL_REACQUIRE: "
+							    "ball left center safe ROI"
+							    " global_center=("
 							        + std::to_string(
-							            bn_cfg.full_input_width)
-							        + "×"
+							            static_cast<int>(
+							                measurement
+							                    .global_center
+							                    .x))
+							        + ","
 							        + std::to_string(
-							            bn_cfg.full_input_height)
+							            static_cast<int>(
+							                measurement
+							                    .global_center
+							                    .y))
+							        + ") center_roi=("
+							        + std::to_string(
+							            center_roi.x)
+							        + ","
+							        + std::to_string(
+							            center_roi.y)
+							        + ","
+							        + std::to_string(
+							            center_roi.width)
+							        + ","
+							        + std::to_string(
+							            center_roi.height)
+							        + ") safe_roi=("
+							        + std::to_string(
+							            safe_center_roi.x)
+							        + ","
+							        + std::to_string(
+							            safe_center_roi.y)
+							        + ","
+							        + std::to_string(
+							            safe_center_roi.width)
+							        + ","
+							        + std::to_string(
+							            safe_center_roi
+							                .height)
 							        + ")");
 						}
 					}
 					else if(ctx.task.tracking_mode
 					        == TrackingMode::FULL_REACQUIRE)
 					{
-						if(measurement.valid
-						   && measurement.status == "OK"
-						   && measurement.local_center.x
-						       >= static_cast<float>(
-						           bn_cfg.edge_guard_px
-						           + 10)
-						   && measurement.local_center.x
-						       <= static_cast<float>(
-						           bn_cfg.center_input_width
-						           - bn_cfg.edge_guard_px
-						           - 10))
+						if(ball_inside_safe_center)
 						{
-							ctx.task.center_stable_frames++;
+							++ctx.task.center_stable_frames;
+
 							if(ctx.task.center_stable_frames
 							   >= bn_cfg
 							          .stable_frames_to_center)
 							{
 								ctx.task.tracking_mode =
 								    TrackingMode::CENTER;
+								ctx.task
+								    .center_stable_frames = 0;
 								ctx.vision
 								    .resetBallNcnnSession();
 								ETEST_LOG_INFO(
 								    "SEARCH",
-								    "FULL_REACQUIRE → CENTER "
-								    "(model "
+								    "FULL_REACQUIRE -> CENTER: "
+								    "ball stable in "
+								    "center safe ROI"
+								    " global_center=("
 								        + std::to_string(
-								            bn_cfg
-								                .center_input_width)
-								        + "×"
+								            static_cast<int>(
+								                measurement
+								                    .global_center
+								                    .x))
+								        + ","
 								        + std::to_string(
-								            bn_cfg
-								                .center_input_height)
+								            static_cast<int>(
+								                measurement
+								                    .global_center
+								                    .y))
 								        + ")");
 							}
 						}

@@ -3,6 +3,7 @@
 #include "core/logger.hpp"
 
 #include <opencv2/dnn.hpp>
+#include <opencv2/imgproc.hpp>
 
 #include <chrono>
 #include <cstring>
@@ -94,14 +95,109 @@ namespace etest::vision
 					return false;
 				}
 
-				// ── 预处理（与现有 blobFromImage 完全一致）──
-				cv::Mat blob = cv::dnn::blobFromImage(
-				    frame, 1.0 / 255.0,
-				    cv::Size(config_.input_width, config_.input_height),
-				    cv::Scalar(),
-				    true, // BGR → RGB
-				    false // 不裁剪
-				);
+					// ── 预处理 ──
+				const int source_width = frame.cols;
+				const int source_height = frame.rows;
+
+				cv::Mat blob;
+
+				if(config_.resize_mode == ResizeMode::LETTERBOX)
+				{
+					// Letterbox：保持宽高比缩放 + 补灰边
+					const float scale = std::min(
+					    static_cast<float>(config_.input_width)
+					        / static_cast<float>(source_width),
+					    static_cast<float>(config_.input_height)
+					        / static_cast<float>(source_height));
+
+					const int resized_width = std::max(
+					    1,
+					    static_cast<int>(
+					        std::round(source_width * scale)));
+
+					const int resized_height = std::max(
+					    1,
+					    static_cast<int>(
+					        std::round(source_height * scale)));
+
+					cv::Mat resized;
+					cv::resize(frame, resized,
+					           cv::Size(resized_width,
+					                    resized_height));
+
+					const int padding_left =
+					    (config_.input_width - resized_width) / 2;
+
+					const int padding_top =
+					    (config_.input_height - resized_height)
+					    / 2;
+
+					const cv::Scalar gray(114, 114, 114);
+					cv::copyMakeBorder(
+					    resized, blob,
+					    padding_top,
+					    config_.input_height - resized_height
+					        - padding_top,
+					    padding_left,
+					    config_.input_width - resized_width
+					        - padding_left,
+					    cv::BORDER_CONSTANT, gray);
+
+					// BGR→RGB, HWC→CHW, normalize
+					cv::Mat rgb;
+					cv::cvtColor(blob, rgb, cv::COLOR_BGR2RGB);
+					rgb.convertTo(rgb, CV_32F, 1.0 / 255.0);
+					cv::dnn::blobFromImage(rgb, blob);
+
+					// 记录变换参数
+					output.transform.mode =
+					    ResizeMode::LETTERBOX;
+					output.transform.source_width =
+					    source_width;
+					output.transform.source_height =
+					    source_height;
+					output.transform.input_width =
+					    config_.input_width;
+					output.transform.input_height =
+					    config_.input_height;
+					output.transform.uniform_scale = scale;
+					output.transform.padding_left =
+					    padding_left;
+					output.transform.padding_top =
+					    padding_top;
+				}
+				else
+				{
+					// STRETCH：直接拉伸（现有行为）
+					blob = cv::dnn::blobFromImage(
+					    frame, 1.0 / 255.0,
+					    cv::Size(config_.input_width,
+					             config_.input_height),
+					    cv::Scalar(),
+					    true,  // BGR → RGB
+					    false  // 不裁剪
+					);
+
+					// 记录变换参数
+					output.transform.mode =
+					    ResizeMode::STRETCH;
+					output.transform.source_width =
+					    source_width;
+					output.transform.source_height =
+					    source_height;
+					output.transform.input_width =
+					    config_.input_width;
+					output.transform.input_height =
+					    config_.input_height;
+					output.transform.scale_x =
+					    static_cast<float>(
+					        config_.input_width)
+					    / static_cast<float>(source_width);
+					output.transform.scale_y =
+					    static_cast<float>(
+					        config_.input_height)
+					    / static_cast<float>(source_height);
+				}
 
 				const auto t_after_preprocess = Clock::now();
 

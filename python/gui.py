@@ -1517,7 +1517,7 @@ class EtestGui:
         toolbar = ttk.Frame(self.calib_roi_tab)
         toolbar.pack(fill=tk.X)
 
-        ttk.Label(toolbar, text="模型：").pack(side=tk.LEFT)
+        ttk.Label(toolbar, text="编辑检测区域：").pack(side=tk.LEFT)
         self.calib_model_var = tk.StringVar(value="full")
         calib_model_box = ttk.Combobox(
             toolbar,
@@ -1602,7 +1602,7 @@ class EtestGui:
         input_frame = ttk.LabelFrame(main_frame, text="当前模型参数", padding=8)
         input_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(8, 0))
 
-        ttk.Label(input_frame, text="模型：").grid(
+        ttk.Label(input_frame, text="检测区域：").grid(
             row=0, column=0, sticky=tk.E, padx=(0, 4)
         )
         self.calib_model_label_var = tk.StringVar(value="Full 模型")
@@ -2372,9 +2372,9 @@ class EtestGui:
                     start_x, start_y, image_x, image_y, aspect,
                 )
             else:
-                # 自由比例（暂不支持，使用 1:1）
-                region.roi = RoiRect.from_drag(
-                    start_x, start_y, image_x, image_y, 1.0,
+                # 自由比例：任意矩形框选
+                region.roi = RoiRect.from_points(
+                    start_x, start_y, image_x, image_y,
                 )
 
             self._roi_calibration.clamp_all()

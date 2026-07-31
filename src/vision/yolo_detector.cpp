@@ -165,11 +165,42 @@ namespace etest::vision
 
 		const auto t_start = Clock::now();
 
-		const float scale_x = static_cast<float>(original_size.width)
-		    / static_cast<float>(backend_config_.input_width);
+		const int source_width = raw.transform.source_width > 0
+		    ? raw.transform.source_width
+		    : original_size.width;
+		const int source_height = raw.transform.source_height > 0
+		    ? raw.transform.source_height
+		    : original_size.height;
 
-		const float scale_y = static_cast<float>(original_size.height)
-		    / static_cast<float>(backend_config_.input_height);
+		float scale_x = 1.0F;
+		float scale_y = 1.0F;
+
+		if(raw.transform.mode == ResizeMode::LETTERBOX)
+		{
+			const float s = raw.transform.uniform_scale;
+			if(s <= 0.0F)
+			{
+				scale_x = 1.0F;
+				scale_y = 1.0F;
+			}
+			else
+			{
+				scale_x = 1.0F / s;
+				scale_y = 1.0F / s;
+			}
+		}
+		else
+		{
+			scale_x = static_cast<float>(source_width)
+			    / static_cast<float>(raw.transform.input_width > 0
+			                             ? raw.transform.input_width
+			                             : backend_config_.input_width);
+			scale_y = static_cast<float>(source_height)
+			    / static_cast<float>(
+			              raw.transform.input_height > 0
+			                  ? raw.transform.input_height
+			                  : backend_config_.input_height);
+		}
 
 		const int row_count = raw.rows;
 		const int column_count = raw.columns;
@@ -212,11 +243,44 @@ namespace etest::vision
 			if(confidence < confidence_threshold_)
 				continue;
 
-			// xywh → cv::Rect（与当前 inferYolo 完全一致）
-			const float center_x = candidate[0] * scale_x;
-			const float center_y = candidate[1] * scale_y;
-			const float width = candidate[2] * scale_x;
-			const float height = candidate[3] * scale_y;
+			// 坐标反解：支持 STRETCH 和 LETTERBOX 两种模式
+			float center_x = 0.0F;
+			float center_y = 0.0F;
+			float width = 0.0F;
+			float height = 0.0F;
+
+			if(raw.transform.mode == ResizeMode::LETTERBOX)
+			{
+				const float s = raw.transform.uniform_scale;
+				if(s <= 0.0F)
+				{
+					// 防御：回退到旧行为
+					center_x = candidate[0] * scale_x;
+					center_y = candidate[1] * scale_y;
+					width = candidate[2] * scale_x;
+					height = candidate[3] * scale_y;
+				}
+				else
+				{
+					center_x = (candidate[0]
+					            - static_cast<float>(
+					                raw.transform.padding_left))
+					    / s;
+					center_y = (candidate[1]
+					            - static_cast<float>(
+					                raw.transform.padding_top))
+					    / s;
+					width = candidate[2] / s;
+					height = candidate[3] / s;
+				}
+			}
+			else
+			{
+				center_x = candidate[0] * scale_x;
+				center_y = candidate[1] * scale_y;
+				width = candidate[2] * scale_x;
+				height = candidate[3] * scale_y;
+			}
 
 			cv::Rect box(static_cast<int>(center_x - width * 0.5F),
 			             static_cast<int>(center_y - height * 0.5F),

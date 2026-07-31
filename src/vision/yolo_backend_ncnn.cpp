@@ -150,10 +150,91 @@ namespace etest::vision
 				contiguous = frame.clone();
 			}
 
-			ncnn::Mat input = ncnn::Mat::from_pixels_resize(
-			    contiguous.data, ncnn::Mat::PIXEL_BGR2RGB,
-			    contiguous.cols, contiguous.rows, config_.input_width,
-			    config_.input_height);
+			const int source_width = contiguous.cols;
+			const int source_height = contiguous.rows;
+
+			ncnn::Mat input;
+
+			if(config_.resize_mode == ResizeMode::LETTERBOX)
+			{
+				// ── Letterbox：保持宽高比缩放 + 补灰边 ──
+				const float scale = std::min(
+				    static_cast<float>(config_.input_width)
+				        / static_cast<float>(source_width),
+				    static_cast<float>(config_.input_height)
+				        / static_cast<float>(source_height));
+
+				const int resized_width = std::max(
+				    1,
+				    static_cast<int>(
+				        std::round(source_width * scale)));
+
+				const int resized_height = std::max(
+				    1,
+				    static_cast<int>(
+				        std::round(source_height * scale)));
+
+				ncnn::Mat resized =
+				    ncnn::Mat::from_pixels_resize(
+				        contiguous.data,
+				        ncnn::Mat::PIXEL_BGR2RGB,
+				        source_width, source_height,
+				        resized_width, resized_height);
+
+				const int padding_left =
+				    (config_.input_width - resized_width) / 2;
+
+				const int padding_top =
+				    (config_.input_height - resized_height) / 2;
+
+				const int padding_right =
+				    config_.input_width - resized_width
+				    - padding_left;
+
+				const int padding_bottom =
+				    config_.input_height - resized_height
+				    - padding_top;
+
+				ncnn::copy_make_border(
+				    resized, input, padding_top, padding_bottom,
+				    padding_left, padding_right,
+				    ncnn::BORDER_CONSTANT, 114.0F);
+
+				// 记录变换参数
+				output.transform.mode = ResizeMode::LETTERBOX;
+				output.transform.source_width = source_width;
+				output.transform.source_height = source_height;
+				output.transform.input_width =
+				    config_.input_width;
+				output.transform.input_height =
+				    config_.input_height;
+				output.transform.uniform_scale = scale;
+				output.transform.padding_left = padding_left;
+				output.transform.padding_top = padding_top;
+			}
+			else
+			{
+				// ── STRETCH：直接拉伸（现有行为）──
+				input = ncnn::Mat::from_pixels_resize(
+				    contiguous.data, ncnn::Mat::PIXEL_BGR2RGB,
+				    contiguous.cols, contiguous.rows,
+				    config_.input_width, config_.input_height);
+
+				// 记录变换参数
+				output.transform.mode = ResizeMode::STRETCH;
+				output.transform.source_width = source_width;
+				output.transform.source_height = source_height;
+				output.transform.input_width =
+				    config_.input_width;
+				output.transform.input_height =
+				    config_.input_height;
+				output.transform.scale_x =
+				    static_cast<float>(config_.input_width)
+				    / static_cast<float>(source_width);
+				output.transform.scale_y =
+				    static_cast<float>(config_.input_height)
+				    / static_cast<float>(source_height);
+			}
 
 			const float norm_values[3] = {
 			    1.0F / 255.0F,
