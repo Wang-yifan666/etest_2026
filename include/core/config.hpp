@@ -155,7 +155,21 @@ namespace etest
 		int center_src_width = 448;
 		int center_src_height = 320;
 
-		// ── 物理中心 O（全局像素坐标）──
+		// ── ROI 定位模式 ──
+		// "center_point" = 通过 pipe_center_x/y 反算左上角（旧逻辑）
+		// "topleft"      = 直接使用 full_roi_*/center_roi_* 左上角坐标
+		std::string roi_location_mode = "center_point";
+
+		// ── Full/Center ROI 左上角坐标（仅在 topleft 模式使用，1280×640 原图坐标）──
+		int full_roi_x = 0;
+		int full_roi_y = 160;
+		int center_roi_x = 416;
+		int center_roi_y = 160;
+
+		// ── 中心线 y 坐标（水平参考线，贯穿全图宽度）──
+		int center_line_y = 320;
+
+		// ── 物理中心 O（全局像素坐标，center_point 模式使用）──
 		int pipe_center_x = 640;
 		int pipe_center_y = 320;
 
@@ -189,6 +203,12 @@ namespace etest
 		SourceInfo source_full_src_height;
 		SourceInfo source_center_src_width;
 		SourceInfo source_center_src_height;
+		SourceInfo source_roi_location_mode;
+		SourceInfo source_full_roi_x;
+		SourceInfo source_full_roi_y;
+		SourceInfo source_center_roi_x;
+		SourceInfo source_center_roi_y;
+		SourceInfo source_center_line_y;
 		SourceInfo source_pipe_center_x;
 		SourceInfo source_pipe_center_y;
 		SourceInfo source_edge_guard_px;

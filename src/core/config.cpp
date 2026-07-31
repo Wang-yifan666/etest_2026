@@ -821,6 +821,12 @@ namespace
 		    "vision.ball_ncnn.full_src_height",
 		    "vision.ball_ncnn.center_src_width",
 		    "vision.ball_ncnn.center_src_height",
+		    "vision.ball_ncnn.roi_location_mode",
+		    "vision.ball_ncnn.full_roi_x",
+		    "vision.ball_ncnn.full_roi_y",
+		    "vision.ball_ncnn.center_roi_x",
+		    "vision.ball_ncnn.center_roi_y",
+		    "vision.ball_ncnn.center_line_y",
 		    "vision.ball_ncnn.pipe_center_x",
 		    "vision.ball_ncnn.pipe_center_y",
 		    "vision.ball_ncnn.edge_guard_px",
@@ -1535,6 +1541,47 @@ namespace
 			    getInt(raw_config, "vision.ball_ncnn.center_src_height",
 			           bn.center_src_height, 1, 2160, result,
 			           &bn.source_center_src_height);
+
+			// ── ROI 定位模式 ──
+			bn.roi_location_mode = getString(
+			    raw_config, "vision.ball_ncnn.roi_location_mode",
+			    bn.roi_location_mode, false, result,
+			    &bn.source_roi_location_mode);
+			if(bn.roi_location_mode != "center_point"
+			   && bn.roi_location_mode != "topleft")
+			{
+				addMessage(result, etest::ConfigMessageLevel::ERROR,
+				           "vision.ball_ncnn.roi_location_mode must be "
+				           "\"center_point\" or \"topleft\"; keeping \""
+				               + bn.roi_location_mode + "\"");
+			}
+
+			// ── Full/Center ROI 左上角坐标 ──
+			bn.full_roi_x = getInt(
+			    raw_config, "vision.ball_ncnn.full_roi_x",
+			    bn.full_roi_x, 0, 4096, result,
+			    &bn.source_full_roi_x);
+
+			bn.full_roi_y = getInt(
+			    raw_config, "vision.ball_ncnn.full_roi_y",
+			    bn.full_roi_y, 0, 2160, result,
+			    &bn.source_full_roi_y);
+
+			bn.center_roi_x = getInt(
+			    raw_config, "vision.ball_ncnn.center_roi_x",
+			    bn.center_roi_x, 0, 4096, result,
+			    &bn.source_center_roi_x);
+
+			bn.center_roi_y = getInt(
+			    raw_config, "vision.ball_ncnn.center_roi_y",
+			    bn.center_roi_y, 0, 2160, result,
+			    &bn.source_center_roi_y);
+
+			// ── 中心线 ──
+			bn.center_line_y = getInt(
+			    raw_config, "vision.ball_ncnn.center_line_y",
+			    bn.center_line_y, 0, 2160, result,
+			    &bn.source_center_line_y);
 
 			bn.pipe_center_x =
 			    getInt(raw_config, "vision.ball_ncnn.pipe_center_x",

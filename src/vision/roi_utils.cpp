@@ -41,10 +41,24 @@ namespace etest::vision::roi_utils
 	                                 const BallNcnnConfig& config)
 	{
 		InferenceRoi roi;
-		roi.rect = makeFullRoi(frame_size,
-		                       config.full_src_width,
-		                       config.full_src_height,
-		                       config.pipe_center_y);
+
+		if(config.roi_location_mode == "topleft")
+		{
+			// 直接使用左上角坐标
+			roi.rect = cv::Rect(config.full_roi_x,
+			                    config.full_roi_y,
+			                    config.full_src_width,
+			                    config.full_src_height);
+		}
+		else
+		{
+			// 旧逻辑：通过中心点反算
+			roi.rect = makeFullRoi(frame_size,
+			                       config.full_src_width,
+			                       config.full_src_height,
+			                       config.pipe_center_y);
+		}
+
 		roi.model_input_size = cv::Size(config.full_input_width,
 		                                config.full_input_height);
 		roi.pipe_center_x = config.pipe_center_x;
@@ -57,11 +71,23 @@ namespace etest::vision::roi_utils
 	    const BallNcnnConfig& config)
 	{
 		InferenceRoi roi;
-		roi.rect = makeCenterRoi(frame_size,
-		                         config.center_src_width,
-		                         config.center_src_height,
-		                         config.pipe_center_x,
-		                         config.pipe_center_y);
+
+		if(config.roi_location_mode == "topleft")
+		{
+			roi.rect = cv::Rect(config.center_roi_x,
+			                    config.center_roi_y,
+			                    config.center_src_width,
+			                    config.center_src_height);
+		}
+		else
+		{
+			roi.rect = makeCenterRoi(frame_size,
+			                         config.center_src_width,
+			                         config.center_src_height,
+			                         config.pipe_center_x,
+			                         config.pipe_center_y);
+		}
+
 		roi.model_input_size = cv::Size(config.center_input_width,
 		                                config.center_input_height);
 		roi.pipe_center_x = config.pipe_center_x;

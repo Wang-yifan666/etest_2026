@@ -156,7 +156,23 @@ full_src_height = 320
 center_src_width = 448
 center_src_height = 320
 
-# 物理中心 O（全局像素坐标，1280×640 原图）
+# ── ROI 定位模式 ──
+# "center_point" = 通过 pipe_center_x/y 反算左上角（旧逻辑）
+# "topleft"      = 直接使用 full_roi_*/center_roi_* 左上角坐标
+roi_location_mode = "topleft"
+
+# Full ROI 左上角（1280×640 原图坐标）
+full_roi_x = 0
+full_roi_y = 160
+
+# Center ROI 左上角（1280×640 原图坐标）
+center_roi_x = 416
+center_roi_y = 160
+
+# 中心线 y（水平参考线，贯穿全图宽度）
+center_line_y = 320
+
+# 物理中心 O（全局像素坐标，1280×640 原图，center_point 模式使用）
 pipe_center_x = 640
 pipe_center_y = 320
 

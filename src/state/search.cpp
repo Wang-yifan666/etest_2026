@@ -219,6 +219,9 @@ namespace etest::state
 							    TrackingMode::NONE;
 							m0001_frame_received = false;
 
+							ETEST_LOG_INFO("SEARCH",
+							               "task M0001 (Q2): no vision");
+
 							// M0001 也发送 VSESSION 声明
 							ctx.uart.sendLine(
 							    uart::protocol::makeVsessionLine(
@@ -235,6 +238,27 @@ namespace etest::state
 							ctx.task.vision_enabled = true;
 							ctx.task.tracking_mode =
 							    TrackingMode::FULL;
+
+							const auto& bn =
+							    ctx.vision.getConfig().ball_ncnn;
+							ETEST_LOG_INFO(
+							    "SEARCH",
+							    "task "
+							        + new_tag
+							        + " → CALIBRATING, "
+							          "model=FULL "
+							        + std::to_string(
+							            bn.full_input_width)
+							        + "x"
+							        + std::to_string(
+							            bn.full_input_height)
+							        + " (ROI "
+							        + std::to_string(
+							            bn.full_src_width)
+							        + "x"
+							        + std::to_string(
+							            bn.full_src_height)
+							        + " from 1280x640)");
 
 							// 发送 VSESSION 声明视觉会话
 							ctx.uart.sendLine(
@@ -827,17 +851,32 @@ namespace etest::state
 				{
 					const auto& bn_cfg =
 					    ctx.vision.getConfig().ball_ncnn;
-					int limit_0p1mm = static_cast<int>(
-					    bn_cfg.initial_center_limit_mm * 10.0);
 					int pos = ctx.vision_result.position_0p1mm;
 
-					if(std::abs(pos) <= limit_0p1mm)
+					if(ctx.task.mode == TaskMode::Q6)
 					{
-						ctx.task.calibration_valid_frames++;
+						// M0005: 不要求中心，任意稳定位置即目标
+						ctx.task
+						    .calibration_valid_frames++;
 					}
 					else
 					{
-						ctx.task.calibration_valid_frames = 0;
+						// M0002～M0004: 必须接近固定中心 O
+						int limit_0p1mm =
+						    static_cast<int>(
+						        bn_cfg
+						            .initial_center_limit_mm
+						        * 10.0);
+						if(std::abs(pos) <= limit_0p1mm)
+						{
+							ctx.task
+							    .calibration_valid_frames++;
+						}
+						else
+						{
+							ctx.task
+							    .calibration_valid_frames = 0;
+						}
 					}
 				}
 
@@ -1000,6 +1039,22 @@ namespace etest::state
 					}
 
 					msg += " | mode=" + ctx.task.command_tag;
+					msg += " | tracking=";
+					switch(ctx.task.tracking_mode)
+					{
+					case TrackingMode::NONE:
+						msg += "NONE";
+						break;
+					case TrackingMode::FULL:
+						msg += "FULL(640x160)";
+						break;
+					case TrackingMode::CENTER:
+						msg += "CENTER(224x160)";
+						break;
+					case TrackingMode::FULL_REACQUIRE:
+						msg += "FULL_REACQ(640x160)";
+						break;
+					}
 					msg += " | phase=";
 					switch(ctx.task.phase)
 					{
