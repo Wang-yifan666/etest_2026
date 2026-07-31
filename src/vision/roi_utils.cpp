@@ -105,6 +105,12 @@ namespace etest::vision::roi_utils
 		if(pts.size() < 2)
 			return 0.0;
 
+		if(cal.image_right_sign != -1
+		   && cal.image_right_sign != 1)
+		{
+			return 0.0;
+		}
+
 		if(pixel_global <= pts.front().pixel)
 			return pts.front().position_mm * cal.image_right_sign;
 
@@ -117,6 +123,13 @@ namespace etest::vision::roi_utils
 			{
 				const auto& p0 = pts[i - 1];
 				const auto& p1 = pts[i];
+
+				// 配置应在加载阶段被拒绝，此处为防御性兜底
+				if(p1.pixel <= p0.pixel)
+				{
+					return 0.0;
+				}
+
 				const double ratio =
 				    (pixel_global - p0.pixel)
 				    / (p1.pixel - p0.pixel);

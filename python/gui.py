@@ -34,6 +34,23 @@ except ImportError:
         tomllib = None  # type: ignore[assignment]
 
 try:
+    import tomlkit
+except ImportError:
+    tomlkit = None
+
+from calibration_model import (  # type: ignore[import-untyped]
+    CalibrationValidationError,
+    CanvasTransform,
+    RoiCalibration,
+    RoiRect,
+    AxisCalibration,
+    AxisCalibrationPoint,
+    clamp,
+    robust_sample,
+)
+from calibration_camera import CalibrationCamera  # type: ignore[import-untyped]
+
+try:
     import cv2
     import numpy as np
     HAS_CV2 = True
@@ -1480,35 +1497,50 @@ class EtestGui:
     # ── 标定 Tab ──
 
     def build_calibration_tab(self) -> None:
-        toolbar = ttk.Frame(self.calib_tab)
+        """标定页：ROI 配置子页面 + 位置标定子页面（第二阶段）。"""
+        self.calib_notebook = ttk.Notebook(self.calib_tab)
+        self.calib_notebook.pack(fill=tk.BOTH, expand=True)
+
+        self.calib_roi_tab = ttk.Frame(self.calib_notebook, padding=8)
+        self.calib_axis_tab = ttk.Frame(self.calib_notebook, padding=8)
+        self.calib_notebook.add(self.calib_roi_tab, text="ROI 配置")
+        self.calib_notebook.add(self.calib_axis_tab, text="位置标定")
+
+        self._build_roi_tab()
+        self._build_axis_tab()
+
+    # ── ROI 配置子页面 ──
+
+    def _build_roi_tab(self) -> None:
+        toolbar = ttk.Frame(self.calib_roi_tab)
         toolbar.pack(fill=tk.X)
 
-        ttk.Label(toolbar, text="标定模式：").pack(side=tk.LEFT)
-        self.calib_mode_var = tk.StringVar(value="center_line")
+        ttk.Label(toolbar, text="拖动模式：").pack(side=tk.LEFT)
+        self.calib_mode_var = tk.StringVar(value="full_roi")
         calib_mode_box = ttk.Combobox(
             toolbar,
             textvariable=self.calib_mode_var,
             values=("full_roi", "center_roi", "center_line"),
             state="readonly",
-            width=16,
+            width=14,
         )
         calib_mode_box.pack(side=tk.LEFT, padx=(4, 8))
-        calib_mode_box.bind("<<ComboboxSelected>>", self.on_calib_mode_changed)
+        calib_mode_box.bind("<<ComboboxSelected>>", self._calib_on_mode_changed)
 
         ttk.Button(
-            toolbar, text="打开摄像头", command=self.on_calib_start_camera
+            toolbar, text="打开摄像头", command=self._calib_start_camera
         ).pack(side=tk.LEFT, padx=3)
 
         ttk.Button(
-            toolbar, text="停止摄像头", command=self.on_calib_stop_camera
+            toolbar, text="停止摄像头", command=self._calib_stop_camera
         ).pack(side=tk.LEFT, padx=3)
 
         ttk.Button(
-            toolbar, text="重新加载配置", command=self.on_calib_reload
+            toolbar, text="重新加载配置", command=self._calib_reload
         ).pack(side=tk.LEFT, padx=3)
 
         ttk.Button(
-            toolbar, text="保存标定", command=self.on_calib_save
+            toolbar, text="保存标定", command=self._calib_save
         ).pack(side=tk.LEFT, padx=3)
 
         self.calib_info_var = tk.StringVar(value="未启动摄像头")
@@ -1518,9 +1550,12 @@ class EtestGui:
             anchor=tk.W,
         ).pack(side=tk.LEFT, padx=(12, 0))
 
-        # 预览 Canvas
-        canvas_frame = ttk.Frame(self.calib_tab)
-        canvas_frame.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
+        # 主布局：Canvas 左 + 输入面板右
+        main_frame = ttk.Frame(self.calib_roi_tab)
+        main_frame.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
+
+        canvas_frame = ttk.Frame(main_frame)
+        canvas_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         self.calib_canvas = tk.Canvas(
             canvas_frame,
@@ -1529,34 +1564,173 @@ class EtestGui:
         )
         self.calib_canvas.pack(fill=tk.BOTH, expand=True)
 
-        # 标定坐标
-        self.calib_full_roi_x = 0
-        self.calib_full_roi_y = 160
-        self.calib_center_roi_x = 416
-        self.calib_center_roi_y = 160
-        self.calib_center_line_y = 320
+        # 右侧输入面板
+        input_frame = ttk.LabelFrame(main_frame, text="参数", padding=8)
+        input_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(8, 0))
 
-        self.calib_full_src_w = 1280
-        self.calib_full_src_h = 320
-        self.calib_center_src_w = 448
-        self.calib_center_src_h = 320
+        # Full ROI
+        ttk.Label(input_frame, text="Full ROI", font=("", 10, "bold")).grid(
+            row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 4)
+        )
+        ttk.Label(input_frame, text="X:").grid(row=1, column=0, sticky=tk.E, padx=(0, 4))
+        self.full_roi_x_var = tk.IntVar()
+        ttk.Entry(input_frame, textvariable=self.full_roi_x_var, width=6).grid(
+            row=1, column=1, sticky=tk.W
+        )
+        self.full_roi_x_var.trace_add("write", lambda *_: self._calib_apply_entry_values())
 
-        self.calib_cap: Optional[cv2.VideoCapture] = None  # type: ignore[valid-type]
-        self.calib_running = False
-        self.calib_current_frame = None
-        self.calib_drag_item: Optional[str] = None
-        self.calib_drag_start_x = 0
-        self.calib_drag_start_y = 0
-        self.calib_display_width = 640
-        self.calib_display_height = 320
-        self.calib_scale = 1.0
+        ttk.Label(input_frame, text="Y:").grid(row=2, column=0, sticky=tk.E, padx=(0, 4))
+        self.full_roi_y_var = tk.IntVar()
+        ttk.Entry(input_frame, textvariable=self.full_roi_y_var, width=6).grid(
+            row=2, column=1, sticky=tk.W
+        )
+        self.full_roi_y_var.trace_add("write", lambda *_: self._calib_apply_entry_values())
 
+        ttk.Label(input_frame, text="W: 1280 (只读)").grid(
+            row=3, column=0, columnspan=2, sticky=tk.W, pady=(0, 2)
+        )
+        ttk.Label(input_frame, text="H: 320 (只读)").grid(
+            row=4, column=0, columnspan=2, sticky=tk.W, pady=(0, 8)
+        )
+
+        # Center ROI
+        ttk.Label(input_frame, text="Center ROI", font=("", 10, "bold")).grid(
+            row=5, column=0, columnspan=2, sticky=tk.W, pady=(0, 4)
+        )
+        ttk.Label(input_frame, text="X:").grid(row=6, column=0, sticky=tk.E, padx=(0, 4))
+        self.center_roi_x_var = tk.IntVar()
+        ttk.Entry(input_frame, textvariable=self.center_roi_x_var, width=6).grid(
+            row=6, column=1, sticky=tk.W
+        )
+        self.center_roi_x_var.trace_add("write", lambda *_: self._calib_apply_entry_values())
+
+        ttk.Label(input_frame, text="Y:").grid(row=7, column=0, sticky=tk.E, padx=(0, 4))
+        self.center_roi_y_var = tk.IntVar()
+        ttk.Entry(input_frame, textvariable=self.center_roi_y_var, width=6).grid(
+            row=7, column=1, sticky=tk.W
+        )
+        self.center_roi_y_var.trace_add("write", lambda *_: self._calib_apply_entry_values())
+
+        ttk.Label(input_frame, text="W: 448 (只读)").grid(
+            row=8, column=0, columnspan=2, sticky=tk.W, pady=(0, 2)
+        )
+        ttk.Label(input_frame, text="H: 320 (只读)").grid(
+            row=9, column=0, columnspan=2, sticky=tk.W, pady=(0, 8)
+        )
+
+        # 水平参考线
+        ttk.Label(input_frame, text="水平参考线", font=("", 10, "bold")).grid(
+            row=10, column=0, columnspan=2, sticky=tk.W, pady=(0, 4)
+        )
+        ttk.Label(input_frame, text="Y:").grid(row=11, column=0, sticky=tk.E, padx=(0, 4))
+        self.center_line_y_var = tk.IntVar()
+        ttk.Entry(input_frame, textvariable=self.center_line_y_var, width=6).grid(
+            row=11, column=1, sticky=tk.W
+        )
+        self.center_line_y_var.trace_add("write", lambda *_: self._calib_apply_entry_values())
+
+        ttk.Label(
+            input_frame,
+            text="仅用于画面辅助观察\n不参与位置换算",
+            foreground="#888888",
+            font=("", 8),
+        ).grid(row=12, column=0, columnspan=2, sticky=tk.W, pady=(2, 0))
+
+        # ── 数据模型 ──
+        self._roi_calibration = RoiCalibration()
         self._calib_load_from_config()
 
+        # 同步到输入框
+        self._calib_sync_vars_from_model()
+
+        # ── 摄像头 ──
+        self.calib_camera: Optional[CalibrationCamera] = None
+        self.calib_running = False
+        self.calib_current_frame = None
+        self.calib_after_id: Optional[str] = None
+
+        # ── 拖动状态 ──
+        self.calib_drag_item: Optional[str] = None
+        self.calib_drag_offset_x = 0.0
+        self.calib_drag_offset_y = 0.0
+        self.calib_transform: Optional[CanvasTransform] = None
+
+        # ── Canvas 绑定 ──
         self.calib_canvas.bind("<ButtonPress-1>", self._calib_on_press)
         self.calib_canvas.bind("<B1-Motion>", self._calib_on_drag)
         self.calib_canvas.bind("<ButtonRelease-1>", self._calib_on_release)
         self.calib_canvas.bind("<Configure>", self._calib_on_resize)
+
+        # 方向键微调（按住 Shift=10px，否则 1px）
+        self.calib_canvas.bind("<Left>", lambda e: self._calib_nudge(-1, 0, e))
+        self.calib_canvas.bind("<Right>", lambda e: self._calib_nudge(1, 0, e))
+        self.calib_canvas.bind("<Up>", lambda e: self._calib_nudge(0, -1, e))
+        self.calib_canvas.bind("<Down>", lambda e: self._calib_nudge(0, 1, e))
+        self.calib_canvas.focus_set()
+
+    # ── 数据模型 ⇄ 输入框 ──
+
+    def _calib_sync_vars_from_model(self) -> None:
+        """把数据模型同步到 IntVar 输入框。"""
+        rc = self._roi_calibration
+        self.full_roi_x_var.set(rc.full_roi.x)
+        self.full_roi_y_var.set(rc.full_roi.y)
+        self.center_roi_x_var.set(rc.center_roi.x)
+        self.center_roi_y_var.set(rc.center_roi.y)
+        self.center_line_y_var.set(rc.center_line_y)
+
+    def _calib_apply_entry_values(self) -> None:
+        """把 IntVar 值应用到数据模型，并执行边界钳制。"""
+        rc = self._roi_calibration
+        try:
+            rc.full_roi.x = self.full_roi_x_var.get()
+        except tk.TclError:
+            pass
+
+        try:
+            rc.full_roi.y = self.full_roi_y_var.get()
+        except tk.TclError:
+            pass
+
+        try:
+            rc.center_roi.x = self.center_roi_x_var.get()
+        except tk.TclError:
+            pass
+
+        try:
+            rc.center_roi.y = self.center_roi_y_var.get()
+        except tk.TclError:
+            pass
+
+        try:
+            rc.center_line_y = self.center_line_y_var.get()
+        except tk.TclError:
+            pass
+
+        rc.clamp_all()
+        self._calib_sync_vars_from_model()
+        self._calib_redraw()
+
+    def _calib_nudge(self, dx: int, dy: int, event: tk.Event) -> None:
+        """方向键微调当前模式的 ROI/参考线位置。"""
+        step = 10 if (event.state & 0x0001) else 1  # Shift 键
+        mode = self.calib_mode_var.get()
+        rc = self._roi_calibration
+
+        if mode == "full_roi":
+            rc.full_roi.x += dx * step
+            rc.full_roi.y += dy * step
+        elif mode == "center_roi":
+            rc.center_roi.x += dx * step
+            rc.center_roi.y += dy * step
+        elif mode == "center_line":
+            rc.center_line_y += dy * step
+
+        rc.clamp_all()
+        self._calib_sync_vars_from_model()
+        self._calib_redraw()
+
+    # ── 配置读写 ──
 
     def _calib_load_from_config(self) -> None:
         """从 config/vision.toml 读取当前标定值。"""
@@ -1566,34 +1740,85 @@ class EtestGui:
                 with vision_path.open("rb") as f:
                     data = tomllib.load(f) if tomllib else {}
                 bn = data.get("vision", {}).get("ball_ncnn", {})
-                self.calib_full_roi_x = int(bn.get("full_roi_x", 0))
-                self.calib_full_roi_y = int(bn.get("full_roi_y", 160))
-                self.calib_center_roi_x = int(bn.get("center_roi_x", 416))
-                self.calib_center_roi_y = int(bn.get("center_roi_y", 160))
-                self.calib_center_line_y = int(bn.get("center_line_y", 320))
-                self.calib_full_src_w = int(bn.get("full_src_width", 1280))
-                self.calib_full_src_h = int(bn.get("full_src_height", 320))
-                self.calib_center_src_w = int(bn.get("center_src_width", 448))
-                self.calib_center_src_h = int(bn.get("center_src_height", 320))
+                rc = self._roi_calibration
+                rc.full_roi.x = int(bn.get("full_roi_x", 0))
+                rc.full_roi.y = int(bn.get("full_roi_y", 160))
+                rc.center_roi.x = int(bn.get("center_roi_x", 416))
+                rc.center_roi.y = int(bn.get("center_roi_y", 160))
+                rc.center_line_y = int(bn.get("center_line_y", 320))
+                rc.clamp_all()
                 LOGGER.info("标定参数已从配置加载")
         except Exception:
             LOGGER.warning("从配置加载标定参数失败，使用默认值", exc_info=True)
 
-    @ui_guard("切换标定模式")
-    def on_calib_mode_changed(self, _event=None) -> None:
-        mode = self.calib_mode_var.get()
-        self._calib_draw_overlay()
-        mode_names = {
-            "full_roi": "Full ROI",
-            "center_roi": "Center ROI",
-            "center_line": "中心线",
-        }
-        self.calib_info_var.set(
-            f"当前标定：{mode_names.get(mode, mode)} — 拖动绿色元素调整位置"
+    @ui_guard("重新加载标定配置")
+    def _calib_reload(self) -> None:
+        self._calib_load_from_config()
+        self._calib_sync_vars_from_model()
+        self.calib_info_var.set("已从配置重新加载标定参数")
+        self._calib_redraw()
+        self.set_notice("标定参数已重新加载")
+
+    @ui_guard("保存标定")
+    def _calib_save(self) -> None:
+        if tomlkit is None:
+            raise OperationError(
+                "保存标定需要 tomlkit。\n"
+                "运行：python3 -m pip install tomlkit"
+            )
+
+        vision_path = CONFIG_DIR / "vision.toml"
+
+        try:
+            text = vision_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise OperationError(f"读取 {vision_path} 失败：{exc}") from exc
+
+        document = tomlkit.parse(text)
+        rc = self._roi_calibration
+        rc.validate()
+
+        ball_ncnn = document.get("vision", {}).get("ball_ncnn")  # type: ignore[union-attr]
+        if ball_ncnn is None:
+            raise OperationError("vision.toml 中缺少 [vision.ball_ncnn] 配置节")
+
+        ball_ncnn["roi_location_mode"] = "topleft"
+        ball_ncnn["full_roi_x"] = rc.full_roi.x
+        ball_ncnn["full_roi_y"] = rc.full_roi.y
+        ball_ncnn["center_roi_x"] = rc.center_roi.x
+        ball_ncnn["center_roi_y"] = rc.center_roi.y
+        ball_ncnn["center_line_y"] = rc.center_line_y
+
+        rendered = tomlkit.dumps(document)
+
+        # 保存后再解析一次，防止写出非法 TOML
+        if tomllib is not None:
+            try:
+                tomllib.loads(rendered)
+            except Exception as exc:
+                raise OperationError(f"保存后 TOML 解析失败：{exc}") from exc
+
+        atomic_write_text(vision_path, rendered)
+
+        self.set_notice(
+            f"标定参数已保存到 {vision_path.relative_to(PROJECT_ROOT)}；"
+            "主程序重启后生效。"
+        )
+        LOGGER.info(
+            "标定参数已保存: full=(%d,%d) center=(%d,%d) line_y=%d",
+            rc.full_roi.x, rc.full_roi.y,
+            rc.center_roi.x, rc.center_roi.y,
+            rc.center_line_y,
         )
 
+        # 同步刷新"配置"页面
+        if self.current_config_rel == "vision.toml":
+            self.load_config_file("vision.toml")
+
+    # ── 摄像头 ──
+
     @ui_guard("打开摄像头")
-    def on_calib_start_camera(self) -> None:
+    def _calib_start_camera(self) -> None:
         if not HAS_CV2:
             raise OperationError(
                 "标定功能需要 opencv-python。\n"
@@ -1604,107 +1829,123 @@ class EtestGui:
             self.set_notice("摄像头已在运行")
             return
 
-        self.calib_cap = cv2.VideoCapture(0)
-        if not self.calib_cap.isOpened():
-            self.calib_cap = None
-            raise OperationError("无法打开摄像头（设备 0）")
-
+        self.calib_camera = CalibrationCamera(0)
+        self.calib_camera.start()
         self.calib_running = True
-        self.calib_info_var.set("摄像头已启动 — 拖动绿色元素标定 ROI/中心线")
-        self._calib_update_frame()
+        self.calib_info_var.set("摄像头已启动 — 拖动/方向键/输入框调整参数")
+        self._calib_update_preview()
 
     @ui_guard("停止摄像头")
-    def on_calib_stop_camera(self) -> None:
+    def _calib_stop_camera(self) -> None:
         self.calib_running = False
-        if self.calib_cap is not None:
-            self.calib_cap.release()
-            self.calib_cap = None
+
+        if self.calib_after_id is not None:
+            try:
+                self.root.after_cancel(self.calib_after_id)
+            except tk.TclError:
+                pass
+            self.calib_after_id = None
+
+        if self.calib_camera is not None:
+            self.calib_camera.stop()
+            self.calib_camera = None
+
+        self.calib_current_frame = None
+        self.calib_transform = None
         self.calib_canvas.delete("all")
         self.calib_info_var.set("摄像头已停止")
 
-    def _calib_update_frame(self) -> None:
-        if not self.calib_running or self.calib_cap is None:
+    def _calib_update_preview(self) -> None:
+        if not self.calib_running or self.calib_camera is None:
             return
 
-        ret, frame = self.calib_cap.read()
-        if not ret or frame is None:
-            self.root.after(30, self._calib_update_frame)
-            return
+        frame = self.calib_camera.latest_frame()
+        if frame is not None:
+            self.calib_current_frame = frame
+            self._calib_render_frame(frame)
 
-        self.calib_current_frame = frame
+        self.calib_after_id = self.root.after(
+            33,
+            self._calib_update_preview,
+        )
 
-        # 缩放以适配 Canvas
+    # ── Canvas 渲染 ──
+
+    def _calib_make_transform(self, frame_h: int, frame_w: int) -> CanvasTransform:
         canvas_w = self.calib_canvas.winfo_width()
         canvas_h = self.calib_canvas.winfo_height()
         if canvas_w < 10 or canvas_h < 10:
             canvas_w = 640
             canvas_h = 320
 
-        self.calib_display_width = canvas_w
-        self.calib_display_height = canvas_h
+        return CanvasTransform(
+            frame_width=frame_w,
+            frame_height=frame_h,
+            canvas_width=canvas_w,
+            canvas_height=canvas_h,
+        )
 
+    def _calib_render_frame(self, frame) -> None:
         frame_h, frame_w = frame.shape[:2]
-        self.calib_scale = min(canvas_w / frame_w, canvas_h / frame_h)
-        new_w = int(frame_w * self.calib_scale)
-        new_h = int(frame_h * self.calib_scale)
+        transform = self._calib_make_transform(frame_h, frame_w)
+        self.calib_transform = transform
 
-        small = cv2.resize(frame, (new_w, new_h))
+        small = cv2.resize(frame, (transform.draw_width, transform.draw_height))
 
-        # 使用 PPM 格式，无需 Pillow
         rgb = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
-        ppm_header = f"P6\n{new_w} {new_h}\n255\n".encode("ascii")
+        ppm_header = f"P6\n{transform.draw_width} {transform.draw_height}\n255\n".encode("ascii")
         ppm_data = ppm_header + rgb.tobytes()
         self.calib_tk_img = tk.PhotoImage(data=ppm_data)
 
         self.calib_canvas.delete("all")
         self.calib_canvas.create_image(
-            new_w // 2, new_h // 2,
-            image=self.calib_tk_img, anchor=tk.CENTER,
+            transform.offset_x,
+            transform.offset_y,
+            image=self.calib_tk_img,
+            anchor=tk.NW,
+            tags="camera_frame",
         )
 
         self._calib_draw_overlay()
 
-        if self.calib_running:
-            self.root.after(33, self._calib_update_frame)
-
-    def _calib_scale_px(self, x: float, y: float) -> tuple[float, float]:
-        return (x * self.calib_scale, y * self.calib_scale)
-
     def _calib_draw_overlay(self) -> None:
-        """在 Canvas 上绘制绿色叠加层。"""
-        s = self.calib_scale
-        if s <= 0:
+        transform = self.calib_transform
+        if transform is None:
             return
 
         GREEN = "#00ff00"
         GREEN_LIGHT = "#55ff55"
         mode = self.calib_mode_var.get()
+        rc = self._roi_calibration
 
         # Full ROI 矩形
-        fx, fy = self._calib_scale_px(self.calib_full_roi_x, self.calib_full_roi_y)
-        fw, fh = self._calib_scale_px(self.calib_full_src_w, self.calib_full_src_h)
-        full_roi_tag = "full_roi"
+        fx, fy = transform.image_to_canvas(rc.full_roi.x, rc.full_roi.y)
+        fx2, fy2 = transform.image_to_canvas(
+            rc.full_roi.x + rc.full_roi.width,
+            rc.full_roi.y + rc.full_roi.height,
+        )
         self.calib_canvas.create_rectangle(
-            fx, fy, fx + fw, fy + fh,
-            outline=GREEN, width=2, tags=full_roi_tag,
+            fx, fy, fx2, fy2,
+            outline=GREEN, width=2, tags="full_roi",
         )
 
         # Center ROI 矩形
-        cx, cy = self._calib_scale_px(self.calib_center_roi_x, self.calib_center_roi_y)
-        cw, ch = self._calib_scale_px(self.calib_center_src_w, self.calib_center_src_h)
-        center_roi_tag = "center_roi"
+        cx, cy = transform.image_to_canvas(rc.center_roi.x, rc.center_roi.y)
+        cx2, cy2 = transform.image_to_canvas(
+            rc.center_roi.x + rc.center_roi.width,
+            rc.center_roi.y + rc.center_roi.height,
+        )
         self.calib_canvas.create_rectangle(
-            cx, cy, cx + cw, cy + ch,
-            outline=GREEN_LIGHT, width=2, dash=(6, 3), tags=center_roi_tag,
+            cx, cy, cx2, cy2,
+            outline=GREEN_LIGHT, width=2, dash=(6, 3), tags="center_roi",
         )
 
-        # 中心线
-        line_tag = "center_line"
-        cl_y = self.calib_center_line_y * s
-        canvas_w = self.calib_display_width
+        # 水平参考线（仅在图像区域内绘制）
+        line_left, line_y = transform.image_to_canvas(0, rc.center_line_y)
+        line_right, _ = transform.image_to_canvas(rc.frame_width, rc.center_line_y)
         self.calib_canvas.create_line(
-            0, cl_y, canvas_w, cl_y,
-            fill=GREEN, width=3, tags=line_tag,
+            line_left, line_y, line_right, line_y,
+            fill=GREEN, width=3, tags="center_line",
         )
 
         # 拖动句柄
@@ -1720,56 +1961,91 @@ class EtestGui:
             )
         elif mode == "center_line":
             self.calib_canvas.create_line(
-                0, cl_y, canvas_w, cl_y,
+                line_left, line_y, line_right, line_y,
                 fill=GREEN, width=5, tags="handle_l",
             )
 
-    def _calib_on_press(self, event: tk.Event) -> None:
+    def _calib_redraw(self) -> None:
+        """仅重绘叠加层（不清空画面）。"""
+        self.calib_canvas.delete(
+            "full_roi", "center_roi", "center_line",
+            "handle_f", "handle_c", "handle_l",
+        )
+        if self.calib_current_frame is not None:
+            self._calib_draw_overlay()
+
+    # ── 鼠标事件 ──
+
+    @ui_guard("拖动模式切换")
+    def _calib_on_mode_changed(self, _event=None) -> None:
+        self._calib_redraw()
         mode = self.calib_mode_var.get()
-        s = self.calib_scale
-        if s <= 0:
+        mode_names = {
+            "full_roi": "Full ROI",
+            "center_roi": "Center ROI",
+            "center_line": "水平参考线",
+        }
+        self.calib_info_var.set(
+            f"当前拖动：{mode_names.get(mode, mode)}"
+        )
+
+    def _calib_on_press(self, event: tk.Event) -> None:
+        transform = self.calib_transform
+        if transform is None:
             return
 
-        # 检查是否点在拖动句柄附近
+        if not transform.contains_canvas_point(event.x, event.y):
+            self.set_notice("鼠标位置不在有效图像区域", error=True)
+            return
+
+        image_x, image_y = transform.canvas_to_image(event.x, event.y)
+        mode = self.calib_mode_var.get()
+        rc = self._roi_calibration
+
         if mode == "full_roi":
-            fx, fy = self._calib_scale_px(self.calib_full_roi_x, self.calib_full_roi_y)
-            if abs(event.x - fx) < 12 and abs(event.y - fy) < 12:
+            roi = rc.full_roi
+            # 近似的句柄检测：鼠标在 ROI 左上角 12 CV-px 以内
+            handle_cx, handle_cy = transform.image_to_canvas(roi.x, roi.y)
+            if abs(event.x - handle_cx) < 12 and abs(event.y - handle_cy) < 12:
                 self.calib_drag_item = "full_roi"
-                self.calib_drag_start_x = event.x
+                self.calib_drag_offset_x = image_x - roi.x
+                self.calib_drag_offset_y = image_y - roi.y
 
         elif mode == "center_roi":
-            cx, cy = self._calib_scale_px(self.calib_center_roi_x, self.calib_center_roi_y)
-            if abs(event.x - cx) < 12 and abs(event.y - cy) < 12:
+            roi = rc.center_roi
+            handle_cx, handle_cy = transform.image_to_canvas(roi.x, roi.y)
+            if abs(event.x - handle_cx) < 12 and abs(event.y - handle_cy) < 12:
                 self.calib_drag_item = "center_roi"
-                self.calib_drag_start_x = event.x
+                self.calib_drag_offset_x = image_x - roi.x
+                self.calib_drag_offset_y = image_y - roi.y
 
         elif mode == "center_line":
             self.calib_drag_item = "center_line"
-            self.calib_drag_start_y = event.y
+            self.calib_drag_offset_y = image_y - rc.center_line_y
 
     def _calib_on_drag(self, event: tk.Event) -> None:
-        if self.calib_drag_item is None:
+        if self.calib_drag_item is None or self.calib_transform is None:
             return
 
-        s = self.calib_scale
-        if s <= 0:
+        transform = self.calib_transform
+        if not transform.contains_canvas_point(event.x, event.y):
             return
+
+        image_x, image_y = transform.canvas_to_image(event.x, event.y)
+        rc = self._roi_calibration
 
         if self.calib_drag_item == "full_roi":
-            self.calib_full_roi_x = max(0, int(event.x / s))
-            self.calib_full_roi_y = max(0, int(event.y / s))
+            rc.full_roi.x = round(image_x - self.calib_drag_offset_x)
+            rc.full_roi.y = round(image_y - self.calib_drag_offset_y)
         elif self.calib_drag_item == "center_roi":
-            self.calib_center_roi_x = max(0, int(event.x / s))
-            self.calib_center_roi_y = max(0, int(event.y / s))
+            rc.center_roi.x = round(image_x - self.calib_drag_offset_x)
+            rc.center_roi.y = round(image_y - self.calib_drag_offset_y)
         elif self.calib_drag_item == "center_line":
-            self.calib_center_line_y = max(0, min(640, int(event.y / s)))
+            rc.center_line_y = round(image_y - self.calib_drag_offset_y)
 
-        # 重绘
-        self.calib_canvas.delete("full_roi", "center_roi", "center_line",
-                                 "handle_f", "handle_c", "handle_l")
-        self._calib_draw_overlay()
-
-        # 更新信息
+        rc.clamp_all()
+        self._calib_sync_vars_from_model()
+        self._calib_redraw()
         self._calib_update_info()
 
     def _calib_on_release(self, _event: tk.Event) -> None:
@@ -1777,82 +2053,42 @@ class EtestGui:
 
     def _calib_on_resize(self, _event: tk.Event) -> None:
         if self.calib_current_frame is not None:
-            # 更新显示比例并重绘
-            canvas_w = self.calib_canvas.winfo_width()
-            canvas_h = self.calib_canvas.winfo_height()
-            if canvas_w > 10 and canvas_h > 10:
-                self.calib_display_width = canvas_w
-                self.calib_display_height = canvas_h
-                frame_h, frame_w = self.calib_current_frame.shape[:2]
-                self.calib_scale = min(canvas_w / frame_w, canvas_h / frame_h)
-            self.calib_canvas.delete("full_roi", "center_roi", "center_line",
-                                     "handle_f", "handle_c", "handle_l")
-            self._calib_draw_overlay()
+            self._calib_render_frame(self.calib_current_frame)
 
     def _calib_update_info(self) -> None:
         mode = self.calib_mode_var.get()
+        rc = self._roi_calibration
         if mode == "full_roi":
             self.calib_info_var.set(
-                f"Full ROI 左上角: ({self.calib_full_roi_x}, {self.calib_full_roi_y})"
+                f"Full ROI 左上角: ({rc.full_roi.x}, {rc.full_roi.y})"
             )
         elif mode == "center_roi":
             self.calib_info_var.set(
-                f"Center ROI 左上角: ({self.calib_center_roi_x}, {self.calib_center_roi_y})"
+                f"Center ROI 左上角: ({rc.center_roi.x}, {rc.center_roi.y})"
             )
         elif mode == "center_line":
             self.calib_info_var.set(
-                f"中心线 Y: {self.calib_center_line_y}"
+                f"水平参考线 Y: {rc.center_line_y}"
             )
 
-    @ui_guard("重新加载标定配置")
-    def on_calib_reload(self) -> None:
-        self._calib_load_from_config()
-        self.calib_info_var.set("已从配置重新加载标定参数")
-        self.calib_canvas.delete("full_roi", "center_roi", "center_line",
-                                 "handle_f", "handle_c", "handle_l")
-        if self.calib_current_frame is not None:
-            self._calib_draw_overlay()
-        self.set_notice("标定参数已重新加载")
+    # ── 位置标定子页面（第二阶段占位）──
 
-    @ui_guard("保存标定")
-    def on_calib_save(self) -> None:
-        if tomllib is None:
-            raise OperationError("需要 tomllib/tomli 来读写配置")
-
-        vision_path = CONFIG_DIR / "vision.toml"
-        try:
-            text = vision_path.read_text(encoding="utf-8")
-        except OSError as exc:
-            raise OperationError(f"读取 {vision_path} 失败：{exc}") from exc
-
-        # 更新各字段
-        replacements = [
-            ("full_roi_x", self.calib_full_roi_x),
-            ("full_roi_y", self.calib_full_roi_y),
-            ("center_roi_x", self.calib_center_roi_x),
-            ("center_roi_y", self.calib_center_roi_y),
-            ("center_line_y", self.calib_center_line_y),
-        ]
-
-        for key, value in replacements:
-            pattern = re.compile(
-                r"^(\s*" + re.escape(key) + r"\s*=\s*)\d+",
-                re.MULTILINE,
-            )
-            text = pattern.sub(r"\g<1>" + str(value), text)
-
-        try:
-            atomic_write_text(vision_path, text)
-        except OSError as exc:
-            raise OperationError(f"保存 {vision_path} 失败：{exc}") from exc
-
-        self.set_notice(f"标定参数已保存到 {vision_path.relative_to(PROJECT_ROOT)}")
-        LOGGER.info(
-            "标定参数已保存: full=(%d,%d) center=(%d,%d) line_y=%d",
-            self.calib_full_roi_x, self.calib_full_roi_y,
-            self.calib_center_roi_x, self.calib_center_roi_y,
-            self.calib_center_line_y,
+    def _build_axis_tab(self) -> None:
+        placeholder = ttk.Label(
+            self.calib_axis_tab,
+            text="位置标定功能将在第二阶段实现。\n\n"
+                 "功能：\n"
+                 "• 输入已知物理位置（如 -100 mm）\n"
+                 "• 调用 NCNN 检测器多帧采样球心像素\n"
+                 "• 计算中位数 / MAD 抖动 / 有效帧数\n"
+                 "• 标定点表格（可添加/删除/重采样）\n"
+                 "• 保存 pixels 与 positions_mm 到 vision.toml",
+            justify=tk.LEFT,
+            font=("", 11),
         )
+        placeholder.pack(expand=True)
+
+    # ── 辅助 ──
 
     def set_notice(self, text: str, error: bool = False) -> None:
         self.notice_var.set(text)
@@ -1872,6 +2108,21 @@ class EtestGui:
                 return
 
         self.closed = True
+
+        # 停止标定摄像头定时器
+        if getattr(self, "calib_after_id", None) is not None:
+            try:
+                self.root.after_cancel(self.calib_after_id)
+            except tk.TclError:
+                pass
+            self.calib_after_id = None
+
+        # 停止标定摄像头线程
+        if getattr(self, "calib_camera", None) is not None:
+            self.calib_camera.stop()
+            self.calib_camera = None
+
+        self.calib_running = False
 
         if self.process_console_handle is not None:
             try:

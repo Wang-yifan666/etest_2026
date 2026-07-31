@@ -257,6 +257,72 @@ if(ETEST_HAS_NCNN)
     target_link_libraries(etest_yolo_ncnn_smoke PRIVATE etest_vision_core ${OpenCV_LIBS} pthread ncnn)
     target_compile_options(etest_yolo_ncnn_smoke PRIVATE -Wall -Wextra -pedantic)
     add_test(NAME yolo_ncnn_smoke COMMAND etest_yolo_ncnn_smoke)
+
+    # ── 标定采样 worker ──
+    add_executable(
+        etest_calibration_worker
+        src/tools/calibration_worker.cpp
+        src/core/config.cpp
+        src/core/logger.cpp
+    )
+
+    target_include_directories(
+        etest_calibration_worker
+        PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(
+        etest_calibration_worker
+        PRIVATE
+        etest_vision_core
+        ${OpenCV_LIBS}
+        pthread
+        ncnn
+    )
+
+    target_compile_options(
+        etest_calibration_worker
+        PRIVATE
+        -Wall
+        -Wextra
+        -pedantic
+    )
+
+    # ── 轴标定测试 ──
+    add_executable(
+        etest_axis_calibration_test
+        test/test_axis_calibration.cpp
+        src/core/config.cpp
+        src/core/logger.cpp
+    )
+
+    target_include_directories(
+        etest_axis_calibration_test
+        PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(
+        etest_axis_calibration_test
+        PRIVATE
+        etest_vision_core
+        ${OpenCV_LIBS}
+        pthread
+    )
+
+    target_compile_options(
+        etest_axis_calibration_test
+        PRIVATE
+        -Wall
+        -Wextra
+        -pedantic
+    )
+
+    add_test(
+        NAME axis_calibration_test
+        COMMAND etest_axis_calibration_test
+    )
 endif()
 
 enable_testing()

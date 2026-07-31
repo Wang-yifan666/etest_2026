@@ -1658,7 +1658,17 @@ namespace
 			           bn.axis_calibration.image_right_sign, -1, 1,
 			           result, nullptr);
 
-			// 标定点：逗号分隔的浮点字符串
+			if(bn.axis_calibration.image_right_sign != -1
+			   && bn.axis_calibration.image_right_sign != 1)
+			{
+				addMessage(
+				    result, etest::ConfigMessageLevel::ERROR,
+				    "axis_calibration.image_right_sign must be -1 or 1; "
+				    "reset to 1");
+				bn.axis_calibration.image_right_sign = 1;
+			}
+
+			// 标定点：逗号分隔的浮点字符串 — 严格解析
 			std::string pixels_str = getString(
 			    raw_config,
 			    "vision.ball_ncnn.axis_calibration.pixels",
@@ -1671,44 +1681,151 @@ namespace
 
 			if(!pixels_str.empty() && !positions_str.empty())
 			{
-				// 解析逗号分隔列表
-				auto splitDoubles =
-				    [](const std::string& s) -> std::vector<double> {
-					std::vector<double> out;
-					std::istringstream iss(s);
+				// 严格解析逗号分隔列表：拒绝空 token 和非法数字
+				auto splitDoublesStrict =
+				    [&](const std::string& value,
+				        const std::string& key,
+				        std::vector<double>& output) -> bool
+				{
+					output.clear();
+
+					std::istringstream stream(value);
 					std::string token;
-					while(std::getline(iss, token, ','))
+
+					while(std::getline(stream, token, ','))
 					{
+						const auto first = token.find_first_not_of(" \t");
+						const auto last = token.find_last_not_of(" \t");
+
+						if(first == std::string::npos)
+						{
+							addMessage(
+							    result,
+							    etest::ConfigMessageLevel::ERROR,
+							    key + " contains an empty value");
+							return false;
+						}
+
+						token = token.substr(first, last - first + 1);
+
 						char* end = nullptr;
-						double v = std::strtod(token.c_str(), &end);
-						if(end != token.c_str()
-						   && std::isfinite(v))
-							out.push_back(v);
+						const double number =
+						    std::strtod(token.c_str(), &end);
+
+						if(end == token.c_str()
+						   || *end != '\0'
+						   || !std::isfinite(number))
+						{
+							addMessage(
+							    result,
+							    etest::ConfigMessageLevel::ERROR,
+							    key
+							        + " contains invalid number: "
+							        + token);
+							return false;
+						}
+
+						output.push_back(number);
 					}
-					return out;
+
+					return true;
 				};
 
-				auto pixels = splitDoubles(pixels_str);
-				auto positions = splitDoubles(positions_str);
+				std::vector<double> pixels;
+				std::vector<double> positions;
 
-				std::size_t count =
-				    std::min(pixels.size(), positions.size());
+				const bool pixels_ok = splitDoublesStrict(
+				    pixels_str, "axis_calibration.pixels", pixels);
 
-				if(count >= 2)
+				const bool positions_ok = splitDoublesStrict(
+				    positions_str, "axis_calibration.positions_mm",
+				    positions);
+
+				if(pixels_ok && positions_ok)
 				{
-					bn.axis_calibration.points.clear();
-					for(std::size_t i = 0; i < count; ++i)
+					if(pixels.size() != positions.size())
 					{
-						bn.axis_calibration.points.push_back(
-						    {pixels[i], positions[i]});
+						addMessage(
+						    result,
+						    etest::ConfigMessageLevel::ERROR,
+						    "axis_calibration.pixels and "
+						    "positions_mm must have the same "
+						    "number of values");
 					}
-				}
-				else if(!pixels_str.empty() || !positions_str.empty())
-				{
-					addMessage(
-					    result, etest::ConfigMessageLevel::ERROR,
-					    "axis_calibration.pixels and positions_mm "
-					    "need at least 2 points; keeping defaults");
+					else if(pixels.size() < 2)
+					{
+						addMessage(
+						    result,
+						    etest::ConfigMessageLevel::ERROR,
+						    "axis calibration requires at least "
+						    "2 points; keeping defaults");
+					}
+					else
+					{
+						// pixel 严格递增检查
+						bool pixels_monotonic = true;
+
+						for(std::size_t i = 1; i < pixels.size(); ++i)
+						{
+							if(pixels[i] <= pixels[i - 1])
+							{
+								addMessage(
+								    result,
+								    etest::ConfigMessageLevel::
+								        ERROR,
+								    "axis_calibration.pixels must "
+								    "be strictly increasing");
+								pixels_monotonic = false;
+								break;
+							}
+						}
+
+						if(pixels_monotonic)
+						{
+							// positions 单调性检查
+							bool increasing = true;
+							bool decreasing = true;
+
+							for(std::size_t i = 1;
+							    i < positions.size();
+							    ++i)
+							{
+								increasing =
+								    increasing
+								    && positions[i]
+								           > positions[i - 1];
+
+								decreasing =
+								    decreasing
+								    && positions[i]
+								           < positions[i - 1];
+							}
+
+							if(!increasing && !decreasing)
+							{
+								addMessage(
+								    result,
+								    etest::ConfigMessageLevel::
+								        ERROR,
+								    "axis_calibration.positions_mm "
+								    "must be monotonic");
+							}
+							else
+							{
+								bn.axis_calibration.points.clear();
+
+								for(std::size_t i = 0;
+								    i < pixels.size();
+								    ++i)
+								{
+									bn.axis_calibration
+									    .points.push_back(
+									        {pixels[i],
+									         positions[i]});
+								}
+							}
+						}
+					}
 				}
 			}
 		}
