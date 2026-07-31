@@ -22,6 +22,7 @@ import time
 import tkinter as tk
 from tkinter import messagebox, ttk
 import json
+import re
 from typing import Callable, Optional, TypeVar
 
 try:
@@ -1570,7 +1571,7 @@ class EtestGui:
         vision_path = CONFIG_DIR / "vision.toml"
         try:
             if vision_path.is_file():
-                with vision_path.open("r", encoding="utf-8") as f:
+                with vision_path.open("rb") as f:
                     data = tomllib.load(f) if tomllib else {}
                 bn = data.get("vision", {}).get("ball_ncnn", {})
                 self.calib_full_roi_x = int(bn.get("full_roi_x", 0))
@@ -1829,8 +1830,6 @@ class EtestGui:
             text = vision_path.read_text(encoding="utf-8")
         except OSError as exc:
             raise OperationError(f"读取 {vision_path} 失败：{exc}") from exc
-
-        import re
 
         # 更新各字段
         replacements = [
