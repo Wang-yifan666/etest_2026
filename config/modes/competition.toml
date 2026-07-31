@@ -299,14 +299,12 @@ roi_location_mode = "topleft"
 #   左上角 (0, 160)
 #   尺寸 1280×320
 #   覆盖原图 y=160 到 y=479
-full_roi_x = 0
 full_roi_y = 160
 
 # Center ROI:
 #   左上角 (416, 160)
 #   尺寸 448×320
 #   覆盖原图 x=416 到 x=863
-center_roi_x = 416
 center_roi_y = 160
 
 # ------------------------------------------------------------
@@ -339,10 +337,8 @@ stable_frames_to_center = 8
 # 启动标定
 # ------------------------------------------------------------
 # 标定目标线的原图 X 坐标
-calibration_line_x = 640
 
 # 球心距离标定线允许的误差
-calibration_line_tolerance_px = 20
 
 # 标定期间球心最大允许抖动
 calibration_max_jitter_px = 6.0
