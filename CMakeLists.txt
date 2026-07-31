@@ -11,6 +11,8 @@ find_package(OpenCV REQUIRED)
 option(ETEST_ENABLE_NCNN "Enable NCNN YOLO backend" ON)
 
 if(ETEST_ENABLE_NCNN)
+    # 提示 ncnn 的安装路径（若已装到系统路径则自动忽略）
+    list(APPEND CMAKE_PREFIX_PATH "$ENV{HOME}/.local/ncnn")
     find_package(ncnn QUIET)
     if(ncnn_FOUND)
         set(ETEST_HAS_NCNN TRUE)
