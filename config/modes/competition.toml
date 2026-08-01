@@ -54,7 +54,7 @@ terminal = true
 
 # 比赛建议 INFO
 # 调试视觉问题时可以临时改为 DEBUG
-min_level = "INFO"
+min_level = "WARN"
 
 # 每次写日志立即刷新，掉电时更容易保留最后信息
 flush_each_write = true
@@ -72,7 +72,6 @@ throttle_interval_ms = 500
 #   v4l2-ctl --list-devices
 #
 # 推荐使用 /dev/v4l/by-id 下的稳定路径。
-# 如果路径与树莓派实际设备不同，必须修改。
 source = "/dev/v4l/by-id/usb-lihappe8_Corp._USB_2.0_Camera-video-index0"
 
 # 当前 BallNcnn 的原图坐标、Full ROI 和 Center ROI
@@ -269,53 +268,6 @@ full_input_height = 160
 
 center_input_width = 224
 center_input_height = 160
-
-# ------------------------------------------------------------
-# 原图 ROI 尺寸
-# ------------------------------------------------------------
-#
-# 原始摄像头图像为 1280×720。
-#
-# Full 模型从原图裁剪 1280×320，
-# 再缩放到 640×160 输入模型。
-#
-# Center 模型从原图裁剪 448×320，
-# 再缩放到 224×160 输入模型。
-full_src_width = 1280
-full_src_height = 320
-
-center_src_width = 448
-center_src_height = 320
-
-# ------------------------------------------------------------
-# ROI 位置
-# ------------------------------------------------------------
-#
-# topleft 表示 full_roi_x/full_roi_y 和
-# center_roi_x/center_roi_y 是 ROI 左上角坐标。
-roi_location_mode = "topleft"
-
-# Full ROI:
-#   左上角 (0, 160)
-#   尺寸 1280×320
-#   覆盖原图 y=160 到 y=479
-full_roi_y = 160
-
-# Center ROI:
-#   左上角 (416, 160)
-#   尺寸 448×320
-#   覆盖原图 x=416 到 x=863
-center_roi_y = 160
-
-# ------------------------------------------------------------
-# 图像和管道参考中心
-# ------------------------------------------------------------
-# 1280×720 图像的水平中心线
-center_line_y = 360
-
-# 管道参考中心
-pipe_center_x = 640
-pipe_center_y = 360
 
 # ------------------------------------------------------------
 # Full / Center 模型切换

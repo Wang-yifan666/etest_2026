@@ -622,12 +622,15 @@ namespace etest::state
 			ETEST_LOG_INFO("STATE_START", self_check_result);
 		}
 
-		// 6. 加载 YOLO 模型（detector=yolo 时）
-		if(search_cfg.detector == "yolo")
+		// 6. 加载旧通用 YOLO 模型
+		const bool use_legacy_yolo =
+		    search_cfg.enable_nn && search_cfg.detector == "yolo";
+
+		if(use_legacy_yolo)
 		{
 			ETEST_LOG_INFO(
 			    "STATE_START",
-			    "loading YOLO model: backend=" + search_cfg.yolo_backend
+			    "loading legacy YOLO model: backend=" + search_cfg.yolo_backend
 			        + " input="
 			        + std::to_string(search_cfg.nn_input_width) + "x"
 			        + std::to_string(search_cfg.nn_input_height)
@@ -638,22 +641,28 @@ namespace etest::state
 			{
 				ETEST_LOG_ERROR(
 				    "STATE_START",
-				    "YOLO model failed to load; will retry in SEARCH");
+				    "legacy YOLO model failed to load");
 			}
 			else
 			{
 				ETEST_LOG_INFO(
 				    "STATE_START",
-				    "YOLO model loaded: backend="
+				    "legacy YOLO model loaded: backend="
 				        + std::string(ctx.vision.yoloBackendName()));
 			}
-
-			// 初始化任务会话
-			ctx.task.reset();
-			ETEST_LOG_INFO("STATE_START",
-			               "initial session_id="
-			                   + std::to_string(ctx.task.session_id));
 		}
+		else
+		{
+			ETEST_LOG_INFO(
+			    "STATE_START",
+			    "legacy YOLO disabled; using BallNcnn dual-model path");
+		}
+
+		// 初始化任务会话（不依赖 YOLO 加载状态）
+		ctx.task.reset();
+		ETEST_LOG_INFO("STATE_START",
+		               "initial session_id="
+		                   + std::to_string(ctx.task.session_id));
 
 		// 7. 初始化 BallNcnn 双模型
 		{

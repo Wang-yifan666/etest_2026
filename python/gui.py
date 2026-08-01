@@ -3468,8 +3468,18 @@ class EtestGui:
             "axis_calibration",
             "calibration_line_x",
             "calibration_line_tolerance_px",
+
+            "roi_location_mode",
+
             "full_roi_x",
+            "full_roi_y",
+            "full_src_width",
+            "full_src_height",
+
             "center_roi_x",
+            "center_roi_y",
+            "center_src_width",
+            "center_src_height",
         )
 
         def _contains_key(table, key: str) -> bool:
