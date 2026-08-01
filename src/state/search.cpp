@@ -6,6 +6,7 @@
 #include "state/task_session.hpp"
 #include "uart/protocol.hpp"
 #include "uart/uart.hpp"
+#include "stream/video_streamer.hpp"
 #include "vision/ball_ncnn_manager.hpp"
 #include "vision/latest_frame_capture.hpp"
 #include "vision/roi_utils.hpp"
@@ -299,9 +300,29 @@ namespace etest::state
 			}
 		}
 
-		std::uint64_t last_processed_sequence = 0;
+	std::uint64_t last_processed_sequence = 0;
 
-		while(ctx.running)
+	// ── 图传初始化 ──
+	etest::stream::VideoStreamConfig stream_cfg;
+	stream_cfg.enabled = true;
+	stream_cfg.receiver_ip = "10.178.117.236";
+	stream_cfg.video_port = 5600;
+	stream_cfg.control_port = 5601;
+	stream_cfg.width = 960;
+	stream_cfg.height = 480;
+	stream_cfg.fps = 25;
+	stream_cfg.bitrate_kbps = 2500;
+
+	etest::stream::VideoStreamer video_streamer(stream_cfg);
+
+	if(!video_streamer.start())
+	{
+		ETEST_LOG_ERROR(
+			"STREAM",
+			"video streamer failed to start; vision loop will continue");
+	}
+
+	while(ctx.running)
 		{
 			if(ctx.shutdown_flag != nullptr
 			   && ctx.shutdown_flag->load())
@@ -563,15 +584,21 @@ namespace etest::state
 							        + ctx.task.command_tag);
 							continue;
 						}
-						ETEST_LOG_INFO("SEARCH",
-						               "DONE received: " + done->mode
-						                   + " result=" + done->result);
-						ctx.task.enterPhase(ContestTaskPhase::FINISHED);
-						ctx.task.vision_enabled = false;
-						ctx.task.tracking_mode = TrackingMode::NONE;
-						ctx.task.measurement_valid = false;
-						ctx.vision.resetYoloSession();
-						continue;
+				ETEST_LOG_INFO("SEARCH",
+				               "DONE received: " + done->mode
+				                   + " result=" + done->result);
+
+				video_streamer.sendTestDone(
+				    ctx.task.session_id,
+				    done->mode,
+				    done->result);
+
+				ctx.task.enterPhase(ContestTaskPhase::FINISHED);
+				ctx.task.vision_enabled = false;
+				ctx.task.tracking_mode = TrackingMode::NONE;
+				ctx.task.measurement_valid = false;
+				ctx.vision.resetYoloSession();
+				continue;
 					}
 
 					// ERR / WARN
@@ -728,11 +755,14 @@ namespace etest::state
 
 			if(has_new_frame)
 			{
-				++received_frames;
-				ctx.frame = packet.frame;
+			++received_frames;
+			ctx.frame = packet.frame;
 
-				// 录像：完整原始画面异步写入
-				ctx.recorder.writeRaw(ctx.frame);
+			// 录像：完整原始画面异步写入
+			ctx.recorder.writeRaw(ctx.frame);
+
+			// 始终发送原始摄像头画面到接收端；发送端不录像。
+			video_streamer.submit(ctx.frame);
 
 				if(use_latest_capture && last_processed_sequence != 0
 				   && packet.sequence > last_processed_sequence + 1)
@@ -757,13 +787,19 @@ namespace etest::state
 					    uart::protocol::makeContestStartLine(
 					        mode_name));
 					ctx.task.start_sent = true;
-					ctx.task.enterPhase(ContestTaskPhase::RUNNING);
-					ctx.task.vision_enabled = false;
-					ctx.task.tracking_mode = TrackingMode::NONE;
-					ETEST_LOG_INFO("SEARCH",
-					               "M0001: PREPARING → RUNNING, "
-					               "CONTESTSTART sent: "
-					                   + std::string(mode_name));
+				ctx.task.enterPhase(ContestTaskPhase::RUNNING);
+				ctx.task.vision_enabled = false;
+				ctx.task.tracking_mode = TrackingMode::NONE;
+
+				// 通知接收端开始录像
+				video_streamer.sendTestStart(
+				    ctx.task.session_id,
+				    std::string(mode_name));
+
+				ETEST_LOG_INFO("SEARCH",
+				               "M0001: PREPARING → RUNNING, "
+				               "CONTESTSTART sent: "
+				                   + std::string(mode_name));
 				}
 			}
 
@@ -1161,11 +1197,16 @@ namespace etest::state
 						    uart::protocol::makeContestStartLine(
 						        mode_name));
 					}
-					ctx.task.start_sent = true;
-					ctx.task.enterPhase(ContestTaskPhase::RUNNING);
+				ctx.task.start_sent = true;
+				ctx.task.enterPhase(ContestTaskPhase::RUNNING);
 
-					const auto& bn_cfg =
-					    ctx.vision.getConfig().ball_ncnn;
+				// 通知接收端开始录像
+				video_streamer.sendTestStart(
+				    ctx.task.session_id,
+				    std::string(mode_name));
+
+				const auto& bn_cfg =
+				    ctx.vision.getConfig().ball_ncnn;
 
 					if(ctx.task.mode == TaskMode::Q4
 					   || ctx.task.mode == TaskMode::Q5)
@@ -1383,10 +1424,12 @@ namespace etest::state
 			}
 		}
 
-		if(can_show_preview && preview_open)
-			cv::destroyAllWindows();
+	video_streamer.stop();
 
-		ETEST_LOG_INFO("SEARCH", "exiting search loop");
+	if(can_show_preview && preview_open)
+		cv::destroyAllWindows();
+
+	ETEST_LOG_INFO("SEARCH", "exiting search loop");
 		return State::END;
 	}
 

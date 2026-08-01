@@ -97,6 +97,7 @@ add_executable(etest_2026
     src/state/calibration_logic.cpp
     src/state/end.cpp
     src/state/error.cpp
+    src/stream/video_streamer.cpp
     src/vision/camera.cpp
     src/vision/latest_frame_capture.cpp
     src/vision/video_recorder.cpp

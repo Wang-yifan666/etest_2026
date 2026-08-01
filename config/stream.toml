@@ -1,18 +1,23 @@
 [stream]
 
-# 是否启用车载图传
+# 是否启用车载 H.264/RTP 图传（发送端）
 enabled = true
 
-# 接收树莓派在手机热点中的 IP
+# 接收端树莓派 IP
 host = "10.178.117.236"
 
-port = 5000
+# RTP 视频端口
+video_port = 5600
 
-# RTP/JPEG 静态负载类型
-payload_type = 26
+# UDP 控制端口（TEST_START / TEST_DONE）
+control_port = 5601
 
-# 尽量避免 IP 分片
-mtu = 1200
+# 编码分辨率
+width = 960
+height = 480
 
-# 图传管线启动失败时，退回普通摄像头模式
-allow_fallback = true
+# 编码帧率
+fps = 25
+
+# H.264 码率 (kbps)
+bitrate_kbps = 2500
